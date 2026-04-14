@@ -57,6 +57,9 @@ version-file = "ecgbench/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["ecgbench"]
 
+[tool.hatch.build.targets.sdist]
+include = ["ecgbench/**"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py38"

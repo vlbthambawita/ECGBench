@@ -9,7 +9,28 @@ except ImportError:
 
 __author__ = "Vajira Thambawita"
 
-from .dataset import ECGDataset, ecg_collate_fn
+# Catalogue functions (no heavy dependencies)
+from .catalogue import list_datasets, search, get_dataset, to_dataframe, categories
 
-__all__ = ["ECGDataset", "ecg_collate_fn"]
+
+def __getattr__(name):
+    """Lazy-import ECGDataset and ecg_collate_fn to avoid requiring torch at import time."""
+    if name == "ECGDataset":
+        from .dataset import ECGDataset
+        return ECGDataset
+    if name == "ecg_collate_fn":
+        from .dataset import ecg_collate_fn
+        return ecg_collate_fn
+    raise AttributeError(f"module 'ecgbench' has no attribute {name!r}")
+
+
+__all__ = [
+    "ECGDataset",
+    "ecg_collate_fn",
+    "list_datasets",
+    "search",
+    "get_dataset",
+    "to_dataframe",
+    "categories",
+]
 
