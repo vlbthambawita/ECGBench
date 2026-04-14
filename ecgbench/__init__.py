@@ -2,7 +2,11 @@
 ECGBench: Reproducible ECG Benchmark data from Open access datasets
 """
 
-__version__ = "0.1.0"
+try:
+    from ecgbench._version import __version__
+except ImportError:
+    __version__ = "0.0.0.dev0"
+
 __author__ = "Vajira Thambawita"
 
 from .dataset import ECGDataset, ecg_collate_fn

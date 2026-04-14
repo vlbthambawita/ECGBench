@@ -18,7 +18,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install build tools
-        run: pip install build hatchling
+        run: pip install build hatchling hatch-vcs
 
       - name: Build sdist and wheel
         run: python -m build
