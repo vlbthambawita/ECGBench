@@ -59,6 +59,7 @@ Static Jekyll site in `docs/` served via GitHub Pages. Single-file `docs/index.h
 ## CI/CD (GitHub Actions)
 
 - **`.github/workflows/deploy-pages.yml`** — Deploys `docs/` to GitHub Pages on push to `main` (when `docs/` changes). Uses `actions/jekyll-build-pages` + `actions/deploy-pages`.
+- **`.github/workflows/deploy-hf-space.yml`** — Deploys `docs/` to HuggingFace Space (`vlbthambawita/ECGBench`) on push to `main` (when `docs/` or `hf_space/` changes) or on `v*` tags. Requires `HF_TOKEN` secret.
 - **`.github/workflows/publish-pypi.yml`** — Builds and publishes the `ecgbench` pip package to PyPI on `v*` tags using Trusted Publishing (OIDC). Requires a `pypi` environment configured in GitHub repo settings.
 
 ## Environment Variables
