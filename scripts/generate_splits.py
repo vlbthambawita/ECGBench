@@ -134,8 +134,9 @@ def main():
             for version in ("clean", "original"):
                 version_dir = output_dir / version
                 if version_dir.exists():
-                    save_croissant(config, version_dir, version=version)
-                    logger.info("Generated Croissant metadata for %s version", version)
+                    croissant_path = version_dir / "croissant.json"
+                    save_croissant(config, version_dir, croissant_path, version=version)
+                    logger.info("Generated Croissant metadata: %s", croissant_path)
         except ImportError:
             logger.warning(
                 "mlcroissant not installed — skipping Croissant generation. "

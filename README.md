@@ -146,10 +146,11 @@ Results are saved in `validation_report.json` with per-record details.
 
 ## Croissant Metadata
 
-Each dataset version includes MLCommons Croissant 1.1 JSON-LD metadata (`croissant.json`) with SHA-256 hashes for reproducibility.
+Both `clean/` and `original/` versions include MLCommons Croissant 1.1 JSON-LD metadata (`croissant.json`) with SHA-256 hashes for reproducibility. The full pipeline generates both automatically. For standalone generation:
 
 ```bash
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
 ```
 
 ## Adding a New Dataset
@@ -167,8 +168,9 @@ python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/c
 # Full pipeline: validate + split + Croissant
 python scripts/generate_splits.py --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
 
-# Standalone Croissant generation
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/
+# Standalone Croissant generation (per version)
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
 
 # Upload to HuggingFace Hub
 python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl

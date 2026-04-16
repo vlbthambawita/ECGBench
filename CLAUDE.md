@@ -35,7 +35,7 @@ pytest -k "test_split" -v               # by name pattern
 python scripts/generate_splits.py --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
 
 # Standalone Croissant generation
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
 
 # Upload to HuggingFace Hub (requires HF_TOKEN in .env)
 python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl

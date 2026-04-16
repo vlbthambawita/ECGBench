@@ -240,7 +240,7 @@ def save_croissant(
     Args:
         config: DatasetConfig
         splits_dir: Path to the version dir
-        output_path: Where to write. Defaults to splits_dir/../croissant.json
+        output_path: Where to write. Defaults to splits_dir/croissant.json
         version: "original" or "clean"
 
     Returns:
@@ -248,7 +248,7 @@ def save_croissant(
     """
     splits_dir = Path(splits_dir)
     if output_path is None:
-        output_path = splits_dir.parent / "croissant.json"
+        output_path = splits_dir / "croissant.json"
     output_path = Path(output_path)
 
     croissant_data = generate_croissant(config, splits_dir, version)

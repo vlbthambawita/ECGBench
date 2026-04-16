@@ -43,11 +43,11 @@ class TestCroissantGeneration:
                     assert "sha256" in item or "sha256" in item.get("@type", "")
 
     def test_default_output_path(self, tmp_splits_dir, sample_config):
-        """Test that default output path is splits_dir/../croissant.json."""
+        """Test that default output path is splits_dir/croissant.json."""
         from ecgbench.croissant import save_croissant
 
         saved = save_croissant(sample_config, tmp_splits_dir / "clean")
-        assert saved == tmp_splits_dir / "croissant.json"
+        assert saved == tmp_splits_dir / "clean" / "croissant.json"
         assert saved.exists()
 
 
