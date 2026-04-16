@@ -93,14 +93,13 @@ def generate_croissant(
     file_objects = []
     for csv_path in csv_files:
         rel_path = csv_path.relative_to(splits_dir)
-        # Create a name from the relative path
         name = str(rel_path).replace("/", "-").replace("\\", "-").replace(".csv", "-csv")
         file_objects.append(
             mlc.FileObject(
                 id=name,
                 name=name,
                 content_url=str(rel_path),
-                encoding_format="text/csv",
+                encoding_formats=["text/csv"],
                 sha256=_sha256(csv_path),
             )
         )
@@ -112,29 +111,28 @@ def generate_croissant(
         if not split_dir.exists():
             continue
 
-        # Read one fold CSV to infer schema
         fold_csvs = sorted(split_dir.glob("fold_*.csv"))
         if not fold_csvs:
             continue
 
         sample_df = pd.read_csv(fold_csvs[0], nrows=5)
 
+        # Find a file object ID to reference as source
+        source_ref = None
+        for fo in file_objects:
+            if split_name in fo.id and "fold" in fo.id:
+                source_ref = fo.id
+                break
+
         fields = []
         for col in sample_df.columns:
             dtype = _infer_field_type(col, str(sample_df[col].dtype))
-            # Find a matching file object for source reference
-            source_ref = None
-            for fo in file_objects:
-                if split_name in fo.id and "fold" in fo.id:
-                    source_ref = fo.id
-                    break
-
             field = mlc.Field(
                 id=f"{split_name}-{col}",
                 name=col,
                 data_types=dtype,
                 source=mlc.Source(
-                    file_object=mlc.FileObject.from_id(source_ref) if source_ref else None,
+                    file_object=source_ref,
                     extract=mlc.Extract(column=col),
                 ),
             )
@@ -148,29 +146,25 @@ def generate_croissant(
             )
         )
 
-    # Build keyword list
-    keywords = config.croissant.keywords if config.croissant else ["ECG"]
-
     # Creator info
     creators = []
     for c in config.creators:
-        if c.type == "Organization":
-            creators.append(mlc.Organization(name=c.name, url=c.url))
-        else:
-            creators.append(mlc.Person(name=c.name, url=c.url))
+        cls = mlc.Organization if c.type == "Organization" else mlc.Person
+        creators.append(cls(name=c.name, url=c.url))
 
     # Build the Croissant Metadata
+    keywords = config.croissant.keywords if config.croissant else ["ECG"]
     try:
         metadata = mlc.Metadata(
             name=f"{config.slug}-{version}",
             url=config.url,
             description=config.description or f"{config.name} ECG dataset ({version} version)",
-            license=config.license or "",
+            sd_licence=config.license or "",
             version=config.version,
             cite_as=config.citation or "",
             date_published=date.today().isoformat(),
             conforms_to="http://mlcommons.org/croissant/1.1",
-            creators=creators if creators else None,
+            creators=creators or None,
             keywords=keywords,
             distribution=file_objects,
             record_sets=record_sets,
@@ -186,7 +180,6 @@ def generate_croissant(
     try:
         return metadata.to_json()
     except Exception:
-        # Some mlcroissant versions use different serialisation
         return json.loads(json.dumps(metadata.__dict__, default=str))
 
 
@@ -262,7 +255,7 @@ def save_croissant(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(croissant_data, f, indent=2, ensure_ascii=False)
+        json.dump(croissant_data, f, indent=2, ensure_ascii=False, default=str)
 
     logger.info("Saved Croissant metadata to %s", output_path)
     return output_path
