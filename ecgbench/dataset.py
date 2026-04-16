@@ -1,310 +1,361 @@
 """
-PyTorch Dataset class for loading ECG data from PhysioNet datasets.
+Unified PyTorch Dataset for loading any ECG dataset supported by ECGBench.
+
+Uses the dataset's YAML config to determine how to load signals and metadata.
+Adding a new dataset requires only a config file — no changes to this class.
 """
 
+from __future__ import annotations
+
 import ast
+import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import List, Optional, Union, Dict, Any
+from typing import Any
 
 import numpy as np
 import pandas as pd
-import torch
-from torch.utils.data import Dataset
 
-try:
-    import wfdb
-except ImportError:
-    raise ImportError(
-        "wfdb is required to load ECG data. Install it with: pip install wfdb"
-    )
+logger = logging.getLogger(__name__)
 
 
-def ecg_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Custom collate function for ECG dataset batches.
-    
-    Handles dictionaries (like scp_codes) by keeping them as lists instead of
-    trying to collate their keys, which would fail when different samples have
-    different dictionary keys.
-    
-    Args:
-        batch: List of samples from the dataset
-        
-    Returns:
-        Batched dictionary with collated tensors and lists of other types
-    """
-    from torch.utils.data._utils.collate import default_collate
-    
-    if not batch:
-        return {}
-    
-    # Get all keys from the first sample
-    all_keys = set(batch[0].keys())
-    
-    # Separate items that can be collated normally from those that need special handling
-    collatable = {}
-    non_collatable = {}
-    
-    # For each key, check all samples to determine how to handle it
-    for key in all_keys:
-        values = [sample[key] for sample in batch]
-        
-        # Check if all values are of a type that needs special handling
-        if all(isinstance(v, dict) for v in values):
-            # All are dicts - keep as list of dicts
-            non_collatable[key] = values
-        elif all(isinstance(v, (str, type(None))) for v in values):
-            # All are strings or None - keep as list
-            non_collatable[key] = values
-        else:
-            # Try to collate normally (tensors, numbers, etc.)
-            collatable[key] = values
-    
-    # Collate normal items
-    result = default_collate(collatable)
-    
-    # Add non-collatable items as lists
-    result.update(non_collatable)
-    
-    return result
+def _require_torch():
+    """Lazily import torch, raising a helpful error if not installed."""
+    try:
+        import torch
+
+        return torch
+    except ImportError:
+        raise ImportError(
+            "PyTorch is required for ECGDataset. "
+            "Install with: pip install ecgbench[torch]"
+        )
 
 
-class ECGDataset(Dataset):
-    """
-    PyTorch Dataset for loading ECG data from PhysioNet datasets.
+def _require_wfdb():
+    """Lazily import wfdb."""
+    try:
+        import wfdb
 
-    This dataset loads ECG signals from PhysioNet WFDB format files and
-    associated metadata from ECGBench CSV files.
+        return wfdb
+    except ImportError:
+        raise ImportError(
+            "wfdb is required to load ECG data. "
+            "Install with: pip install ecgbench[torch]"
+        )
+
+
+def _load_signal(record_path: str, signal_format: str) -> np.ndarray:
+    """Load ECG signal. Returns shape (leads, samples)."""
+    if signal_format == "wfdb":
+        wfdb = _require_wfdb()
+        record = wfdb.rdrecord(record_path)
+        if record.p_signal is None:
+            raise ValueError(f"Signal is None for record: {record_path}")
+        return record.p_signal.T.astype(np.float32)
+    else:
+        raise NotImplementedError(
+            f"Signal format '{signal_format}' not yet supported. "
+            "Currently supported: wfdb"
+        )
+
+
+def _parse_dict_string(value: str) -> dict | str:
+    """Try to parse a Python dict literal string."""
+    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            pass
+    return value
+
+
+class ECGDataset:
+    """PyTorch Dataset for loading any ECG dataset supported by ECGBench.
+
+    This class uses the dataset's YAML config to determine how to load
+    signals and metadata. Adding a new dataset requires only a config file.
 
     Args:
-        physionet_path: Path to the root directory of the PhysioNet dataset
-                       (e.g., /path/to/physionet.org/files/ptb-xl/1.0.3/)
-        dataset_name: Name of the dataset (e.g., 'ptbxl')
-        split: Data split to load ('train', 'val', or 'test')
-        fold_numbers: Fold number(s) to load. Can be a single int, list of ints, or None for all folds
-        frequency: ECG sampling frequency to load ('100' or '500'). Default is '100'
-        ecgbench_root: Root path to ECGBench folder containing metadata CSVs.
-                      Default is None, which will try to find it relative to this file.
+        dataset: Dataset slug (e.g., "ptbxl") or a DatasetConfig object
+        split: "train", "val", or "test"
+        version: "clean" (default) or "original"
+        data_path: Path to the dataset's signal files on disk.
+                   If None, attempts auto-download from config.download_url.
+        sampling_rate: Which sampling rate to load (default: config.default_sampling_rate)
+        fold_numbers: Specific fold(s) to load. None = all folds for the split.
+        transform: Optional callable applied to the signal tensor
+        metadata_source: "hf" (download fold CSVs from HuggingFace) or "local".
 
     Example:
-        >>> dataset = ECGDataset(
-        ...     physionet_path='/path/to/physionet.org/files/ptb-xl/1.0.3/',
-        ...     dataset_name='ptbxl',
-        ...     split='train',
-        ...     fold_numbers=[1, 2],
-        ...     frequency='100'
-        ... )
-        >>> dataloader = torch.utils.data.DataLoader(dataset, batch_size=32)
+        >>> train_ds = ECGDataset("ptbxl", split="train", data_path="/data/ptb-xl/1.0.3/")
+        >>> loader = DataLoader(train_ds, batch_size=32, collate_fn=ecg_collate_fn)
     """
 
     def __init__(
         self,
-        physionet_path: Union[str, Path],
-        dataset_name: str = "ptbxl",
+        dataset: str | Any,  # str or DatasetConfig
         split: str = "train",
-        fold_numbers: Optional[Union[int, List[int]]] = None,
-        frequency: str = "100",
-        ecgbench_root: Optional[Union[str, Path]] = None,
+        version: str = "clean",
+        data_path: Path | str | None = None,
+        sampling_rate: int | None = None,
+        fold_numbers: list[int] | None = None,
+        transform: Callable | None = None,
+        metadata_source: str = "hf",
     ):
-        self.physionet_path = Path(physionet_path)
-        self.dataset_name = dataset_name
-        self.split = split.lower()
-        self.frequency = frequency
+        _require_torch()
+        from torch.utils.data import Dataset as TorchDataset
 
-        # Validate split
-        if self.split not in ["train", "val", "test"]:
-            raise ValueError(f"split must be 'train', 'val', or 'test', got '{split}'")
+        # Make this a proper torch Dataset
+        self.__class__ = type(
+            "ECGDataset", (TorchDataset, self.__class__), {}
+        )
 
-        # Validate frequency
-        if self.frequency not in ["100", "500"]:
-            raise ValueError(f"frequency must be '100' or '500', got '{frequency}'")
+        from ecgbench.config import DatasetConfig, load_config
 
-        # Determine ECGBench root path
-        if ecgbench_root is None:
-            # Try to find ECGBench root relative to this file
-            current_file = Path(__file__).parent
-            ecgbench_root = current_file.parent
-        self.ecgbench_root = Path(ecgbench_root)
-
-        # Load metadata
-        self.metadata = self._load_metadata(fold_numbers)
-        self.data_list = self._prepare_data_list()
-
-    def _load_metadata(self, fold_numbers: Optional[Union[int, List[int]]]) -> pd.DataFrame:
-        """
-        Load metadata from ECGBench CSV files.
-
-        Args:
-            fold_numbers: Fold number(s) to load
-
-        Returns:
-            Combined DataFrame with metadata from specified folds
-        """
-        metadata_dir = self.ecgbench_root / "ecgbench" / "datasets" / self.dataset_name / self.split
-
-        if not metadata_dir.exists():
-            raise ValueError(
-                f"Metadata directory not found: {metadata_dir}. "
-                f"Make sure the ECGBench folder structure is correct."
-            )
-
-        # Determine which folds to load
-        if fold_numbers is None:
-            # Load all folds in the split directory
-            fold_files = sorted(metadata_dir.glob("fold_*.csv"))
-            if not fold_files:
-                raise ValueError(f"No fold CSV files found in {metadata_dir}")
+        if isinstance(dataset, str):
+            self.config = load_config(dataset)
+        elif isinstance(dataset, DatasetConfig):
+            self.config = dataset
         else:
-            # Convert single int to list
-            if isinstance(fold_numbers, int):
-                fold_numbers = [fold_numbers]
+            raise TypeError(f"dataset must be str or DatasetConfig, got {type(dataset)}")
 
-            # Load specified folds
-            fold_files = []
-            for fold_num in fold_numbers:
-                fold_file = metadata_dir / f"fold_{fold_num}.csv"
-                if not fold_file.exists():
-                    raise ValueError(f"Fold file not found: {fold_file}")
-                fold_files.append(fold_file)
+        self.split = split.lower()
+        self.version = version
+        self.sampling_rate = sampling_rate or self.config.default_sampling_rate
+        self.transform = transform
+        self.metadata_source = metadata_source
 
-        # Load and combine all fold CSVs
-        dfs = []
-        for fold_file in sorted(fold_files):
-            df = pd.read_csv(fold_file)
-            dfs.append(df)
+        if self.split not in ("train", "val", "test"):
+            raise ValueError(f"split must be 'train', 'val', or 'test', got '{split}'")
+        if self.version not in ("clean", "original"):
+            raise ValueError(f"version must be 'clean' or 'original', got '{version}'")
 
-        if not dfs:
-            raise ValueError(f"No metadata files loaded from {metadata_dir}")
+        # Resolve signal data path
+        from ecgbench.download import resolve_data_path
 
-        combined_df = pd.concat(dfs, ignore_index=True)
-        return combined_df
+        self.data_path = resolve_data_path(data_path, self.config)
 
-    def _prepare_data_list(self) -> List[Dict[str, Any]]:
-        """
-        Prepare list of data items with file paths and metadata.
+        # Load fold metadata
+        self.metadata_df = self._load_metadata(fold_numbers)
 
-        Returns:
-            List of dictionaries containing file paths and metadata for each ECG record
-        """
-        data_list = []
-
-        # Determine filename column based on frequency
-        filename_col = f"filename_{self.frequency}"
-
-        if filename_col not in self.metadata.columns:
+        # Determine signal path column
+        self.signal_col = self.config.signal_path_columns.get(self.sampling_rate)
+        if not self.signal_col:
             raise ValueError(
-                f"Frequency column '{filename_col}' not found in metadata. "
-                f"Available columns: {list(self.metadata.columns)}"
+                f"No signal_path_column for rate {self.sampling_rate}. "
+                f"Available: {list(self.config.signal_path_columns.keys())}"
             )
 
-        for idx, row in self.metadata.iterrows():
-            # Get filename path (without extension)
-            filename_path = row[filename_col]
+    def _load_metadata(self, fold_numbers: list[int] | None) -> pd.DataFrame:
+        """Load fold CSV metadata from HuggingFace Hub or local disk."""
+        if self.metadata_source == "hf":
+            return self._load_from_hf(fold_numbers)
+        elif self.metadata_source == "local":
+            return self._load_from_local(fold_numbers)
+        else:
+            raise ValueError(
+                f"metadata_source must be 'hf' or 'local', got '{self.metadata_source}'"
+            )
 
-            # Construct full path to WFDB record
-            record_path = self.physionet_path / filename_path
-
-            # Store metadata (excluding filename columns to avoid redundancy)
-            metadata_dict = {
-                "ecg_id": row.get("ecg_id", None),
-                "patient_id": row.get("patient_id", None),
-                "record_path": str(record_path),
-                "split": self.split,
-                "frequency": self.frequency,
-            }
-
-            # Add all other columns as metadata
-            for col in self.metadata.columns:
-                if col not in ["filename_100", "filename_500"]:
-                    value = row[col]
-                    # Parse string representations of dicts (like scp_codes)
-                    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
-                        try:
-                            value = ast.literal_eval(value)
-                        except (ValueError, SyntaxError):
-                            pass
-                    metadata_dict[col] = value
-
-            data_list.append(metadata_dict)
-
-        return data_list
-
-    def _load_ecg_signal(self, record_path: str) -> np.ndarray:
-        """
-        Load ECG signal from WFDB format file.
-
-        Args:
-            record_path: Path to WFDB record (without extension)
-
-        Returns:
-            ECG signal as numpy array with shape (channels, samples)
-        """
+    def _load_from_hf(self, fold_numbers: list[int] | None) -> pd.DataFrame:
+        """Download fold CSVs from HuggingFace Hub."""
         try:
-            # Load WFDB record
-            record = wfdb.rdrecord(record_path)
+            from huggingface_hub import hf_hub_download
+        except ImportError:
+            raise ImportError(
+                "huggingface_hub is required for HF metadata. "
+                "Install with: pip install ecgbench[hf]"
+            )
 
-            # Extract signal data
-            signal = record.p_signal
+        repo_id = "vlbthambawita/ECGBench"
 
-            # Handle case where signal might be None or empty
-            if signal is None:
-                raise ValueError(f"ECG signal is None for record: {record_path}")
+        if fold_numbers is not None:
+            files_to_load = [
+                f"{self.config.slug}/{self.version}/{self.split}/fold_{n}.csv"
+                for n in fold_numbers
+            ]
+        else:
+            # Download the master folds.csv and filter by split
+            master_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=f"{self.config.slug}/{self.version}/folds.csv",
+                repo_type="dataset",
+            )
+            master_df = pd.read_csv(master_path)
+            if fold_numbers is None:
+                return master_df[master_df["default_split"] == self.split].reset_index(
+                    drop=True
+                )
 
-            # Transpose to (channels, samples) format
-            signal = signal.T
+        dfs = []
+        for file_path in files_to_load:
+            local_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=file_path,
+                repo_type="dataset",
+            )
+            dfs.append(pd.read_csv(local_path))
 
-            return signal
+        return pd.concat(dfs, ignore_index=True)
 
-        except Exception as e:
-            raise RuntimeError(f"Error loading ECG signal from {record_path}: {str(e)}")
+    def _load_from_local(self, fold_numbers: list[int] | None) -> pd.DataFrame:
+        """Load fold CSVs from local disk."""
+        # Look for fold CSVs in the data_path following standard structure
+        splits_base = self.data_path
+
+        # Try a few common locations
+        for candidate in [
+            splits_base / self.version / self.split,
+            splits_base / self.split,
+        ]:
+            if candidate.exists():
+                return self._read_fold_csvs(candidate, fold_numbers)
+
+        # Fallback: try master folds.csv
+        for candidate in [
+            splits_base / self.version / "folds.csv",
+            splits_base / "folds.csv",
+        ]:
+            if candidate.exists():
+                df = pd.read_csv(candidate)
+                result = df[df["default_split"] == self.split]
+                if fold_numbers is not None:
+                    result = result[result["fold"].isin(fold_numbers)]
+                return result.reset_index(drop=True)
+
+        raise FileNotFoundError(
+            f"Could not find fold CSVs for split '{self.split}' "
+            f"in {splits_base}. Run the split pipeline first or use metadata_source='hf'."
+        )
+
+    def _read_fold_csvs(
+        self, split_dir: Path, fold_numbers: list[int] | None
+    ) -> pd.DataFrame:
+        """Read fold CSV files from a split directory."""
+        if fold_numbers is not None:
+            files = [split_dir / f"fold_{n}.csv" for n in fold_numbers]
+            missing = [f for f in files if not f.exists()]
+            if missing:
+                raise FileNotFoundError(f"Fold files not found: {missing}")
+        else:
+            files = sorted(split_dir.glob("fold_*.csv"))
+            if not files:
+                raise FileNotFoundError(f"No fold_*.csv files in {split_dir}")
+
+        dfs = [pd.read_csv(f) for f in files]
+        return pd.concat(dfs, ignore_index=True)
 
     def __len__(self) -> int:
-        """Return the number of ECG records in the dataset."""
-        return len(self.data_list)
+        return len(self.metadata_df)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """
-        Get a single ECG record with metadata.
-
-        Args:
-            idx: Index of the record to retrieve
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        """Get a single ECG record with signal and metadata.
 
         Returns:
-            Dictionary containing:
-                - 'signal': ECG signal tensor with shape (channels, samples)
-                - 'ecg_id': ECG ID
-                - 'metadata': Dictionary with all metadata fields
+            dict with:
+              - "signal": torch.Tensor of shape (leads, samples), float32
+              - "record_id": record identifier
+              - "split": str
+              - "fold": int (if available)
+              - All other metadata columns
         """
-        if idx < 0 or idx >= len(self.data_list):
-            raise IndexError(f"Index {idx} out of range for dataset of size {len(self.data_list)}")
+        torch = _require_torch()
 
-        data_item = self.data_list[idx]
-        record_path = data_item["record_path"]
+        if idx < 0 or idx >= len(self.metadata_df):
+            raise IndexError(
+                f"Index {idx} out of range for dataset of size {len(self.metadata_df)}"
+            )
 
-        # Load ECG signal
-        signal = self._load_ecg_signal(record_path)
+        row = self.metadata_df.iloc[idx]
 
-        # Convert to torch tensor
+        # Load signal
+        signal_path = str(row[self.signal_col])
+        if self.config.signal_format == "wfdb":
+            signal_path = str(Path(signal_path).with_suffix(""))
+        full_path = str(self.data_path / signal_path)
+
+        signal = _load_signal(full_path, self.config.signal_format)
         signal_tensor = torch.from_numpy(signal).float()
 
-        # Prepare return dictionary
-        result = {
+        if self.transform is not None:
+            signal_tensor = self.transform(signal_tensor)
+
+        # Build result dict
+        result: dict[str, Any] = {
             "signal": signal_tensor,
-            "ecg_id": data_item.get("ecg_id"),
+            "record_id": row.get(self.config.record_id_column),
+            "split": self.split,
         }
 
-        # Add all metadata fields
-        for key, value in data_item.items():
-            if key not in ["record_path", "ecg_id"]:  # Already handled above
-                # Convert metadata to tensors where appropriate
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    result[key] = torch.tensor(value, dtype=torch.float32)
-                elif isinstance(value, dict):
-                    # For dict-like metadata (e.g., scp_codes), keep as dict
-                    result[key] = value
+        # Add fold if available
+        if "fold" in row.index:
+            result["fold"] = int(row["fold"])
+
+        # Add all other metadata
+        for col in self.metadata_df.columns:
+            if col in (self.signal_col, self.config.record_id_column, "default_split"):
+                continue
+            if col in ("fold",):
+                continue  # Already added
+
+            value = row[col]
+            if isinstance(value, str):
+                value = _parse_dict_string(value)
+
+            if isinstance(value, (int, float, np.integer, np.floating)):
+                if not np.isnan(value) if isinstance(value, (float, np.floating)) else True:
+                    result[col] = torch.tensor(float(value), dtype=torch.float32)
                 else:
-                    # Keep other types as-is
-                    result[key] = value
+                    result[col] = value
+            elif isinstance(value, dict):
+                result[col] = value
+            else:
+                result[col] = value
 
         return result
 
+
+def ecg_collate_fn(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    """Custom collate function for ECG dataset batches.
+
+    Stacks tensors, keeps dicts and strings as lists.
+
+    Args:
+        batch: List of samples from the dataset
+
+    Returns:
+        Batched dictionary
+    """
+    _require_torch()
+    from torch.utils.data._utils.collate import default_collate
+
+    if not batch:
+        return {}
+
+    all_keys = set(batch[0].keys())
+    collatable = {}
+    non_collatable = {}
+
+    for key in all_keys:
+        values = [sample[key] for sample in batch]
+
+        if all(isinstance(v, dict) for v in values):
+            non_collatable[key] = values
+        elif all(isinstance(v, (str, type(None))) for v in values):
+            non_collatable[key] = values
+        else:
+            collatable[key] = values
+
+    # default_collate expects a list of dicts, not a dict of lists
+    if collatable:
+        collatable_batch = [
+            {k: collatable[k][i] for k in collatable}
+            for i in range(len(batch))
+        ]
+        result = default_collate(collatable_batch)
+    else:
+        result = {}
+    result.update(non_collatable)
+
+    return result

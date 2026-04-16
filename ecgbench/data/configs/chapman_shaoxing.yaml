@@ -1,0 +1,86 @@
+# ECGBench Config: Chapman-Shaoxing
+# ==================================
+# Chapman University, Shaoxing People's Hospital 12-Lead ECG Database
+# https://physionet.org/content/ecg-arrhythmia/1.0.0/
+
+name: "Chapman-Shaoxing"
+slug: "chapman_shaoxing"
+version: "1.0.0"
+url: "https://physionet.org/content/ecg-arrhythmia/1.0.0/"
+download_url: null  # PhysioNet credentialed access — no direct download
+license: "https://physionet.org/content/ecg-arrhythmia/1.0.0/LICENSE.txt"
+description: >
+  A 12-lead ECG dataset with 10,646 recordings from Chapman University and
+  Shaoxing People's Hospital. Each recording is 10 seconds at 500 Hz with
+  rhythm and beat annotations. The dataset covers multiple arrhythmia types
+  including atrial fibrillation, atrial flutter, AV block, and more.
+citation: >
+  Zheng, J., Zhang, J., Danioko, S., et al. A 12-lead electrocardiogram
+  database for arrhythmia research covering more than 10,000 patients.
+  Scientific Data 7, 48 (2020).
+doi: "10.1038/s41597-020-0386-x"
+
+creators:
+  - type: Organization
+    name: "Chapman University"
+    url: "https://www.chapman.edu/"
+  - type: Organization
+    name: "Shaoxing People's Hospital"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+leads: 12
+duration_seconds: 10
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+metadata_csv: "Diagnostics.csv"
+metadata_csv_separator: ","
+record_id_column: "FileName"
+patient_id_column: "PatientId"
+
+signal_path_columns:
+  500: "FileName"  # Needs "ECGData/" prefix — handled by ChapmanSplitter
+
+# --- Labels ---
+label_column: "Rhythm"
+label_format: "single"
+
+stratification:
+  method: "direct"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    500: 5000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "Chapman-Shaoxing"
+    - "12-lead"
+    - "arrhythmia"
+    - "PhysioNet"
+  rai_data_collection: >
+    Collected from clinical routine at Shaoxing People's Hospital, China.
+    Rhythm annotations assigned by clinical experts.
+  rai_data_biases: >
+    The dataset originates from a single hospital in Shaoxing, China.
+    Patient demographics reflect the local population.
+  rai_personal_sensitive_info: >
+    The dataset has been de-identified. Age and sex are available as metadata.

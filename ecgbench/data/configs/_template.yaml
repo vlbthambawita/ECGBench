@@ -1,0 +1,82 @@
+# ECGBench Dataset Configuration Template
+# ========================================
+# Copy this file to <your_dataset_slug>.yaml and fill in all fields.
+# Fields marked [REQUIRED] must be provided. Others have defaults.
+
+# --- Identity [REQUIRED] ---
+name: ""                          # Human-readable name (e.g., "PTB-XL")
+slug: ""                          # Lowercase identifier (e.g., "ptbxl") — must match filename
+version: ""                       # Dataset version (e.g., "1.0.3")
+url: ""                           # Official dataset URL
+download_url: null                # Direct download URL for auto-download (zip/tar.gz). null if not available.
+license: ""                       # License URL or SPDX identifier
+description: ""                   # One-paragraph description
+citation: ""                      # Short citation or BibTeX
+doi: ""                           # Paper DOI
+
+creators:
+  - type: Organization            # "Organization" or "Person"
+    name: ""
+    url: null
+
+# --- Signal Properties ---
+signal_format: "wfdb"             # One of: wfdb, edf, csv, mat, numpy, hdf5
+leads: 12                         # Number of ECG leads
+duration_seconds: 10              # Nominal recording duration in seconds
+sampling_rates: [500]             # Available sampling rates in Hz
+default_sampling_rate: 500        # Which rate to use by default
+
+# --- File Structure [REQUIRED] ---
+metadata_csv: ""                  # Path to main metadata CSV, relative to dataset root
+metadata_csv_separator: ","
+record_id_column: ""              # Column with unique record identifiers
+patient_id_column: null           # Column with patient IDs (null if unavailable or one-record-per-patient)
+
+signal_path_columns:              # Mapping: sampling_rate -> column_name containing signal file paths
+  500: "filename_hr"              # Paths must be relative to dataset root
+
+# --- Labels [REQUIRED] ---
+label_column: ""                  # Column containing diagnostic labels
+label_format: "single"            # One of: dict_string, single, comma_separated, json
+#   dict_string  — Python dict literal as string, e.g. "{'NORM': 100.0, 'SR': 0.0}"
+#   single       — single label value per row
+#   comma_separated — "NORM,SR,AFIB"
+#   json         — JSON string
+
+stratification:
+  method: "direct"                # One of: superclass_mapping, direct, custom_function
+  #   direct            — use label_column values directly for stratification
+  #   superclass_mapping — map fine-grained codes to superclasses via a mapping file
+  #   custom_function    — requires a custom splitter strategy in Python
+  mapping_source: null            # CSV file with code->superclass mapping (for superclass_mapping)
+  superclass_column: null         # Column in mapping_source that has the superclass
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+predefined_splits:
+  column: null                    # Column name containing fold/split assignments
+  fold_mapping:                   # Map split names to fold values in that column
+    train: []
+    val: []
+    test: []
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:               # sampling_rate -> expected number of samples
+    500: 5000
+  checks:                         # Quality checks to run (see ecgbench/validation/checks.py)
+    - missing_leads               # Lead entirely NaN or zero
+    - nan_values                  # Any NaN in signal
+    - truncated_signal            # Fewer samples than expected
+    - flat_line                   # Lead with near-zero variance
+    - corrupt_header              # Unreadable WFDB/EDF header
+    - amplitude_outlier           # Samples outside physiological range
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Croissant Metadata ---
+croissant:
+  keywords: ["ECG", "electrocardiography"]
+  rai_data_collection: ""
+  rai_data_biases: ""
+  rai_personal_sensitive_info: ""

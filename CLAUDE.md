@@ -4,64 +4,100 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ECGBench is a PyTorch-based library for reproducible ECG benchmark datasets from open-access PhysioNet sources. It provides a `Dataset` class that loads ECG signals in WFDB format with fold-based train/val/test splits. Currently supports PTB-XL; designed to be extended with additional datasets.
+ECGBench is a config-driven library for reproducible ECG benchmark datasets. It has four major subsystems:
+
+1. **Config system** — every dataset described by a single YAML file (`ecgbench/data/configs/`). Adding a dataset requires zero Python for standard cases.
+2. **Validation engine** — pre-validates every ECG record, producing `original` (all records + quality flags) and `clean` (valid only) versions.
+3. **Splitting framework** — strategy-pattern splitters producing deterministic 10-fold stratified splits with patient-level grouping. PTB-XL, Chapman-Shaoxing, and a generic config-driven fallback.
+4. **Croissant metadata** — programmatic MLCommons Croissant 1.1 JSON-LD generation and validation via `mlcroissant`.
+
+Plus a **catalogue** of 64 ECG datasets (pure Python, no heavy deps), a unified **PyTorch Dataset**, auto-download, and HuggingFace Hub integration.
 
 ## Development Setup
 
 ```bash
-# Install with dev dependencies (preferred)
 uv pip install -e ".[dev]"
-
-# Or with pip
-pip install -e ".[dev]"
 ```
 
 ## Common Commands
 
 ```bash
-# Lint
+# Lint & format
 ruff check ecgbench/
-
-# Format
 black ecgbench/
 
-# Run tests (no formal test suite yet; scripts serve as integration tests)
-python scripts/test_ptbxl.py
-python scripts/test_hugginface_data.py
+# Tests
+pytest
+pytest tests/test_config.py -v          # single module
+pytest -k "test_split" -v               # by name pattern
 
-# Preprocess PTB-XL into fold CSVs
-python scripts/get_ptbxl_fold_csv.py
+# Full pipeline: validate + split + Croissant
+python scripts/generate_splits.py --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
 
-# Upload datasets to HuggingFace Hub (requires HF_TOKEN in .env)
-python scripts/upload_to_huggingface.py
+# Standalone Croissant generation
+python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/
+
+# Upload to HuggingFace Hub (requires HF_TOKEN in .env)
+python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl
 ```
 
 ## Code Style
 
+- Python 3.10+ — use modern type hints (`str | None`, `list[int]`, no `typing` imports for builtins)
 - Line length: 100 (both ruff and black)
-- Target: Python 3.8+
 - Ruff rules: E, F, I, N, W
+- Use `dataclasses` over plain dicts for structured data
+- Use `pathlib.Path` everywhere, never raw string paths
 
 ## Architecture
 
-**Core library** (`ecgbench/`):
-- `ECGDataset` — PyTorch `Dataset` that reads WFDB signal files and metadata CSVs. Takes a `physionet_path` (raw data location) and resolves fold CSVs from `ecgbench/datasets/<dataset_name>/<split>/fold_*.csv` relative to the package root. Returns dicts with `signal` tensor (channels, samples) plus metadata fields.
-- `ecg_collate_fn` — Custom collate function for `DataLoader` that keeps dicts and strings as lists instead of failing on heterogeneous keys (e.g., `scp_codes`).
+### Config System (`ecgbench/config.py` + `ecgbench/data/configs/`)
+`DatasetConfig` dataclass is the typed representation of a YAML config. All modules accept `DatasetConfig`, never raw dicts. `load_config(slug)` parses YAML and validates required fields. Nested dataclasses: `CreatorInfo`, `StratificationConfig`, `ValidationConfig`, `PredefinedSplitConfig`, `CroissantConfig`.
 
-**Data pipeline**: Raw PhysioNet CSVs are preprocessed by `scripts/get_ptbxl_fold_csv.py` into per-fold CSVs stored under `ecgbench/datasets/ptbxl/{train,val,test}/`. The fold CSVs are the metadata interface between preprocessing and the Dataset class. The actual WFDB signal files remain at the original PhysioNet path.
+### Catalogue (`ecgbench/catalogue.py`)
+Loads `ecgbench/data/ecg_datasets.csv` with `functools.cache`. Returns `CatalogueEntry` dataclass instances. No heavy deps — always importable.
 
-**HuggingFace integration**: Preprocessed fold CSVs are uploaded to `deepsynthbody/ECGBench` on HuggingFace Hub via `scripts/upload_to_huggingface.py`. Validation script `scripts/test_hugginface_data.py` verifies uploaded data matches local CSVs via MD5 checksums.
+### Validation (`ecgbench/validation/`)
+- `checks.py` — individual check functions (`check_missing_leads`, `check_nan_values`, `check_truncated_signal`, `check_flat_line`, `check_corrupt_header`, `check_amplitude_outlier`) registered in `CHECK_REGISTRY`.
+- `engine.py` — `validate_dataset()` runs checks in parallel via `ProcessPoolExecutor`, returns `ValidationResult` with `original_df` (all records + `is_valid`/`quality_issues` columns) and `clean_df`.
+- `report.py` — generates `validation_report.json`.
 
-## Website
+### Splitting (`ecgbench/splitting/`)
+- `base.py` — `DatasetSplitter` ABC + `SplitResult` dataclass (with `.train`, `.val`, `.test` properties and `get_kfold_split()`).
+- `engine.py` — `split_dataset()` dispatches to `StratifiedGroupKFold` (patient-aware) or `StratifiedKFold`, or reads predefined splits. Folds are 1-indexed.
+- `strategies/` — `@register("slug")` decorated splitters. `PTBXLSplitter` (SCP superclass mapping), `ChapmanSplitter`, `GenericSplitter` (config-driven fallback).
+- `export.py` — writes `original/` and `clean/` fold CSVs.
+- `registry.py` — splitter lookup with `GenericSplitter` fallback.
 
-Static Jekyll site in `docs/` served via GitHub Pages. Single-file `docs/index.html` with dark theme, dataset catalogue (64 ECG datasets), interactive Plotly.js charts, search/filter controls, installation guide, and usage example. No Jekyll build step required (pure HTML/CSS/JS). `docs/_version.json` is written by CI at deploy time.
+### Croissant (`ecgbench/croissant.py`)
+Generates Croissant 1.1 JSON-LD using `mlcroissant` (optional dep, lazy import). Includes SHA-256 hashes for all CSVs.
+
+### Download (`ecgbench/download.py`)
+`resolve_data_path()` is the single entry point for locating dataset files. Auto-downloads to `~/.ecgbench/datasets/<slug>/` if no local path given.
+
+### Dataset (`ecgbench/dataset.py`)
+Single `ECGDataset` class loading any dataset via config. `metadata_source="hf"` (default) downloads fold CSVs from HuggingFace Hub; `"local"` reads from disk. `ecg_collate_fn` handles heterogeneous batches.
+
+### Public API (`ecgbench/__init__.py`)
+Catalogue and config imports are eager (lightweight). Everything else (`ECGDataset`, validation, splitting, croissant, download) is lazy-imported via `__getattr__` so `import ecgbench` doesn't pull in torch/wfdb/mlcroissant.
+
+## Adding a New Dataset
+
+1. Copy `ecgbench/data/configs/_template.yaml` to `<slug>.yaml`, fill in fields
+2. Run `python scripts/generate_splits.py --dataset <slug> --data-path /path/to/data/`
+3. If custom logic needed, create `ecgbench/splitting/strategies/<slug>.py` with `@register("<slug>")`
+4. Run `pytest`
+
+## Versioning & Release
+
+Version derived from git tags via `hatch-vcs`. Push a `v*` tag to trigger PyPI publish (Trusted Publishing) and HF Space deploy.
 
 ## CI/CD (GitHub Actions)
 
-- **`.github/workflows/deploy-pages.yml`** — Deploys `docs/` to GitHub Pages on push to `main` (when `docs/` changes). Uses `actions/jekyll-build-pages` + `actions/deploy-pages`.
-- **`.github/workflows/deploy-hf-space.yml`** — Deploys `docs/` to HuggingFace Space (`vlbthambawita/ECGBench`) on push to `main` (when `docs/` or `hf_space/` changes) or on `v*` tags. Requires `HF_TOKEN` secret.
-- **`.github/workflows/publish-pypi.yml`** — Builds and publishes the `ecgbench` pip package to PyPI on `v*` tags using Trusted Publishing (OIDC). Requires a `pypi` environment configured in GitHub repo settings.
+- `deploy-pages.yml` — GitHub Pages deploy of `docs/` on push to `main`
+- `deploy-hf-space.yml` — HF Space deploy on push to `main` or `v*` tags
+- `publish-pypi.yml` — PyPI publish on `v*` tags via Trusted Publishing
 
 ## Environment Variables
 
-- `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`) — Required for HuggingFace Hub upload/download. Set in `.env` file (see `.env.example`).
+- `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`) — for HuggingFace Hub upload/download. Set in `.env` (see `.env.example`).

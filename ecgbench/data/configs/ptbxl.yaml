@@ -1,0 +1,97 @@
+# ECGBench Config: PTB-XL
+# =======================
+# PTB-XL: A large publicly available electrocardiography dataset
+# https://physionet.org/content/ptb-xl/1.0.3/
+
+name: "PTB-XL"
+slug: "ptbxl"
+version: "1.0.3"
+url: "https://physionet.org/content/ptb-xl/1.0.3/"
+download_url: "https://physionet.org/static/published-projects/ptb-xl/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3.zip"
+license: "https://physionet.org/content/ptb-xl/1.0.3/LICENSE.txt"
+description: >
+  PTB-XL is a large dataset of 21,799 clinical 12-lead ECGs from 18,869
+  patients of 10 second length. The raw waveform data was annotated by up
+  to two cardiologists who assigned potentially multiple ECG statements to
+  each record. The dataset covers a broad range of diagnostic categories,
+  including normal ECGs, myocardial infarction, ST/T changes, conduction
+  disturbances, and hypertrophy.
+citation: >
+  Wagner, P., Strodthoff, N., Bousseljot, R., et al. PTB-XL, a large
+  publicly available electrocardiography dataset. Scientific Data 7, 154 (2020).
+doi: "10.1038/s41597-020-0495-6"
+
+creators:
+  - type: Organization
+    name: "Physikalisch-Technische Bundesanstalt (PTB)"
+    url: "https://www.ptb.de/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+leads: 12
+duration_seconds: 10
+sampling_rates: [500, 100]
+default_sampling_rate: 500
+
+# --- File Structure ---
+metadata_csv: "ptbxl_database.csv"
+metadata_csv_separator: ","
+record_id_column: "ecg_id"
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  500: "filename_hr"
+  100: "filename_lr"
+
+# --- Labels ---
+label_column: "scp_codes"
+label_format: "dict_string"
+
+stratification:
+  method: "superclass_mapping"
+  mapping_source: "scp_statements.csv"
+  superclass_column: "diagnostic_class"
+
+# --- Predefined Splits ---
+has_predefined_splits: true
+predefined_splits:
+  column: "strat_fold"
+  fold_mapping:
+    train: [1, 2, 3, 4, 5, 6, 7, 8]
+    val: [9]
+    test: [10]
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    500: 5000
+    100: 1000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "PTB-XL"
+    - "12-lead"
+    - "PhysioNet"
+    - "cardiac diagnostics"
+  rai_data_collection: >
+    Collected at the Physikalisch-Technische Bundesanstalt (PTB) from
+    clinical routine ECG recordings. Annotations assigned by up to two
+    cardiologists following the SCP-ECG standard.
+  rai_data_biases: >
+    The dataset originates from a single institution in Germany. Patient
+    demographics may not be representative of global populations.
+  rai_personal_sensitive_info: >
+    The dataset has been de-identified. Age and sex are provided as metadata
+    but direct patient identifiers have been removed.
