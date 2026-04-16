@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'docs/**'
-      - 'hf_space/**'
       - '.github/workflows/deploy-hf-space.yml'
     tags:
       - 'v[0-9]*'
@@ -72,12 +71,23 @@ jobs:
               exist_ok=True,
           )
 
-          # Stage: copy docs/ then overlay hf_space/README.md
+          # Stage: copy docs/ then write HF Space README
           staging = Path("_hf_staging")
           if staging.exists():
               shutil.rmtree(staging)
           shutil.copytree("docs", staging)
-          shutil.copy("hf_space/README.md", staging / "README.md")
+          (staging / "README.md").write_text(
+              "---\n"
+              "title: ECGBench\n"
+              "emoji: \"\U0001FAC0\"\n"
+              "colorFrom: blue\n"
+              "colorTo: purple\n"
+              "sdk: static\n"
+              "pinned: false\n"
+              "license: mit\n"
+              "short_description: Reproducible ECG benchmark datasets\n"
+              "---\n"
+          )
 
           print(f"Uploading to https://huggingface.co/spaces/{HF_SPACE} ...")
           api.upload_folder(
