@@ -25,11 +25,15 @@ def _get_hf_token() -> str:
     if token:
         return token
 
-    # Try loading from .env
+    # Try loading from .env (project root or cwd)
     try:
+        from pathlib import Path
+
         from dotenv import load_dotenv
 
-        load_dotenv()
+        project_root = Path(__file__).resolve().parent.parent
+        load_dotenv(project_root / ".env")
+        load_dotenv()  # also try cwd
         token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     except ImportError:
         pass
