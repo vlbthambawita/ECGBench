@@ -66,7 +66,7 @@ Loads `ecgbench/data/ecg_datasets.csv` with `functools.cache`. Returns `Catalogu
 - `base.py` — `DatasetSplitter` ABC + `SplitResult` dataclass (with `.train`, `.val`, `.test` properties and `get_kfold_split()`).
 - `engine.py` — `split_dataset()` dispatches to `StratifiedGroupKFold` (patient-aware) or `StratifiedKFold`, or reads predefined splits. Folds are 1-indexed.
 - `strategies/` — `@register("slug")` decorated splitters. `PTBXLSplitter` (SCP superclass mapping), `ChapmanSplitter`, `GenericSplitter` (config-driven fallback).
-- `export.py` — writes `original/` and `clean/` fold CSVs.
+- `export.py` — writes `original/` and `clean/` fold CSVs with **minimal columns only** (record ID, patient ID, signal paths, fold, split). Full metadata stays in the original dataset CSV.
 - `registry.py` — splitter lookup with `GenericSplitter` fallback.
 
 ### Croissant (`ecgbench/croissant.py`)

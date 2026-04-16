@@ -1,5 +1,10 @@
 """
 Fold CSV export for both original/ and clean/ versions.
+
+Exported CSVs contain only the minimum columns needed to identify records
+in the original dataset: record ID, patient ID (if available), signal file
+paths, fold number, and default split assignment. Users join these back to
+the original dataset CSV to get full metadata (age, sex, labels, etc.).
 """
 
 from __future__ import annotations
@@ -18,13 +23,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _build_fold_column(split_result: SplitResult) -> pd.Series:
-    """Build a Series mapping record index to fold number."""
-    pieces = []
-    for fold_num, fold_df in split_result.folds.items():
-        s = pd.Series(fold_num, index=fold_df.index, dtype=int, name="fold")
-        pieces.append(s)
-    return pd.concat(pieces)
+def _minimal_columns(config: DatasetConfig, include_quality: bool = False) -> list[str]:
+    """Return the minimal set of columns to include in exported CSVs.
+
+    Always includes:
+      - record_id_column
+      - patient_id_column (if configured)
+      - all signal_path_columns values
+      - fold, default_split
+
+    For original version (include_quality=True):
+      - is_valid, quality_issues
+    """
+    cols = [config.record_id_column]
+    if config.patient_id_column:
+        cols.append(config.patient_id_column)
+    cols.extend(config.signal_path_columns.values())
+    cols.extend(["fold", "default_split"])
+    if include_quality:
+        cols.extend(["is_valid", "quality_issues"])
+    return cols
+
+
+def _select_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Select only columns that exist in the DataFrame, preserving order."""
+    present = [c for c in columns if c in df.columns]
+    return df[present]
 
 
 def _build_split_column(split_result: SplitResult) -> dict[int, str]:
@@ -68,6 +92,10 @@ def export_splits(
     config: DatasetConfig,
 ) -> dict:
     """Export fold CSVs in both original/ and clean/ versions.
+
+    Exported CSVs contain only identification columns (record ID, patient ID,
+    signal file paths) plus fold/split assignment. Full metadata stays in the
+    original dataset CSV — users join on record_id when they need it.
 
     Creates:
       output_dir/
@@ -122,18 +150,20 @@ def export_splits(
     # Sort by record_id for deterministic output
     master_df = master_df.sort_values(config.record_id_column).reset_index(drop=True)
 
-    # --- Original version ---
+    # --- Original version (minimal columns + quality flags) ---
+    original_cols = _minimal_columns(config, include_quality=True)
+    original_slim = _select_columns(master_df, original_cols)
     original_dir.mkdir(parents=True, exist_ok=True)
-    master_df.to_csv(original_dir / "folds.csv", index=False)
-    _write_split_csvs(master_df, original_dir, split_result, config)
+    original_slim.to_csv(original_dir / "folds.csv", index=False)
+    _write_split_csvs(original_slim, original_dir, split_result, config)
 
-    # --- Clean version ---
-    clean_master = master_df[master_df["is_valid"]].drop(
-        columns=["is_valid", "quality_issues"]
-    ).reset_index(drop=True)
+    # --- Clean version (minimal columns, no quality flags) ---
+    clean_rows = master_df[master_df["is_valid"]]
+    clean_cols = _minimal_columns(config, include_quality=False)
+    clean_slim = _select_columns(clean_rows, clean_cols).reset_index(drop=True)
     clean_dir.mkdir(parents=True, exist_ok=True)
-    clean_master.to_csv(clean_dir / "folds.csv", index=False)
-    _write_split_csvs(clean_master, clean_dir, split_result, config)
+    clean_slim.to_csv(clean_dir / "folds.csv", index=False)
+    _write_split_csvs(clean_slim, clean_dir, split_result, config)
 
     # --- Validation report ---
     from ecgbench.validation.report import save_report
@@ -143,16 +173,16 @@ def export_splits(
     # --- Statistics ---
     stats = {
         "original": {
-            "total": len(master_df),
-            "train": int((master_df["default_split"] == "train").sum()),
-            "val": int((master_df["default_split"] == "val").sum()),
-            "test": int((master_df["default_split"] == "test").sum()),
+            "total": len(original_slim),
+            "train": int((original_slim["default_split"] == "train").sum()),
+            "val": int((original_slim["default_split"] == "val").sum()),
+            "test": int((original_slim["default_split"] == "test").sum()),
         },
         "clean": {
-            "total": len(clean_master),
-            "train": int((clean_master["default_split"] == "train").sum()),
-            "val": int((clean_master["default_split"] == "val").sum()),
-            "test": int((clean_master["default_split"] == "test").sum()),
+            "total": len(clean_slim),
+            "train": int((clean_slim["default_split"] == "train").sum()),
+            "val": int((clean_slim["default_split"] == "val").sum()),
+            "test": int((clean_slim["default_split"] == "test").sum()),
         },
         "excluded": validation_result.excluded_records,
     }

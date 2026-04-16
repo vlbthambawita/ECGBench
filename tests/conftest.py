@@ -178,8 +178,6 @@ def mock_metadata_with_folds() -> pd.DataFrame:
 @pytest.fixture
 def tmp_splits_dir(tmp_path) -> Path:
     """Create a temporary splits directory with sample CSVs."""
-    rng = np.random.default_rng(42)
-
     for version in ("clean", "original"):
         for split_name, fold_nums in [("train", [1, 2, 3]), ("val", [4]), ("test", [5])]:
             split_dir = tmp_path / version / split_name
@@ -189,7 +187,6 @@ def tmp_splits_dir(tmp_path) -> Path:
                 df = pd.DataFrame({
                     "record_id": [f"rec_{fold_num}_{i}" for i in range(n)],
                     "filename": [f"records/rec_{fold_num}_{i}" for i in range(n)],
-                    "label": rng.choice(["NORM", "MI"], size=n),
                     "fold": fold_num,
                     "default_split": split_name,
                 })

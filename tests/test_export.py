@@ -128,3 +128,34 @@ def test_stats_returned(
     assert "clean" in stats
     assert "excluded" in stats
     assert stats["original"]["total"] >= stats["clean"]["total"]
+
+
+def test_only_minimal_columns_in_clean(
+    tmp_path, sample_config, mock_split_result, mock_validation_result
+):
+    """Clean CSVs should only contain identification columns, not full metadata."""
+    export_splits(mock_split_result, mock_validation_result, tmp_path, sample_config)
+    df = pd.read_csv(tmp_path / "clean" / "folds.csv")
+
+    # Should have: record_id, patient_id, filename, fold, default_split
+    expected = {"record_id", "patient_id", "filename", "fold", "default_split"}
+    assert set(df.columns) == expected
+
+    # Should NOT have metadata like age, sex, label
+    assert "age" not in df.columns
+    assert "sex" not in df.columns
+    assert "label" not in df.columns
+
+
+def test_only_minimal_columns_in_original(
+    tmp_path, sample_config, mock_split_result, mock_validation_result
+):
+    """Original CSVs should have identification + quality columns only."""
+    export_splits(mock_split_result, mock_validation_result, tmp_path, sample_config)
+    df = pd.read_csv(tmp_path / "original" / "folds.csv")
+
+    expected = {
+        "record_id", "patient_id", "filename",
+        "fold", "default_split", "is_valid", "quality_issues",
+    }
+    assert set(df.columns) == expected
