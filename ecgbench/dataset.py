@@ -16,20 +16,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+try:
+    import torch
+    from torch.utils.data import Dataset as _TorchDataset
+except ImportError as _torch_err:
+    raise ImportError(
+        "PyTorch is required for ECGDataset. "
+        "Install with: pip install ecgbench[torch]"
+    ) from _torch_err
+
 logger = logging.getLogger(__name__)
-
-
-def _require_torch():
-    """Lazily import torch, raising a helpful error if not installed."""
-    try:
-        import torch
-
-        return torch
-    except ImportError:
-        raise ImportError(
-            "PyTorch is required for ECGDataset. "
-            "Install with: pip install ecgbench[torch]"
-        )
 
 
 def _require_wfdb():
@@ -70,7 +66,7 @@ def _parse_dict_string(value: str) -> dict | str:
     return value
 
 
-class ECGDataset:
+class ECGDataset(_TorchDataset):
     """PyTorch Dataset for loading any ECG dataset supported by ECGBench.
 
     This class uses the dataset's YAML config to determine how to load
@@ -103,13 +99,7 @@ class ECGDataset:
         transform: Callable | None = None,
         metadata_source: str = "hf",
     ):
-        _require_torch()
-        from torch.utils.data import Dataset as TorchDataset
-
-        # Make this a proper torch Dataset
-        self.__class__ = type(
-            "ECGDataset", (TorchDataset, self.__class__), {}
-        )
+        super().__init__()
 
         from ecgbench.config import DatasetConfig, load_config
 
@@ -260,8 +250,6 @@ class ECGDataset:
               - "fold": int (if available)
               - All other metadata columns
         """
-        torch = _require_torch()
-
         if idx < 0 or idx >= len(self.metadata_df):
             raise IndexError(
                 f"Index {idx} out of range for dataset of size {len(self.metadata_df)}"
@@ -327,7 +315,6 @@ def ecg_collate_fn(batch: list[dict[str, Any]]) -> dict[str, Any]:
     Returns:
         Batched dictionary
     """
-    _require_torch()
     from torch.utils.data._utils.collate import default_collate
 
     if not batch:

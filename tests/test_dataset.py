@@ -62,11 +62,6 @@ class TestECGDatasetLocal:
         # We can't actually load signals without WFDB files, but we can test
         # that the metadata loading works correctly
         ds = ECGDataset.__new__(ECGDataset)
-
-        # Manually set up what __init__ would do for metadata only
-        from ecgbench.dataset import _require_torch
-
-        _require_torch()
         ds.config = sample_config
         ds.split = "train"
         ds.version = "clean"
@@ -83,9 +78,6 @@ class TestECGDatasetLocal:
         from ecgbench.dataset import ECGDataset
 
         ds = ECGDataset.__new__(ECGDataset)
-        from ecgbench.dataset import _require_torch
-
-        _require_torch()
         ds.config = sample_config
         ds.split = "train"
         ds.version = "clean"
