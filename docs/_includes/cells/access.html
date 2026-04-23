@@ -1,0 +1,7 @@
+<td>
+  {% if include.row.access == 'open' %}<span class="tag tag-open">Open</span>
+  {% elsif include.row.access == 'credentialed' %}<span class="tag tag-cred">Credentialed</span>
+  {% elsif include.row.access == 'restricted' %}<span class="tag tag-rest">Restricted</span>
+  {% endif %}
+  {% if include.row.license %}<br><small style="color:var(--muted)">{{ include.row.license }}</small>{% endif %}
+</td>

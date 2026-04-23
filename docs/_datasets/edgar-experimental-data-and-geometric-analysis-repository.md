@@ -1,0 +1,20 @@
+---
+slug: "edgar-experimental-data-and-geometric-analysis-repository"
+name: "EDGAR (Experimental Data & Geometric Analysis Repository)"
+category: "bspm"
+order: 1
+status: "not_started"
+url: "https://www.ecg-imaging.org/edgar-database"
+url_label: "ecg-imaging.org"
+format: "BSPM (64+ leads) + torso geometry + CT · human, canine & simulation · MATLAB/SCIRun"
+patients: "Multiple"
+records: "Multiple datasets"
+access: "open"
+license: "Free registration"
+origin_institution: "Univ. of Utah; Charles Univ. Hospital; Karlsruhe Institute of Technology"
+origin_country: "Multi-national (USA / Czech Republic / Germany)"
+leads: "bspm"
+paper_title: "Aras et al., J Electrocardiol, 2015"
+paper_doi: "https://doi.org/10.1016/j.jelectrocard.2015.08.008"
+search_keywords: "edgar bspm body surface potential mapping ecgi electrocardiographic imaging utah sci institute geometry torso ct simulation human canine"
+---

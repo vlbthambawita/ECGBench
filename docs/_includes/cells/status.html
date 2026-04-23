@@ -1,0 +1,9 @@
+<td class="status-cell">
+  {% assign s = include.status %}
+  {% if s %}
+  <span class="status-pill" style="color: {{ s.color }}; background: {{ s.background }}; border: 1px solid {{ s.color }}33;">
+    <span class="status-icon">{{ s.icon }}</span>
+    <span class="status-label">{{ s.label }}</span>
+  </span>
+  {% endif %}
+</td>

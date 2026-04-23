@@ -1,0 +1,11 @@
+<td>
+  {% if include.row.paper_doi and include.row.paper_title %}
+    <a class="paper-link" href="{{ include.row.paper_doi }}" target="_blank">{{ include.row.paper_title }}</a>
+  {% elsif include.row.paper_doi %}
+    <a class="paper-link" href="{{ include.row.paper_doi }}" target="_blank">Paper</a>
+  {% elsif include.row.paper_title %}
+    <span class="no-paper">{{ include.row.paper_title }}</span>
+  {% else %}
+    <span class="no-paper">&mdash;</span>
+  {% endif %}
+</td>

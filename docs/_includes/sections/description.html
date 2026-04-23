@@ -1,0 +1,4 @@
+<section class="dataset-section dataset-section-description">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <div class="dataset-description">{{ include.section.body | markdownify }}</div>
+</section>

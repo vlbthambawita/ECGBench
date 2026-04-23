@@ -1,0 +1,8 @@
+<section class="dataset-section dataset-section-links">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <ul class="dataset-links">
+    {% for item in include.section.items %}
+      <li><a href="{{ item.url }}" target="_blank">{{ item.label }}</a></li>
+    {% endfor %}
+  </ul>
+</section>

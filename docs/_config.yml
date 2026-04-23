@@ -2,3 +2,15 @@ title: ECGBench
 description: Reproducible ECG Benchmark data from Open access datasets with PyTorch integration.
 url: "https://vlbthambawita.github.io"
 baseurl: "/ECGBench"
+
+collections:
+  datasets:
+    output: true
+    permalink: /datasets/:name/
+
+defaults:
+  - scope:
+      path: ""
+      type: datasets
+    values:
+      layout: dataset

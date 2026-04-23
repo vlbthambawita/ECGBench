@@ -1,0 +1,4 @@
+<section class="dataset-section dataset-section-code">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <pre class="code-block"><code class="language-{{ include.section.language | default: 'text' }}">{{ include.section.body | strip }}</code></pre>
+</section>

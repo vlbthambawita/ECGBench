@@ -1,0 +1,9 @@
+num:      { label: "#" }
+dataset:  { label: "Dataset" }
+format:   { label: "Format" }
+patients: { label: "Patients" }
+records:  { label: "Records" }
+access:   { label: "Access" }
+status:   { label: "Status" }
+origin:   { label: "Origin" }
+paper:    { label: "Paper" }

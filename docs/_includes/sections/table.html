@@ -1,0 +1,15 @@
+<section class="dataset-section dataset-section-table">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <div class="dataset-table-wrap">
+    <table>
+      {% if include.section.headers %}
+      <thead><tr>{% for h in include.section.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      {% endif %}
+      <tbody>
+        {% for r in include.section.rows %}
+          <tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

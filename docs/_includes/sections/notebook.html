@@ -1,0 +1,6 @@
+<section class="dataset-section dataset-section-notebook">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <a class="notebook-link" href="{{ include.section.url }}" target="_blank">
+    {{ include.section.label | default: 'Open notebook' }} &#8599;
+  </a>
+</section>

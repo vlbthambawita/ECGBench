@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.name }} &mdash; ECGBench</title>
+  <link rel="stylesheet" href="{{ '/assets/dataset.css' | relative_url }}">
+</head>
+<body>
+  {% assign status = site.data.statuses[page.status] %}
+
+  <nav class="dataset-nav">
+    <a href="{{ '/' | relative_url }}">&larr; Back to catalogue</a>
+  </nav>
+
+  <header class="dataset-hero">
+    <h1>{{ page.name }}</h1>
+    <div class="dataset-hero-meta">
+      {% if page.access == 'open' %}<span class="tag tag-open">Open</span>
+      {% elsif page.access == 'credentialed' %}<span class="tag tag-cred">Credentialed</span>
+      {% elsif page.access == 'restricted' %}<span class="tag tag-rest">Restricted</span>
+      {% endif %}
+      {% if status %}
+        <span class="status-pill" style="color: {{ status.color }}; background: {{ status.background }}; border: 1px solid {{ status.color }}33;">
+          <span class="status-icon">{{ status.icon }}</span>
+          <span class="status-label">{{ status.label }}</span>
+        </span>
+      {% endif %}
+    </div>
+    {% if page.hero_image %}
+      <img class="dataset-hero-image" src="{{ page.hero_image | relative_url }}" alt="{{ page.name }}">
+    {% endif %}
+    <div class="dataset-hero-links">
+      {% if page.url %}<a class="hero-link" href="{{ page.url }}" target="_blank">Dataset source &#8599;</a>{% endif %}
+      {% if page.paper_doi %}<a class="hero-link" href="{{ page.paper_doi }}" target="_blank">Paper &#8599;</a>{% endif %}
+    </div>
+  </header>
+
+  <section class="dataset-facts">
+    <h2>Quick facts</h2>
+    <table>
+      {% if page.format %}<tr><th>Format</th><td>{{ page.format }}</td></tr>{% endif %}
+      {% if page.patients %}<tr><th>Patients</th><td>{{ page.patients }}</td></tr>{% endif %}
+      {% if page.records %}<tr><th>Records</th><td>{{ page.records }}</td></tr>{% endif %}
+      {% if page.leads %}<tr><th>Leads</th><td>{{ page.leads }}</td></tr>{% endif %}
+      {% if page.license %}<tr><th>License</th><td>{{ page.license }}</td></tr>{% endif %}
+      {% if page.origin_institution %}<tr><th>Origin</th><td>{{ page.origin_institution }}{% if page.origin_country %} &mdash; {{ page.origin_country }}{% endif %}</td></tr>{% endif %}
+    </table>
+  </section>
+
+  {% if page.sections %}
+    {% for section in page.sections %}
+      {% case section.type %}
+        {% when 'description' %}{% include sections/description.html section=section %}
+        {% when 'plot' %}{% include sections/plot.html section=section %}
+        {% when 'table' %}{% include sections/table.html section=section %}
+        {% when 'code' %}{% include sections/code.html section=section %}
+        {% when 'notebook' %}{% include sections/notebook.html section=section %}
+        {% when 'links' %}{% include sections/links.html section=section %}
+      {% endcase %}
+    {% endfor %}
+  {% elsif content != blank %}
+    <section class="dataset-section dataset-section-body">{{ content }}</section>
+  {% endif %}
+
+  <footer class="dataset-footer">
+    <a href="https://github.com/vlbthambawita/ECGBench/edit/main/docs/_datasets/{{ page.slug }}.md" target="_blank">Edit this page on GitHub</a>
+  </footer>
+</body>
+</html>

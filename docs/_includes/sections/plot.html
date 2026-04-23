@@ -1,0 +1,7 @@
+<section class="dataset-section dataset-section-plot">
+  {% if include.section.title %}<h2>{{ include.section.title }}</h2>{% endif %}
+  <figure class="dataset-plot">
+    <img src="{{ include.section.image | relative_url }}" alt="{{ include.section.title | default: 'Plot' }}">
+    {% if include.section.caption %}<figcaption>{{ include.section.caption }}</figcaption>{% endif %}
+  </figure>
+</section>
