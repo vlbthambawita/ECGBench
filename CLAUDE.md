@@ -32,14 +32,17 @@ pytest tests/test_config.py -v          # single module
 pytest -k "test_split" -v               # by name pattern
 
 # Full pipeline: validate + split + Croissant
-python scripts/generate_splits.py --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
+ecgbench splits --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
 
 # Standalone Croissant generation
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
 
-# Upload to HuggingFace Hub (requires HF_TOKEN in .env)
-python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl
+# Upload to HuggingFace Hub (requires HF_TOKEN in .env or env var)
+ecgbench upload --data-dir output/ --datasets ptbxl
 ```
+
+The same pipelines are importable from Python as `ecgbench.run_splits`,
+`ecgbench.run_croissant`, and `ecgbench.run_upload` (see `ecgbench/cli/`).
 
 ## Code Style
 
@@ -84,7 +87,7 @@ Catalogue and config imports are eager (lightweight). Everything else (`ECGDatas
 ## Adding a New Dataset
 
 1. Copy `ecgbench/data/configs/_template.yaml` to `<slug>.yaml`, fill in fields
-2. Run `python scripts/generate_splits.py --dataset <slug> --data-path /path/to/data/`
+2. Run `ecgbench splits --dataset <slug> --data-path /path/to/data/`
 3. If custom logic needed, create `ecgbench/splitting/strategies/<slug>.py` with `@register("<slug>")`
 4. Run `pytest`
 

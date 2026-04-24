@@ -51,6 +51,9 @@ Repository = "https://github.com/vlbthambawita/ECGBench"
 Issues = "https://github.com/vlbthambawita/ECGBench/issues"
 Documentation = "https://vlbthambawita.github.io/ECGBench/"
 
+[project.scripts]
+ecgbench = "ecgbench.cli:main"
+
 [tool.hatch.version]
 source = "vcs"
 

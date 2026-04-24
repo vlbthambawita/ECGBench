@@ -38,6 +38,10 @@ _LAZY_IMPORTS: dict[str, str] = {
     # Download
     "download_dataset": ".download",
     "resolve_data_path": ".download",
+    # High-level pipelines (also exposed as the `ecgbench` CLI)
+    "run_splits": ".cli",
+    "run_croissant": ".cli",
+    "run_upload": ".cli",
 }
 
 
@@ -78,4 +82,8 @@ __all__ = [
     # Download
     "download_dataset",
     "resolve_data_path",
+    # High-level pipelines
+    "run_splits",
+    "run_croissant",
+    "run_upload",
 ]

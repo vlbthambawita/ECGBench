@@ -149,32 +149,152 @@ Results are saved in `validation_report.json` with per-record details.
 Both `clean/` and `original/` versions include MLCommons Croissant 1.1 JSON-LD metadata (`croissant.json`) with SHA-256 hashes for reproducibility. The full pipeline generates both automatically. For standalone generation:
 
 ```bash
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
 ```
 
 ## Adding a New Dataset
 
 1. Copy `ecgbench/data/configs/_template.yaml` to `<slug>.yaml`, fill in fields
-2. Run `python scripts/generate_splits.py --dataset <slug> --data-path /path/to/data/`
+2. Run `ecgbench splits --dataset <slug> --data-path /path/to/data/`
 3. Check `validation_report.json` -- review excluded records
 4. If custom logic needed, create `ecgbench/splitting/strategies/<slug>.py` with `@register("<slug>")`
 5. Run `pytest`
-6. Upload: `python scripts/upload_to_huggingface.py --data-dir output/ --datasets <slug>`
+6. Upload: `ecgbench upload --data-dir output/ --datasets <slug>`
 
-## CLI Commands
+## CLI
+
+Installing `ecgbench` adds a single `ecgbench` console command with three subcommands:
 
 ```bash
-# Full pipeline: validate + split + Croissant
-python scripts/generate_splits.py --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
-
-# Standalone Croissant generation (per version)
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/clean/ --version clean
-python scripts/generate_croissant.py --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
-
-# Upload to HuggingFace Hub
-python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl
+ecgbench --help               # top-level help
+ecgbench <command> --help     # per-subcommand flags
+ecgbench --version            # package version
 ```
+
+| Subcommand | Purpose |
+|------------|---------|
+| `splits` | Full pipeline -- validate signals, generate 10-fold splits, export CSVs, and write Croissant metadata |
+| `croissant` | Generate Croissant 1.1 JSON-LD for an already-split dataset directory |
+| `upload` | Upload fold CSVs and metadata to HuggingFace Hub (requires `ecgbench[hf]`) |
+
+Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
+
+### `ecgbench splits`
+
+Runs the full pipeline: validate -> split -> export -> Croissant. Writes `output/<dataset>/{original,clean}/` by default.
+
+```bash
+ecgbench splits --dataset ptbxl --data-path /path/to/ptb-xl/1.0.3/
+ecgbench splits --dataset ptbxl                        # auto-download
+ecgbench splits --dataset chapman_shaoxing \
+    --data-path /data/chapman/ \
+    --output-dir /data/outputs/chapman/ \
+    --n-folds 10 --max-workers 8
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dataset` | str | *required* | Dataset slug (e.g. `ptbxl`, `chapman_shaoxing`) |
+| `--data-path` | path | auto-download | Path to the dataset root directory |
+| `--output-dir` | path | `output/<dataset>/` | Output directory for fold CSVs + metadata |
+| `--sampling-rate` | int | config default | Sampling rate to validate against |
+| `--n-folds` | int | `10` | Number of cross-validation folds |
+| `--max-workers` | int | `4` | Parallel workers for signal validation |
+| `--skip-validation` | flag | off | Skip signal validation (faster; no quality flags) |
+| `--skip-croissant` | flag | off | Skip Croissant metadata generation |
+
+Python equivalent:
+
+```python
+import ecgbench
+
+result = ecgbench.run_splits(
+    dataset="ptbxl",
+    data_path="/path/to/ptb-xl/1.0.3/",
+    output_dir=None,          # -> output/ptbxl/
+    sampling_rate=None,       # -> config default_sampling_rate
+    n_folds=10,
+    max_workers=4,
+    skip_validation=False,
+    skip_croissant=False,
+)
+# result is a dict with: dataset, dataset_name, output_dir,
+# original={total,train,val,test}, clean={total,train,val,test}, excluded
+```
+
+### `ecgbench croissant`
+
+Standalone Croissant 1.1 JSON-LD generator for an existing splits directory. Run once per version (`clean` and `original`).
+
+```bash
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/clean/    --version clean
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version original
+ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/clean/ --validate
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dataset` | str | *required* | Dataset slug |
+| `--splits-dir` | path | *required* | Version directory to scan (e.g. `output/ptbxl/clean/`) |
+| `--output` | path | `<splits-dir>/croissant.json` | Where to write the JSON-LD |
+| `--version` | `clean`&vert;`original` | `clean` | Version label to record in the Croissant file |
+| `--validate` | flag | off | Validate the file after writing (non-zero exit if invalid) |
+
+Python equivalent:
+
+```python
+from pathlib import Path
+import ecgbench
+
+saved_path: Path = ecgbench.run_croissant(
+    dataset="ptbxl",
+    splits_dir="output/ptbxl/clean/",
+    output=None,              # -> splits_dir/croissant.json
+    version="clean",
+    validate=True,            # raises RuntimeError if the file does not validate
+)
+```
+
+Requires the `croissant` extra (`pip install ecgbench[croissant]`).
+
+### `ecgbench upload`
+
+Uploads each dataset's `original/` and `clean/` CSV folds, plus `validation_report.json` and `croissant.json` if present, to a HuggingFace Hub dataset repository. One or more dataset slugs can be uploaded in a single call.
+
+```bash
+ecgbench upload --data-dir output/ --datasets ptbxl
+ecgbench upload --data-dir output/ --datasets ptbxl chapman_shaoxing
+ecgbench upload --data-dir output/ --datasets ptbxl --dry-run
+ecgbench upload --data-dir output/ --datasets ptbxl \
+    --hf-repo-id your-org/ECGBench
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--data-dir` | path | *required* | Root directory containing per-dataset subdirectories |
+| `--datasets` | list | *required* | One or more dataset slugs to upload |
+| `--hf-repo-id` | str | `vlbthambawita/ECGBench` | Target HuggingFace dataset repo ID |
+| `--dry-run` | flag | off | Print the files that would be uploaded, without uploading |
+
+Authentication resolves in this order: `token=` argument (Python API only) -> `HF_TOKEN` env var -> `HUGGINGFACE_HUB_TOKEN` env var -> `.env` file in the current working directory. Run with `--dry-run` first to review the file list.
+
+Python equivalent:
+
+```python
+import ecgbench
+
+counts: dict[str, int] = ecgbench.run_upload(
+    data_dir="output/",
+    datasets=["ptbxl", "chapman_shaoxing"],
+    hf_repo_id="vlbthambawita/ECGBench",
+    dry_run=False,
+    token=None,               # falls back to env / .env
+)
+# counts: {"ptbxl": 42, "chapman_shaoxing": 42}
+```
+
+Requires the `hf` extra (`pip install ecgbench[hf]`).
 
 ## API Reference
 
@@ -211,6 +331,11 @@ python scripts/upload_to_huggingface.py --data-dir output/ --datasets ptbxl
 ### Download
 - `download_dataset(config)` -- download from source
 - `resolve_data_path(path, config)` -- resolve or download
+
+### Pipelines (CLI + Python API)
+- `run_splits(dataset, ...)` -- full validate + split + Croissant pipeline (same as `ecgbench splits`)
+- `run_croissant(dataset, splits_dir, ...)` -- standalone Croissant generation (same as `ecgbench croissant`)
+- `run_upload(data_dir, datasets, ...)` -- HuggingFace Hub upload (same as `ecgbench upload`)
 
 ## Development
 
