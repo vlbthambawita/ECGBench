@@ -31,7 +31,25 @@ jobs:
       - name: Install huggingface_hub
         run: pip install -q "huggingface_hub>=0.23"
 
-      - name: Write _version.json
+      - name: Override baseurl for HF Space
+        # GitHub Pages serves under /ECGBench/, but HF Spaces serve at the
+        # root path, so we need an empty baseurl for assets/links to resolve.
+        run: |
+          sed -i 's|^baseurl:.*|baseurl: ""|' docs/_config.yml
+          echo "Patched docs/_config.yml:"
+          cat docs/_config.yml
+
+      - name: Build with Jekyll
+        # HF Spaces with sdk: static do not run Jekyll, so we must render
+        # the Liquid templates here and upload the built _site/ instead of docs/.
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Write _version.json into built site
+        # Jekyll excludes _*-prefixed files by default, so write the
+        # version stamp directly into the built output after the build.
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG" == refs/* ]]; then
@@ -40,17 +58,17 @@ jobs:
           SHA="${GITHUB_SHA:0:12}"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          cat > docs/_version.json <<EOF
+          cat > _site/_version.json <<EOF
           {
             "tag": "${TAG}",
             "sha": "${SHA}",
             "date": "${DATE}"
           }
           EOF
-          echo "Wrote docs/_version.json:"
-          cat docs/_version.json
+          echo "Wrote _site/_version.json:"
+          cat _site/_version.json
 
-      - name: Deploy docs/ to HuggingFace Space
+      - name: Deploy _site/ to HuggingFace Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -71,11 +89,11 @@ jobs:
               exist_ok=True,
           )
 
-          # Stage: copy docs/ then write HF Space README
+          # Stage: copy the Jekyll-built _site/ then write HF Space README
           staging = Path("_hf_staging")
           if staging.exists():
               shutil.rmtree(staging)
-          shutil.copytree("docs", staging)
+          shutil.copytree("_site", staging)
           (staging / "README.md").write_text(
               "---\n"
               "title: ECGBench\n"
