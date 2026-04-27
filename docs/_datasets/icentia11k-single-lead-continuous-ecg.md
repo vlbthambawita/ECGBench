@@ -4,7 +4,7 @@ name: "Icentia11k Single Lead Continuous ECG"
 category: "one-lead"
 order: 1
 status: "not_started"
-url: "https://physionet.org/content/icentia11k-continuous-ecg/1.0/"
+source_url: "https://physionet.org/content/icentia11k-continuous-ecg/1.0/"
 url_label: "physionet.org"
 format: "1-lead (modified Lead I) · ~70 min/seg · 250 Hz"
 patients: "11,000"

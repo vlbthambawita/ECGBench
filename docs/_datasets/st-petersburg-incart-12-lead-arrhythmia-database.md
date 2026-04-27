@@ -4,7 +4,7 @@ name: "St Petersburg INCART 12-Lead Arrhythmia Database"
 category: "12-lead-physionet"
 order: 8
 status: "not_started"
-url: "https://physionet.org/content/incartdb/1.0.0/"
+source_url: "https://physionet.org/content/incartdb/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 30 min · 257 Hz"
 patients: "32"

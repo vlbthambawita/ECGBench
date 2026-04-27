@@ -4,7 +4,7 @@ name: "CODE-test (827-record hold-out test set)"
 category: "12-lead-other"
 order: 6
 status: "not_started"
-url: "https://doi.org/10.5281/zenodo.3765780"
+source_url: "https://doi.org/10.5281/zenodo.3765780"
 url_label: "zenodo.org"
 format: "12-lead · 7–10 s · 400 Hz · HDF5"
 patients: "827"

@@ -4,7 +4,7 @@ name: "VitalDB Arrhythmia Database"
 category: "one-lead"
 order: 8
 status: "not_started"
-url: "https://physionet.org/content/vitaldb-arrhythmia/1.0.0/"
+source_url: "https://physionet.org/content/vitaldb-arrhythmia/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (Lead II, intraoperative) · ~20 min median · 500 Hz"
 patients: "482"

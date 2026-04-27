@@ -4,7 +4,7 @@ name: "BIDMC Congestive Heart Failure Database"
 category: "two-lead"
 order: 7
 status: "not_started"
-url: "https://physionet.org/content/chfdb/1.0.0/"
+source_url: "https://physionet.org/content/chfdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · ~20 h · 250 Hz · WFDB"
 patients: "15"

@@ -4,7 +4,7 @@ name: "Nightingale BWH Emergency Dept ECG Dataset"
 category: "12-lead-other"
 order: 12
 status: "not_started"
-url: "https://docs.ngsci.org/datasets/ed-bwh-ecg/"
+source_url: "https://docs.ngsci.org/datasets/ed-bwh-ecg/"
 url_label: "ngsci.org"
 format: "12-lead · 100 Hz · NumPy arrays"
 patients: "30,933"

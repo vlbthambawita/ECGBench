@@ -4,7 +4,7 @@ name: "Preterm Infant Cardio-Respiratory Signals Database (PICSDB)"
 category: "one-lead"
 order: 9
 status: "not_started"
-url: "https://physionet.org/content/picsdb/1.0.0/"
+source_url: "https://physionet.org/content/picsdb/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (single channel from bedside monitor) · 20–70 h · 500 Hz"
 patients: "10 infants"

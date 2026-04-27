@@ -4,7 +4,7 @@ name: "PTB Diagnostic ECG Database"
 category: "12-lead-physionet"
 order: 3
 status: "not_started"
-url: "https://physionet.org/content/ptbdb/1.0.0/"
+source_url: "https://physionet.org/content/ptbdb/1.0.0/"
 url_label: "physionet.org"
 format: "15-lead (12 + 3 Frank) · variable · 1,000 Hz"
 patients: "290"

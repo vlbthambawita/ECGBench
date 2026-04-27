@@ -4,7 +4,7 @@ name: "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)"
 category: "12-lead-physionet"
 order: 17
 status: "not_started"
-url: "https://physionet.org/content/ecgdmmld/1.0.0/"
+source_url: "https://physionet.org/content/ecgdmmld/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz (upsampled to 1 kHz)"
 patients: "22"

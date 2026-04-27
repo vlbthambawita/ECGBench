@@ -4,7 +4,7 @@ name: "Wilson Central Terminal ECG Database"
 category: "12-lead-physionet"
 order: 15
 status: "not_started"
-url: "https://physionet.org/content/wctecgdb/1.0.1/"
+source_url: "https://physionet.org/content/wctecgdb/1.0.1/"
 url_label: "physionet.org"
 format: "37 signals (12 std + WCT + limb) · 10 s"
 patients: "92"

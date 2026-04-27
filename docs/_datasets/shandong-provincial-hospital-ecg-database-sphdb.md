@@ -4,7 +4,7 @@ name: "Shandong Provincial Hospital ECG Database (SPHDB)"
 category: "12-lead-other"
 order: 4
 status: "not_started"
-url: "https://doi.org/10.6084/m9.figshare.c.5779802.v1"
+source_url: "https://doi.org/10.6084/m9.figshare.c.5779802.v1"
 url_label: "figshare.com"
 format: "12-lead · 10–60 s · 500 Hz · HDF5"
 patients: "24,666"

@@ -4,7 +4,7 @@ name: "Leipzig Heart Center ECG Database"
 category: "12-lead-physionet"
 order: 12
 status: "not_started"
-url: "https://physionet.org/content/leipzig-heart-center-ecg/1.0.0/"
+source_url: "https://physionet.org/content/leipzig-heart-center-ecg/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead + intracardiac EGM · variable · 977 Hz"
 patients: "39"

@@ -4,7 +4,7 @@ name: "Symile-MIMIC"
 category: "12-lead-physionet"
 order: 21
 status: "not_started"
-url: "https://physionet.org/content/symile-mimic/1.0.0/"
+source_url: "https://physionet.org/content/symile-mimic/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz · multimodal (ECG + CXR + labs)"
 patients: "9,573"

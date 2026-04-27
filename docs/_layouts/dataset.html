@@ -31,7 +31,7 @@
       <img class="dataset-hero-image" src="{{ page.hero_image | relative_url }}" alt="{{ page.name }}">
     {% endif %}
     <div class="dataset-hero-links">
-      {% if page.url %}<a class="hero-link" href="{{ page.url }}" target="_blank">Dataset source &#8599;</a>{% endif %}
+      {% if page.source_url %}<a class="hero-link" href="{{ page.source_url }}" target="_blank" rel="noopener">Dataset source &#8599;</a>{% endif %}
       {% if page.paper_doi %}<a class="hero-link" href="{{ page.paper_doi }}" target="_blank">Paper &#8599;</a>{% endif %}
     </div>
   </header>

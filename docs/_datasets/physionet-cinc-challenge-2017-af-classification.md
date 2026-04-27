@@ -4,7 +4,7 @@ name: "PhysioNet/CinC Challenge 2017 (AF Classification)"
 category: "one-lead"
 order: 2
 status: "not_started"
-url: "https://physionet.org/content/challenge-2017/1.0.0/"
+source_url: "https://physionet.org/content/challenge-2017/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (AliveCor) · 9–61 s · 300 Hz"
 patients: "—"

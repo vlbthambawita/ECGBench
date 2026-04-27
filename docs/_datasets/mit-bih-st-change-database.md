@@ -4,7 +4,7 @@ name: "MIT-BIH ST Change Database"
 category: "two-lead"
 order: 11
 status: "not_started"
-url: "https://physionet.org/content/stdb/1.0.0/"
+source_url: "https://physionet.org/content/stdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · variable length · 360 Hz · WFDB · mostly exercise stress ECGs"
 patients: "—"

@@ -4,7 +4,7 @@ name: "St. Vincent's / UCD Sleep Apnea Database (UCDDB)"
 category: "three-lead"
 order: 1
 status: "not_started"
-url: "https://physionet.org/content/ucddb/1.0.0/"
+source_url: "https://physionet.org/content/ucddb/1.0.0/"
 url_label: "physionet.org"
 format: "3-lead Holter (V5, CC5, V5R) · overnight PSG · 128 Hz · EDF"
 patients: "25"

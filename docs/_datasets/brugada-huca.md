@@ -4,7 +4,7 @@ name: "Brugada-HUCA"
 category: "12-lead-physionet"
 order: 10
 status: "not_started"
-url: "https://physionet.org/content/brugada-huca/1.0.0/"
+source_url: "https://physionet.org/content/brugada-huca/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 12 s · 100 Hz"
 patients: "363"

@@ -4,7 +4,7 @@ name: "PTB-XL"
 category: "12-lead-physionet"
 order: 1
 status: "completed"
-url: "https://physionet.org/content/ptb-xl/1.0.3/"
+source_url: "https://physionet.org/content/ptb-xl/1.0.3/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz (also 100 Hz)"
 patients: "18,869"

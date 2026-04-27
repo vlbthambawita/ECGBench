@@ -4,7 +4,7 @@ name: "Long-Term AF Database (LTAFDB)"
 category: "two-lead"
 order: 3
 status: "not_started"
-url: "https://physionet.org/content/ltafdb/1.0.0/"
+source_url: "https://physionet.org/content/ltafdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · 24–25 h · 128 Hz · WFDB"
 patients: "84"

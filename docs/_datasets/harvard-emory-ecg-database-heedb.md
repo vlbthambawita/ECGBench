@@ -4,7 +4,7 @@ name: "Harvard-Emory ECG Database (HEEDB)"
 category: "12-lead-other"
 order: 11
 status: "not_started"
-url: "https://bdsp.io/content/heedb/5.0/"
+source_url: "https://bdsp.io/content/heedb/5.0/"
 url_label: "bdsp.io"
 format: "12-lead · 10 s · 250/500 Hz · WFDB"
 patients: "2,167,795"

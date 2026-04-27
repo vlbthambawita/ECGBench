@@ -4,7 +4,7 @@ name: "MIT-BIH Normal Sinus Rhythm Database"
 category: "two-lead"
 order: 4
 status: "not_started"
-url: "https://physionet.org/content/nsrdb/1.0.0/"
+source_url: "https://physionet.org/content/nsrdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · ~24 h · 128 Hz · WFDB"
 patients: "18"

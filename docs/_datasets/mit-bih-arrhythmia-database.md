@@ -4,7 +4,7 @@ name: "MIT-BIH Arrhythmia Database"
 category: "two-lead"
 order: 1
 status: "not_started"
-url: "https://physionet.org/content/mitdb/1.0.0/"
+source_url: "https://physionet.org/content/mitdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead (MLII + V1) · 30 min · 360 Hz · WFDB"
 patients: "47"

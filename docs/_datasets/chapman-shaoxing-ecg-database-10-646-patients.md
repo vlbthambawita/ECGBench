@@ -4,7 +4,7 @@ name: "Chapman-Shaoxing ECG Database (10,646 patients)"
 category: "12-lead-other"
 order: 2
 status: "not_started"
-url: "https://doi.org/10.6084/m9.figshare.c.4560497.v2"
+source_url: "https://doi.org/10.6084/m9.figshare.c.4560497.v2"
 url_label: "figshare.com"
 format: "12-lead · 10 s · 500 Hz · CSV"
 patients: "10,646"

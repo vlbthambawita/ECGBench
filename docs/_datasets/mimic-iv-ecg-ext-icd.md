@@ -4,7 +4,7 @@ name: "MIMIC-IV-ECG-Ext-ICD"
 category: "12-lead-physionet"
 order: 6
 status: "not_started"
-url: "https://physionet.org/content/mimic-iv-ecg-ext-icd-labels/1.0.1/"
+source_url: "https://physionet.org/content/mimic-iv-ecg-ext-icd-labels/1.0.1/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz · 1,076 ICD-10-CM codes"
 patients: "Subset of MIMIC-IV-ECG"

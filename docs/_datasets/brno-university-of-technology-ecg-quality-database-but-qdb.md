@@ -4,7 +4,7 @@ name: "Brno University of Technology ECG Quality Database (BUT QDB)"
 category: "one-lead"
 order: 7
 status: "not_started"
-url: "https://physionet.org/content/butqdb/1.0.0/"
+source_url: "https://physionet.org/content/butqdb/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (Bittium Faros 180) + 3-axis accel. · ≥24 h · 1,000 Hz"
 patients: "15"

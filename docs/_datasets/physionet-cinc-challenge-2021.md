@@ -4,7 +4,7 @@ name: "PhysioNet/CinC Challenge 2021"
 category: "12-lead-physionet"
 order: 23
 status: "not_started"
-url: "https://physionet.org/content/challenge-2021/1.0.3/"
+source_url: "https://physionet.org/content/challenge-2021/1.0.3/"
 url_label: "physionet.org"
 format: "12-lead (+ reduced-lead) · 5–144 s · 250–1,000 Hz"
 patients: "—"

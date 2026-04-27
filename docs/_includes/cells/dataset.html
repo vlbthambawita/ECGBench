@@ -2,5 +2,5 @@
   <a class="dataset-name-link" href="{{ '/datasets/' | append: include.row.slug | append: '.html' | relative_url }}">
     <span class="dataset-name">{{ include.row.name }}</span>
   </a>
-  {% if include.row.url %}<a class="dataset-link" href="{{ include.row.url }}" target="_blank">{{ include.row.url_label | default: 'link' }} &#8599;</a>{% endif %}
+  {% if include.row.source_url %}<a class="dataset-link" href="{{ include.row.source_url }}" target="_blank" rel="noopener">{{ include.row.url_label | default: 'link' }} &#8599;</a>{% endif %}
 </td>

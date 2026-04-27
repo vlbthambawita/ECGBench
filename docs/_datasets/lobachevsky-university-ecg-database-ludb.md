@@ -4,7 +4,7 @@ name: "Lobachevsky University ECG Database (LUDB)"
 category: "12-lead-physionet"
 order: 9
 status: "not_started"
-url: "https://physionet.org/content/ludb/1.0.1/"
+source_url: "https://physionet.org/content/ludb/1.0.1/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz · manually annotated waves"
 patients: "200"

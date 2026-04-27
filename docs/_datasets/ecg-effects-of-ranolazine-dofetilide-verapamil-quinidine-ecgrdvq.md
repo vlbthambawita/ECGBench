@@ -4,7 +4,7 @@ name: "ECG Effects of Ranolazine, Dofetilide, Verapamil, Quinidine (ECGRDVQ)"
 category: "12-lead-physionet"
 order: 18
 status: "not_started"
-url: "https://physionet.org/content/ecgrdvq/1.0.0/"
+source_url: "https://physionet.org/content/ecgrdvq/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz"
 patients: "22"

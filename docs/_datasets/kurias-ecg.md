@@ -4,7 +4,7 @@ name: "KURIAS-ECG"
 category: "12-lead-physionet"
 order: 11
 status: "not_started"
-url: "https://physionet.org/content/kurias-ecg/1.0/"
+source_url: "https://physionet.org/content/kurias-ecg/1.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz · SNOMED CT + OMOP-CDM"
 patients: "13,862"

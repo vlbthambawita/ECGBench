@@ -4,7 +4,7 @@ name: "ECG-ID Database"
 category: "one-lead"
 order: 4
 status: "not_started"
-url: "https://physionet.org/content/ecgiddb/1.0.0/"
+source_url: "https://physionet.org/content/ecgiddb/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (Lead I, wrist) · 20 s · 500 Hz"
 patients: "90"

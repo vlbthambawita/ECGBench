@@ -4,7 +4,7 @@ name: "Eye Tracking Dataset for 12-Lead ECG Interpretation"
 category: "12-lead-physionet"
 order: 19
 status: "not_started"
-url: "https://physionet.org/content/eye-tracking-ecg/1.0.0/"
+source_url: "https://physionet.org/content/eye-tracking-ecg/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead ECG images · eye tracking at 60 Hz"
 patients: "63 interpreters"

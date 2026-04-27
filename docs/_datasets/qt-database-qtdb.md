@@ -4,7 +4,7 @@ name: "QT Database (QTDB)"
 category: "two-lead"
 order: 9
 status: "not_started"
-url: "https://physionet.org/content/qtdb/1.0.0/"
+source_url: "https://physionet.org/content/qtdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · 15 min · various Hz · WFDB"
 patients: "—"

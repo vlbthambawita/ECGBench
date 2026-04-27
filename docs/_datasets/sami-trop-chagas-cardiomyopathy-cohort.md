@@ -4,7 +4,7 @@ name: "SaMi-Trop (Chagas Cardiomyopathy Cohort)"
 category: "12-lead-other"
 order: 8
 status: "not_started"
-url: "https://doi.org/10.5281/zenodo.4905618"
+source_url: "https://doi.org/10.5281/zenodo.4905618"
 url_label: "zenodo.org"
 format: "12-lead · 400 Hz · HDF5"
 patients: "1,631"

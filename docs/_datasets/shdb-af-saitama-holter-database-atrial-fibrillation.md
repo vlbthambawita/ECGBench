@@ -4,7 +4,7 @@ name: "SHDB-AF (Saitama Holter Database — Atrial Fibrillation)"
 category: "two-lead"
 order: 10
 status: "not_started"
-url: "https://physionet.org/content/shdb-af/1.0.1/"
+source_url: "https://physionet.org/content/shdb-af/1.0.1/"
 url_label: "physionet.org"
 format: "2-lead (CC5 + NASA) · ~24 h · 125 Hz · WFDB"
 patients: "122"

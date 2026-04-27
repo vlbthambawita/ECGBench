@@ -4,7 +4,7 @@ name: "MIMIC-IV-ECG Demo"
 category: "12-lead-physionet"
 order: 5
 status: "not_started"
-url: "https://physionet.org/content/mimic-iv-ecg-demo/0.1/"
+source_url: "https://physionet.org/content/mimic-iv-ecg-demo/0.1/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz"
 patients: "92"

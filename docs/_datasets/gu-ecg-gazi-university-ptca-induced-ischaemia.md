@@ -4,7 +4,7 @@ name: "GU-ECG (Gazi University, PTCA-induced Ischaemia)"
 category: "12-lead-other"
 order: 14
 status: "not_started"
-url: "https://doi.org/10.17632/zhr5zsngtg.1"
+source_url: "https://doi.org/10.17632/zhr5zsngtg.1"
 url_label: "mendeley.com"
 format: "12-lead continuous · 8,800 Hz · 24-bit · .ekg format"
 patients: "74"

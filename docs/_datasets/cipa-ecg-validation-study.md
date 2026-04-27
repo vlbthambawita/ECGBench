@@ -4,7 +4,7 @@ name: "CiPA ECG Validation Study"
 category: "12-lead-physionet"
 order: 16
 status: "not_started"
-url: "https://physionet.org/content/ecgcipa/1.0.0/"
+source_url: "https://physionet.org/content/ecgcipa/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s"
 patients: "60"

@@ -4,7 +4,7 @@ name: "MedalCare-XL (Synthetic 12-Lead ECGs from Simulations)"
 category: "12-lead-other"
 order: 10
 status: "not_started"
-url: "https://doi.org/10.5281/zenodo.8068944"
+source_url: "https://doi.org/10.5281/zenodo.8068944"
 url_label: "zenodo.org"
 format: "12-lead · 10 s · 500 Hz · CSV (raw/noise/filtered variants)"
 patients: "0 (synthetic)"

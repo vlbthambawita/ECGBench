@@ -4,7 +4,7 @@ name: "Post-Ictal Heart Rate Oscillations in Partial Epilepsy"
 category: "one-lead"
 order: 5
 status: "not_started"
-url: "https://physionet.org/content/szdb/1.0.0/"
+source_url: "https://physionet.org/content/szdb/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead · overnight continuous · 200 Hz"
 patients: "5"

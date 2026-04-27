@@ -4,7 +4,7 @@ name: "tOLIet (Thigh-based ECG, toilet seat)"
 category: "one-lead"
 order: 6
 status: "not_started"
-url: "https://physionet.org/content/tollet/1.0.1/"
+source_url: "https://physionet.org/content/tollet/1.0.1/"
 url_label: "physionet.org"
 format: "1-lead (thigh, dry polymer electrodes) · up to 5 min · 1,000 Hz"
 patients: "86"

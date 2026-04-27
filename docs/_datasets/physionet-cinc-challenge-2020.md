@@ -4,7 +4,7 @@ name: "PhysioNet/CinC Challenge 2020"
 category: "12-lead-physionet"
 order: 22
 status: "not_started"
-url: "https://physionet.org/content/challenge-2020/1.0.2/"
+source_url: "https://physionet.org/content/challenge-2020/1.0.2/"
 url_label: "physionet.org"
 format: "12-lead · 6–60 s · 257–1,000 Hz"
 patients: "—"

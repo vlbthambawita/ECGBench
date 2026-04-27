@@ -4,7 +4,7 @@ name: "CODE (Full Dataset, ~2.3M records)"
 category: "12-lead-other"
 order: 7
 status: "not_started"
-url: "https://figshare.scilifelab.se/articles/dataset/CODE_dataset/15169716"
+source_url: "https://figshare.scilifelab.se/articles/dataset/CODE_dataset/15169716"
 url_label: "scilifelab.se"
 format: "12-lead · 400 Hz · HDF5"
 patients: "~1,676,384"

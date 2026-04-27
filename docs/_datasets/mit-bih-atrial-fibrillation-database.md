@@ -4,7 +4,7 @@ name: "MIT-BIH Atrial Fibrillation Database"
 category: "two-lead"
 order: 2
 status: "not_started"
-url: "https://physionet.org/content/afdb/1.0.0/"
+source_url: "https://physionet.org/content/afdb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · 10 h · 250 Hz · WFDB"
 patients: "25"

@@ -4,7 +4,7 @@ name: "European ST-T Database (EDB)"
 category: "two-lead"
 order: 6
 status: "not_started"
-url: "https://physionet.org/content/edb/1.0.0/"
+source_url: "https://physionet.org/content/edb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead ambulatory · 2 h · 250 Hz · WFDB"
 patients: "79"

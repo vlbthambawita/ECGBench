@@ -4,7 +4,7 @@ name: "ECG-Capable Smartwatches Dataset"
 category: "one-lead"
 order: 10
 status: "not_started"
-url: "https://physionet.org/content/ecg-capable-smartwatches/1.0.0/"
+source_url: "https://physionet.org/content/ecg-capable-smartwatches/1.0.0/"
 url_label: "physionet.org"
 format: "1-lead (Lead I) · 10 s · 4 smartwatch models + reference (synthetic)"
 patients: "0 (synthetic)"

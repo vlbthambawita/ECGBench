@@ -4,7 +4,7 @@ name: "IKEM Dataset (Institute for Clinical and Experimental Medicine, Prague)"
 category: "12-lead-other"
 order: 9
 status: "not_started"
-url: "https://doi.org/10.5281/zenodo.8393007"
+source_url: "https://doi.org/10.5281/zenodo.8393007"
 url_label: "zenodo.org"
 format: "12-lead (stored as 8 reduced leads) · 10 s · 500 Hz · HDF5"
 patients: "30,290"

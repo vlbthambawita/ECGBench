@@ -4,7 +4,7 @@ name: "Long-Term ST Database (LTSTDB)"
 category: "two-lead"
 order: 12
 status: "not_started"
-url: "https://physionet.org/content/ltstdb/1.0.0/"
+source_url: "https://physionet.org/content/ltstdb/1.0.0/"
 url_label: "physionet.org"
 format: "2–3 lead · 21–24 h · 250 Hz · WFDB · annotated ST episodes"
 patients: "80"

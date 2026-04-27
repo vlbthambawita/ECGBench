@@ -4,7 +4,7 @@ name: "MHD Effect on 12-Lead ECGs in MRI Scanners"
 category: "12-lead-physionet"
 order: 14
 status: "not_started"
-url: "https://physionet.org/content/mhd-effect-ecg-mri/1.0.0/"
+source_url: "https://physionet.org/content/mhd-effect-ecg-mri/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead + 3-lead · variable · 1,024 Hz"
 patients: "23"

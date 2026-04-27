@@ -4,7 +4,7 @@ name: "Nightingale NTUH Cardiac Arrest ECG Dataset"
 category: "12-lead-other"
 order: 13
 status: "not_started"
-url: "https://docs.ngsci.org/datasets/arrest-ntuh-ecg/"
+source_url: "https://docs.ngsci.org/datasets/arrest-ntuh-ecg/"
 url_label: "ngsci.org"
 format: "12-lead · ~500 Hz · XML/array"
 patients: "10,950"

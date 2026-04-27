@@ -4,7 +4,7 @@ name: "CODE-15% (Telehealth Network of Minas Gerais, 15% subset)"
 category: "12-lead-other"
 order: 5
 status: "not_started"
-url: "https://doi.org/10.5281/zenodo.4916206"
+source_url: "https://doi.org/10.5281/zenodo.4916206"
 url_label: "zenodo.org"
 format: "12-lead · ~10 s · 400 Hz · HDF5"
 patients: "233,770"

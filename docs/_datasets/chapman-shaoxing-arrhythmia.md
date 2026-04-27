@@ -4,7 +4,7 @@ name: "Chapman-Shaoxing (Arrhythmia)"
 category: "12-lead-physionet"
 order: 7
 status: "not_started"
-url: "https://physionet.org/content/ecg-arrhythmia/1.0.0/"
+source_url: "https://physionet.org/content/ecg-arrhythmia/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz"
 patients: "45,152"

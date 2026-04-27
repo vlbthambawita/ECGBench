@@ -4,7 +4,7 @@ name: "EDGAR (Experimental Data & Geometric Analysis Repository)"
 category: "bspm"
 order: 1
 status: "not_started"
-url: "https://www.ecg-imaging.org/edgar-database"
+source_url: "https://www.ecg-imaging.org/edgar-database"
 url_label: "ecg-imaging.org"
 format: "BSPM (64+ leads) + torso geometry + CT · human, canine & simulation · MATLAB/SCIRun"
 patients: "Multiple"

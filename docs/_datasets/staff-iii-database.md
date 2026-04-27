@@ -4,7 +4,7 @@ name: "STAFF III Database"
 category: "12-lead-physionet"
 order: 24
 status: "not_started"
-url: "https://physionet.org/content/staffiii/1.0.0/"
+source_url: "https://physionet.org/content/staffiii/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · variable duration · 1,000 Hz · 0.625 µV resolution · WFDB"
 patients: "104"

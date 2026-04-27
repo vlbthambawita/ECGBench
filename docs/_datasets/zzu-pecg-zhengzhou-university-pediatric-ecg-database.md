@@ -4,7 +4,7 @@ name: "ZZU pECG (Zhengzhou University Pediatric ECG Database)"
 category: "12-lead-other"
 order: 15
 status: "not_started"
-url: "https://doi.org/10.6084/m9.figshare.27078763"
+source_url: "https://doi.org/10.6084/m9.figshare.27078763"
 url_label: "figshare.com"
 format: "12-lead + 9-lead · 5–120 s · 500 Hz · WFDB"
 patients: "11,643 children"

@@ -4,7 +4,7 @@ name: "CPSC 2018 (China Physiological Signal Challenge 2018)"
 category: "12-lead-other"
 order: 1
 status: "not_started"
-url: "http://2018.icbeb.org/Challenge.html"
+source_url: "http://2018.icbeb.org/Challenge.html"
 url_label: "icbeb.org"
 format: "12-lead · 6–60 s · 500 Hz · MATLAB .mat"
 patients: "~6,877"

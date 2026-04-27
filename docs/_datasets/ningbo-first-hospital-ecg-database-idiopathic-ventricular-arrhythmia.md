@@ -4,7 +4,7 @@ name: "Ningbo First Hospital ECG Database (Idiopathic Ventricular Arrhythmia)"
 category: "12-lead-other"
 order: 3
 status: "not_started"
-url: "https://doi.org/10.6084/m9.figshare.c.4668086.v2"
+source_url: "https://doi.org/10.6084/m9.figshare.c.4668086.v2"
 url_label: "figshare.com"
 format: "12-lead · 10 s · 500 Hz · CSV"
 patients: "334"

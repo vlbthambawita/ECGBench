@@ -4,7 +4,7 @@ name: "Sudden Cardiac Death Holter Database"
 category: "two-lead"
 order: 8
 status: "not_started"
-url: "https://physionet.org/content/sddb/1.0.0/"
+source_url: "https://physionet.org/content/sddb/1.0.0/"
 url_label: "physionet.org"
 format: "2-lead · 4–25 h · 250 Hz · WFDB"
 patients: "23"

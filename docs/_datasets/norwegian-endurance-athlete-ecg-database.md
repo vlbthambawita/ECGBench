@@ -4,7 +4,7 @@ name: "Norwegian Endurance Athlete ECG Database"
 category: "12-lead-physionet"
 order: 13
 status: "not_started"
-url: "https://physionet.org/content/norwegian-athlete-ecg/1.0.0/"
+source_url: "https://physionet.org/content/norwegian-athlete-ecg/1.0.0/"
 url_label: "physionet.org"
 format: "12-lead · 10 s · 500 Hz"
 patients: "28"
