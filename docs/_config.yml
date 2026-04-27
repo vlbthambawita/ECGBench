@@ -6,7 +6,7 @@ baseurl: "/ECGBench"
 collections:
   datasets:
     output: true
-    permalink: /datasets/:name/
+    permalink: /datasets/:name.html
 
 defaults:
   - scope:
