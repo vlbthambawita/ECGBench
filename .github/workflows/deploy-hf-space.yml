@@ -50,7 +50,11 @@ jobs:
       - name: Write _version.json into built site
         # Jekyll excludes _*-prefixed files by default, so write the
         # version stamp directly into the built output after the build.
+        # actions/jekyll-build-pages@v1 runs in a container and produces
+        # _site/ as root, so reclaim ownership before writing into it.
         run: |
+          sudo chown -R "$(id -u):$(id -g)" _site
+
           TAG="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG" == refs/* ]]; then
             TAG="dev"
