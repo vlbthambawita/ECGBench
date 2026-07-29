@@ -176,6 +176,86 @@ def mock_metadata_with_folds() -> pd.DataFrame:
 
 
 @pytest.fixture
+def ecg_arrhythmia_config() -> DatasetConfig:
+    """PhysioNet ecg-arrhythmia-like config: generated metadata CSV, no grouping."""
+    return DatasetConfig(
+        name="PhysioNet ECG Arrhythmia (Chapman-Shaoxing + Ningbo)",
+        slug="ecg_arrhythmia",
+        version="1.0.0",
+        url="https://physionet.org/content/ecg-arrhythmia/1.0.0/",
+        leads=12,
+        duration_seconds=10.0,
+        sampling_rates=[500],
+        default_sampling_rate=500,
+        metadata_csv="ecgbench_metadata.csv",
+        record_id_column="record_name",
+        patient_id_column=None,
+        signal_path_columns={500: "signal_path"},
+        label_column="dx",
+        label_format="comma_separated",
+        stratification=StratificationConfig(
+            method="custom_function",
+            mapping_source="ConditionNames_SNOMED-CT.csv",
+            superclass_column="Acronym Name",
+        ),
+        validation=ValidationConfig(
+            expected_leads=12,
+            expected_samples={500: 5000},
+            checks=["missing_leads", "nan_values", "truncated_signal",
+                    "flat_line", "corrupt_header", "amplitude_outlier"],
+            amplitude_range_mv=(-10.0, 10.0),
+        ),
+    )
+
+
+def _write_hea(path: Path, name: str, dx: str, age: str = "60",
+               sex: str = "Male", record_line: str | None = None) -> None:
+    """Write a minimal 12-lead WFDB header of the ecg-arrhythmia flavour."""
+    header = record_line if record_line is not None else f"{name} 12 500 5000"
+    lines = [header]
+    leads = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    lines += [f"{name}.mat 16+24 1000/mV 16 0 0 0 0 {lead}" for lead in leads]
+    lines += [f"#Age: {age}", f"#Sex: {sex}", f"#Dx: {dx}", "#Rx: Unknown"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@pytest.fixture
+def tmp_ecg_arrhythmia_data(tmp_path) -> Path:
+    """A miniature ecg-arrhythmia tree: WFDB headers only, no signal files.
+
+    Mirrors the real layout (``WFDBRecords/<2 digits>/<3 digits>/JS*.hea``) plus
+    the shipped SNOMED-CT mapping, so the splitter's header scan can be tested
+    without any signal I/O. Deliberately includes an unmapped SNOMED code, a
+    record whose diagnosis appears only once, and one malformed record line
+    (the real dataset's JS01052 has its record and signal lines merged).
+    """
+    records = tmp_path / "WFDBRecords" / "01" / "010"
+    records.mkdir(parents=True)
+
+    # 12 sinus-bradycardia records (the dataset's dominant class)
+    for i in range(1, 13):
+        name = f"JS{i:05d}"
+        _write_hea(records / f"{name}.hea", name, dx="426177001,164934002")
+    # One atrial-fibrillation record — a rare class at this scale
+    _write_hea(records / "JS00013.hea", "JS00013", dx="164889003", sex="Female")
+    # One record whose primary code is absent from ConditionNames_SNOMED-CT.csv
+    _write_hea(records / "JS00014.hea", "JS00014", dx="55827005", age="")
+    # One record with a malformed record line
+    _write_hea(
+        records / "JS00015.hea", "JS00015", dx="426177001",
+        record_line="JS00015 12 500 500000/mV 16 0 15 31255 0 I",
+    )
+
+    pd.DataFrame({
+        "Acronym Name": ["SB", "AFIB", "TWC"],
+        "Full Name": ["Sinus Bradycardia", "Atrial Fibrillation", "T wave Change"],
+        "Snomed_CT": [426177001, 164889003, 164934002],
+    }).to_csv(tmp_path / "ConditionNames_SNOMED-CT.csv", index=False)
+
+    return tmp_path
+
+
+@pytest.fixture
 def tmp_splits_dir(tmp_path) -> Path:
     """Create a temporary splits directory with sample CSVs."""
     for version in ("clean", "original"):

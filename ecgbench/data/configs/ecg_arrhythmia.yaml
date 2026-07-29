@@ -1,0 +1,108 @@
+# ECGBench Config: PhysioNet ECG Arrhythmia (Chapman-Shaoxing + Ningbo)
+# ======================================================================
+# A large scale 12-lead electrocardiogram database for arrhythmia study
+# https://physionet.org/content/ecg-arrhythmia/1.0.0/
+#
+# NOTE: this is the 45,152-record PhysioNet release, which merges the
+# Chapman-Shaoxing (JS00001-JS10646) and Ningbo (JS10647-JS45551) cohorts into a
+# single WFDB tree. It is a different dataset from the `chapman_shaoxing` config,
+# which describes the original 10,646-record figshare release (Diagnostics.csv +
+# ECGData/ CSV layout).
+
+name: "PhysioNet ECG Arrhythmia (Chapman-Shaoxing + Ningbo)"
+slug: "ecg_arrhythmia"
+version: "1.0.0"
+url: "https://physionet.org/content/ecg-arrhythmia/1.0.0/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "https://physionet.org/content/ecg-arrhythmia/1.0.0/LICENSE.txt"
+description: >
+  A 12-lead ECG dataset of 45,152 patient recordings collected at Shaoxing
+  People's Hospital and Ningbo First Hospital (Zhejiang University), released on
+  PhysioNet in WFDB format. Each record is 10 seconds at 500 Hz with 12 leads.
+  Diagnoses are given as SNOMED-CT codes in the per-record WFDB header (#Dx),
+  with 60+ distinct conditions covering atrial fibrillation, atrial flutter,
+  AV block, bundle branch blocks, premature beats, ST/T changes and more.
+  Age and sex are also stored in the header. There is one record per patient.
+citation: >
+  Zheng, J., Chu, H., Struppa, D., et al. Optimal Multi-Stage Arrhythmia
+  Classification Approach. Scientific Reports 10, 2898 (2020).
+doi: "10.1038/s41598-020-59821-7"
+
+creators:
+  - type: Organization
+    name: "Chapman University"
+    url: "https://www.chapman.edu/"
+  - type: Organization
+    name: "Shaoxing People's Hospital"
+  - type: Organization
+    name: "Ningbo First Hospital, Zhejiang University"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+leads: 12
+duration_seconds: 10
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# The dataset ships NO metadata CSV — all metadata lives in the per-record .hea
+# headers. ECGArrhythmiaSplitter generates this file on first run by scanning
+# WFDBRecords/**/*.hea and caches it in the dataset root. The validation engine
+# reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+patient_id_column: null  # one record per patient
+
+signal_path_columns:
+  500: "signal_path"  # e.g. WFDBRecords/01/010/JS00001.mat
+
+# --- Labels ---
+label_column: "dx"           # comma-separated SNOMED-CT codes from the #Dx header
+label_format: "comma_separated"
+
+stratification:
+  method: "custom_function"  # ECGArrhythmiaSplitter: primary #Dx code -> acronym
+  mapping_source: "ConditionNames_SNOMED-CT.csv"
+  superclass_column: "Acronym Name"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    500: 5000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]  # header gain is 1000/mV, so wfdb yields mV
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "arrhythmia"
+    - "Chapman-Shaoxing"
+    - "Ningbo"
+    - "12-lead"
+    - "SNOMED-CT"
+    - "PhysioNet"
+  rai_data_collection: >
+    Collected during clinical routine at Shaoxing People's Hospital and Ningbo
+    First Hospital, China. Diagnoses were labelled by licensed physicians and
+    encoded as SNOMED-CT codes; a second expert reviewed the rhythm labels.
+  rai_data_biases: >
+    Two hospitals in Zhejiang province, China — patient demographics reflect the
+    local population and referral patterns. Class distribution is highly
+    imbalanced, with sinus rhythm variants dominating and many conditions
+    represented by only a handful of records.
+  rai_personal_sensitive_info: >
+    De-identified. Age and sex are retained in the WFDB headers; some records
+    have Age recorded as unknown. No other identifiers are present.

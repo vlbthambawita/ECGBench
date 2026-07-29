@@ -191,11 +191,17 @@ ecgbench splits --dataset chapman_shaoxing \
     --data-path /data/chapman/ \
     --output-dir /data/outputs/chapman/ \
     --n-folds 10 --max-workers 8
+
+# PhysioNet ecg-arrhythmia (45,152 records, Chapman-Shaoxing + Ningbo).
+# Ships no metadata CSV — the splitter builds ecgbench_metadata.csv from the
+# per-record WFDB headers on first run, so the data directory must be writable.
+ecgbench splits --dataset ecg_arrhythmia \
+    --data-path /data/ecg-arrhythmia/1.0.0/ --max-workers 32
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dataset` | str | *required* | Dataset slug (e.g. `ptbxl`, `chapman_shaoxing`) |
+| `--dataset` | str | *required* | Dataset slug (e.g. `ptbxl`, `chapman_shaoxing`, `ecg_arrhythmia`) |
 | `--data-path` | path | auto-download | Path to the dataset root directory |
 | `--output-dir` | path | `output/<dataset>/` | Output directory for fold CSVs + metadata |
 | `--sampling-rate` | int | config default | Sampling rate to validate against |

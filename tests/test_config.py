@@ -34,11 +34,32 @@ def test_load_chapman_config():
     assert config.stratification.method == "direct"
 
 
+def test_load_ecg_arrhythmia_config():
+    """Test loading ecg_arrhythmia.yaml produces valid DatasetConfig."""
+    config = load_config("ecg_arrhythmia")
+    assert config.slug == "ecg_arrhythmia"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    assert config.sampling_rates == [500]
+    # No metadata CSV ships with the dataset — the splitter generates this one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    assert config.signal_path_columns == {500: "signal_path"}
+    # One record per patient, so no grouping column and no predefined folds.
+    assert config.patient_id_column is None
+    assert config.has_predefined_splits is False
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.validation is not None
+    assert config.validation.expected_samples[500] == 5000
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
     assert "ptbxl" in slugs
     assert "chapman_shaoxing" in slugs
+    assert "ecg_arrhythmia" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 
