@@ -5,9 +5,16 @@ Copy this file (or duplicate the relevant sections) when starting on a new
 dataset, and tick items off as you go. The phases are roughly sequential, but
 phase 1 (catalogue) is independent and can happen at any time.
 
-**Substitute `<slug>` throughout** (lowercase, underscores, no dashes — e.g.
-`ptbxl`, `chapman_shaoxing`, `mimic_iv_ecg`). The slug must match the YAML
-filename and the registered splitter name.
+**There are two slug namespaces — do not use one where the other belongs.**
+
+| | Form | Example | Must match |
+|---|---|---|---|
+| `<config-slug>` | lowercase, **underscores** | `ptbxl`, `chapman_shaoxing`, `mimic_iv_ecg` | the YAML filename, the `slug:` field inside it, and the `@register("...")` argument |
+| `<catalogue-slug>` | lowercase, **dashes** | `ptb-xl`, `chapman-shaoxing`, `mimic-iv-ecg` | the `docs/_datasets/<catalogue-slug>.md` filename and the `slug:` field in its front matter |
+
+Phases 2–6 use `<config-slug>`. Phase 1 (catalogue) uses `<catalogue-slug>`.
+The two are unrelated strings — nothing maps one to the other mechanically, so
+pick both up front and keep them straight.
 
 ---
 
@@ -28,23 +35,35 @@ filename and the registered splitter name.
 
 ## Phase 1 — Catalogue entry (optional but recommended)
 
-- [ ] Add a row to `ecgbench/data/ecg_datasets.csv` so `ecgbench.search()` / `list_datasets()` surface the dataset. Keep column order consistent with existing rows.
-- [ ] Verify it shows up: `python -c "import ecgbench; print(ecgbench.get_dataset('<Name>'))"`.
+The catalogue is **one Markdown file per dataset** — YAML front matter holds the
+row fields. There is no CSV. The same file is consumed twice: by
+`catalogue.py` (`_entry_from_meta`) for the Python discovery API, and by Jekyll
+as the `datasets` collection powering the website. A field only one side knows
+about is a field that silently does nothing on the other.
 
-A catalogue entry is *not* required to run splits/validation — the YAML config drives the pipeline — but datasets without one are invisible to discovery APIs.
+- [ ] Create `docs/_datasets/<catalogue-slug>.md`, copying the front matter of a comparable existing entry (e.g. `ptb-xl.md`).
+- [ ] Set the identity fields: `slug` (must equal the filename), `name`, `source_url`, `url_label`, `format`, `patients`, `records`, `access`, `license`, `origin_institution`, `origin_country`, `leads`, `paper_title`, `paper_doi`, `search_keywords`.
+- [ ] Set `category` to one of the six values fixed by `_CATEGORY_ORDER` in `catalogue.py` — `12-lead-physionet`, `12-lead-other`, `two-lead`, `one-lead`, `three-lead`, `bspm`. It must also match an `id:` in `docs/_data/tables.yml`, or the row renders in no table.
+- [ ] Set `status` to one of the keys of `docs/_data/statuses.yml` — `not_started`, `implementing`, `completed`, `needs_review`.
+- [ ] Set `order` (int) — controls sort position within the category.
+- [ ] Add a `sections:` list for the detail page. Each entry's `type` must have a matching partial in `docs/_includes/sections/`: `description`, `table`, `code`, `links`, `notebook`, `plot`.
+- [ ] Verify it shows up: `python -c "import ecgbench; print(ecgbench.get_dataset('<Name>'))"`.
+- [ ] Verify the count went up: `python -c "import ecgbench; print(len(ecgbench.list_datasets()))"`.
+
+A catalogue entry is *not* required to run splits/validation — the YAML config drives the pipeline — but datasets without one are invisible to discovery APIs and to the website.
 
 ## Phase 2 — Config YAML
 
-- [ ] `cp ecgbench/data/configs/_template.yaml ecgbench/data/configs/<slug>.yaml`
+- [ ] `cp ecgbench/data/configs/_template.yaml ecgbench/data/configs/<config-slug>.yaml`
 - [ ] Fill in **Identity** block (`name`, `slug`, `version`, `url`, `download_url`, `license`, `description`, `citation`, `doi`, `creators`). `download_url` should be a direct zip/tar.gz URL or `null` if the source needs credentialed access.
 - [ ] Fill in **Signal Properties**.
 - [ ] Fill in **File Structure**: `metadata_csv`, separator, `record_id_column`, `patient_id_column`, `signal_path_columns` (rate → column).
 - [ ] Fill in **Labels** (`label_column`, `label_format`).
 - [ ] Fill in **stratification** block (and provide `mapping_source` + `superclass_column` if using `superclass_mapping`).
-- [ ] Fill in **predefined_splits** if applicable.
-- [ ] Fill in **validation.expected_samples** for each declared sampling rate.
+- [ ] Fill in **predefined_splits** if applicable — **and set `has_predefined_splits: true`**. `engine.py` gates on `config.has_predefined_splits and config.predefined_splits`, so a fully-filled `predefined_splits` block with the flag left at `false` is silently ignored and folds get generated instead.
+- [ ] Fill in **validation**: `expected_leads`, `expected_samples` (one key per declared sampling rate), the `checks` list, and `amplitude_range_mv`.
 - [ ] Fill in **croissant** block (`keywords`, `rai_data_collection`, `rai_data_biases`, `rai_personal_sensitive_info`).
-- [ ] Smoke-test the config loads: `python -c "from ecgbench import load_config; print(load_config('<slug>'))"`.
+- [ ] Smoke-test the config loads: `python -c "from ecgbench import load_config; print(load_config('<config-slug>'))"`.
 
 ## Phase 3 — Splitter strategy
 
@@ -58,57 +77,75 @@ Decide which path applies and do **one**:
   - records need filtering before splitting
 
   If custom:
-  - [ ] Create `ecgbench/splitting/strategies/<slug>.py`
-  - [ ] Subclass `DatasetSplitter`, decorate the class with `@register("<slug>")` — the slug here **must match the config slug**, since that's how the registry looks it up.
-  - [ ] Implement `load_metadata()` and `get_stratification_labels()`. Override other hooks only if necessary.
+  - [ ] Create `ecgbench/splitting/strategies/<config-slug>.py`
+  - [ ] Subclass `DatasetSplitter`, decorate the class with `@register("<config-slug>")` — the slug here **must match the config slug**, since that's how the registry looks it up.
+  - [ ] Implement the two abstract methods, `load_metadata()` and `get_stratification_labels()`. Override other hooks only if necessary. `get_splitter()` instantiates with no arguments, so keep `__init__` argument-free.
   - [ ] Import the module in `ecgbench/splitting/strategies/__init__.py` so the `@register` side-effect runs.
-  - [ ] Verify: `python -c "from ecgbench.splitting import get_splitter; print(type(get_splitter('<slug>')))"` — should NOT print `GenericSplitter`.
+  - [ ] Verify: `python -c "from ecgbench.splitting import get_splitter; print(type(get_splitter('<config-slug>')))"` — should NOT print `GenericSplitter`.
 
 ## Phase 4 — Run the pipeline
 
 - [ ] Dry-run on local data (auto-download if `download_url` is set; otherwise pass `--data-path`):
   ```bash
-  ecgbench splits --dataset <slug> --data-path /path/to/<slug>/
+  ecgbench splits --dataset <config-slug> --data-path /path/to/<config-slug>/
   ```
-- [ ] Inspect `output/<slug>/`:
-  - `original/` — fold CSVs covering all records, with `is_valid` and `quality_issues` columns.
-  - `clean/` — fold CSVs with valid records only.
-  - `validation_report.json` — totals and per-check failure counts.
-  - `croissant.json` — Croissant 1.1 metadata.
-- [ ] Confirm fold CSVs contain **only** the minimal columns (record ID, patient ID, signal paths, fold, split). Full metadata stays in the source CSV — if you see extra columns leaking through, fix the exporter, not the config.
-- [ ] Confirm fold counts roughly match `n_folds=10` distribution and that **patients do not span folds** (if `patient_id_column` is set).
+- [ ] Inspect `output/<config-slug>/` — the tree `export.py` and `cli/splits.py` actually produce:
+  ```
+  output/<config-slug>/
+    validation_report.json            # only top-level artefact
+    {original,clean}/
+      folds.csv                       # every record + fold + default_split
+      croissant.json                  # one PER VERSION, not top-level
+      {train,val,test}/fold_<N>.csv   # N is 1-indexed
+  ```
+- [ ] Confirm `folds.csv` exists in both versions and that fold CSVs sit under `train/`, `val/`, `test/` — not loose in the version directory. With the default folds 1–8 → train, 9 → val, 10 → test, expect 8 CSVs in `train/` and one each in `val/` and `test/`.
+- [ ] Confirm the exported columns match the version, per `_minimal_columns()` in `export.py`:
+  - `clean/` — record ID, patient ID (if configured), signal paths, `fold`, `default_split`. Nothing else.
+  - `original/` — the same **plus `is_valid` and `quality_issues`**. These two are intentional here; do not "fix" the exporter for them.
+
+  Anything beyond that list is real metadata leakage — full metadata stays in the source CSV. Fix the exporter, not the config.
+- [ ] Confirm fold membership is identical between `original/` and `clean/` (`clean/` is a row subset, not a re-split), that fold counts roughly match the `n_folds=10` distribution, and that **patients do not span folds** (if `patient_id_column` is set).
 - [ ] Spot-check `validation_report.json` for unexpected check failures — high `truncated_signal` counts usually mean `expected_samples` is wrong; high `corrupt_header` counts usually mean `signal_format` or path prefix is wrong.
-- [ ] (Optional) Standalone Croissant regeneration:
+- [ ] (Optional) Standalone Croissant regeneration — `--splits-dir` points at the **version** directory, and the file lands inside it:
   ```bash
-  ecgbench croissant --dataset <slug> --splits-dir output/<slug>/clean/ --version clean
+  ecgbench croissant --dataset <config-slug> --splits-dir output/<config-slug>/clean/ --version clean
   ```
 
 ## Phase 5 — Tests
 
-- [ ] Add a config-loading test (or extend an existing parametrised one) in `tests/test_config.py` covering `<slug>`.
+- [ ] Add a `test_load_<config-slug>_config()` function to `tests/test_config.py`, alongside the existing `test_load_ptbxl_config` / `test_load_chapman_config`. These are hand-written per dataset, not parametrised — there is no table to extend.
 - [ ] If you wrote a custom splitter, add a unit test under `tests/test_splitting.py` using synthetic data from `tests/conftest.py` patterns. Cover at minimum: `load_metadata` shape, label distribution, patient grouping if applicable.
-- [ ] Run the full suite: `pytest`.
-- [ ] Run lint/format: `ruff check ecgbench/ && black ecgbench/`.
+- [ ] Run the full suite: `pytest`. Note that `conftest.py` builds `DatasetConfig` objects **in Python, not from the shipped YAML**, so a green suite does not prove your new YAML parses — the Phase 2 `load_config()` smoke-test is what covers that.
+- [ ] Confirm optional-extra tests actually ran rather than skipping (`torch` for `test_dataset.py`, `mlcroissant` for `test_croissant.py`/`test_cli.py`): install `.[dev]` and check `pytest -rs` output for unexpected skips.
+- [ ] Run lint/format: `ruff check ecgbench/ && black ecgbench/`. There is no CI test/lint job — local is the only gate.
 
 ## Phase 6 — HuggingFace Hub upload (optional)
 
 - [ ] Ensure `HF_TOKEN` is set (env var or `.env`).
+- [ ] Dry-run first to see the file list without pushing: add `--dry-run`.
 - [ ] Upload:
   ```bash
-  ecgbench upload --data-dir output/ --datasets <slug>
+  ecgbench upload --data-dir output/ --datasets <config-slug>
   ```
-- [ ] Verify a logged-out user can load it:
-  ```python
+- [ ] Verify on the Hub that the tree is prefixed by the dataset slug — `<config-slug>/<version>/folds.csv` and `<config-slug>/<version>/<split>/fold_<N>.csv`. This prefix is what `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`; a missing or wrong prefix fails only at load time.
+- [ ] Verify an **anonymous** user can load it. `ECGDataset` defaults to `metadata_source="hf"`, so this exercises the real download path — but only if no token is picked up. Unset the token and use a scratch cache so a warm cache can't mask a missing upload:
+  ```bash
+  env -u HF_TOKEN -u HUGGINGFACE_HUB_TOKEN HF_HOME="$(mktemp -d)" python - <<'PY'
   from ecgbench import ECGDataset
-  ds = ECGDataset("<slug>", split="train", data_path="/path/to/<slug>/")
-  print(ds[0]["signal"].shape)
+  for version in ("clean", "original"):        # default is "clean" — check both
+      ds = ECGDataset("<config-slug>", split="train", version=version,
+                      data_path="/path/to/<config-slug>/")
+      print(version, len(ds), ds[0]["signal"].shape)
+  PY
   ```
+  `data_path` points at the local **signal** files; the fold CSVs come from the Hub.
 
 ## Phase 7 — Wrap up
 
-- [ ] Update `README.md` "Dataset Catalogue" section if applicable.
-- [ ] Add an entry to `docs/_datasets/` if datasets are documented individually there.
-- [ ] Commit: config, optional splitter, catalogue row, tests, any docs. Keep generated output (`output/`) out of the commit.
+- [ ] Update the `README.md` "Dataset Catalogue" section if applicable.
+- [ ] Flip `status:` to `completed` in `docs/_datasets/<catalogue-slug>.md` (created back in Phase 1 — don't create a second entry here).
+- [ ] Commit: config YAML, optional splitter + its `strategies/__init__.py` import, catalogue Markdown entry, tests, any docs. Keep generated output (`output/`) out of the commit.
+- [ ] Remember `docs/**` changes trigger the Pages and HF Space deploys on `main`, while Python-only changes deploy nothing until a `v*` tag is pushed.
 - [ ] Open a PR with: source URL, license, record count, validation pass rate, and whether a custom splitter was needed and why.
 
 ---
@@ -116,6 +153,11 @@ Decide which path applies and do **one**:
 ## Common gotchas
 
 - **Slug mismatch.** Config filename, `slug:` field inside the YAML, and `@register("...")` argument must all be identical. A mismatch silently falls back to `GenericSplitter` (or fails to find the config).
+- **Two slug namespaces.** The catalogue slug is dashed (`ptb-xl`), the config slug underscored (`ptbxl`). Naming the Markdown file after the config slug breaks the catalogue and the website; naming the YAML after the catalogue slug breaks `load_config()`.
+- **`has_predefined_splits` is a separate gate.** Filling the `predefined_splits` block is not enough — `engine.py` also requires `has_predefined_splits: true`. Left at `false`, your carefully specified splits are silently discarded in favour of generated folds.
+- **Catalogue `category` is closed-vocabulary and cross-referenced.** It must be one of `_CATEGORY_ORDER` in `catalogue.py` *and* an `id:` in `docs/_data/tables.yml`. An unrecognised value sorts to the end of the Python listing and renders in no website table. Likewise `status` must be a key of `docs/_data/statuses.yml`.
+- **Front matter has two consumers.** `catalogue.py:_entry_from_meta` and the Liquid templates in `docs/_layouts/`, `docs/_includes/`. A new field needs handling on both sides, or it silently does nothing on one of them.
+- **`original/` fold CSVs carry `is_valid` + `quality_issues`; `clean/` does not.** That asymmetry is deliberate (`_minimal_columns(include_quality=...)`) — not metadata leakage.
 - **Path prefixes.** `signal_path_columns` values must resolve relative to `data_path`. If the source CSV stores bare filenames but signals live in a subdirectory, fix it in the splitter's `load_metadata` — don't ship a config that only works when the user pre-rewrites paths.
 - **Predefined splits are 1-indexed.** Fold numbers in `predefined_splits.fold_mapping` follow the same 1..N convention as generated folds.
 - **`expected_samples` per rate.** Every rate listed in `sampling_rates` should have a key in `validation.expected_samples`, or `truncated_signal` will fire spuriously.
