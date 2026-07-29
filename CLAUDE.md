@@ -28,7 +28,7 @@ uv pip install -e ".[dev]"
 ruff check ecgbench/
 black ecgbench/
 
-# Tests — no real ECG data needed; tests/conftest.py synthesises WFDB signals + configs
+# Tests — no real ECG data needed; conftest builds numpy arrays + DataFrames (no WFDB files)
 pytest
 pytest tests/test_config.py -v          # single module
 pytest -k "test_split" -v               # by name pattern
@@ -68,6 +68,8 @@ Loads one Markdown file per dataset (YAML front matter holds the row fields) fro
 
 Those same `.md` files are a Jekyll collection powering the website, so front matter is consumed by both `catalogue.py` (`_entry_from_meta`) and Liquid templates (`docs/_layouts/dataset.html`, `docs/_includes/`). Adding a front-matter field means updating both sides. Valid `category` values are fixed by `_CATEGORY_ORDER` in `catalogue.py` and must match a table id in `docs/_data/tables.yml`; valid `status` values are the keys of `docs/_data/statuses.yml` (`not_started`, `implementing`, `completed`, `needs_review`).
 
+**`status:` is not a reliable signal of implementation state.** 63 of the 64 entries are `not_started` and only `ptb-xl` is `completed` — including `chapman-shaoxing-arrhythmia`, which has a working config *and* a registered splitter. Check `ecgbench/data/configs/` to find out what actually runs. Note also that two catalogue entries (`chapman-shaoxing-arrhythmia.md`, `chapman-shaoxing-ecg-database-10-646-patients.md`) describe source datasets served by the single `chapman_shaoxing` config — another reason the two namespaces don't map one-to-one.
+
 ### Website (`docs/`)
 Jekyll site (`docs/_config.yml`, `baseurl: /ECGBench`) with `index.html` rendering catalogue tables from `docs/_data/{tables,columns,statuses}.yml` + the `datasets` collection, plus one detail page per dataset via `_layouts/dataset.html`. Table cells render through one partial per column (`_includes/cells/<column>.html`); dataset detail pages are driven by the `sections:` list in front matter, one partial per section type (`_includes/sections/`: `description`, `table`, `code`, `links`, `notebook`, `plot`). There is no CSV download — tabular access is the Python catalogue only.
 
@@ -86,6 +88,12 @@ Jekyll site (`docs/_config.yml`, `baseurl: /ECGBench`) with `index.html` renderi
 - `export.py` — writes `original/` and `clean/` fold CSVs with **minimal columns only** (record ID, patient ID, signal paths, `fold`, `default_split`), plus `is_valid`/`quality_issues` in `original/` only (`_minimal_columns(include_quality=...)`). Full metadata stays in the original dataset CSV.
 - `registry.py` — splitter lookup with `GenericSplitter` fallback.
 
+Three behaviours of `split_dataset()` that aren't obvious from its signature:
+
+- **The default split mapping is derived from `n_folds`, not fixed.** `_split_grouped`/`_split_simple` compute `train=range(1, n_folds-1)`, `val=[n_folds-1]`, `test=[n_folds]`. The documented 8/1/1 layout is just what `n_folds=10` produces; `--n-folds 5` yields train=[1,2,3], val=[4], test=[5].
+- **`--n-folds` is silently ignored for predefined splits.** `_split_predefined` takes folds from the dataset's own column and the mapping from YAML, so the flag has no effect on PTB-XL.
+- **Nothing verifies patient grouping or fold balance.** `_split_predefined` partitions only on the fold column yet returns `group_column=config.patient_id_column` in `SplitResult`, so provenance asserts patient-awareness that was never checked. There is no leakage assertion and no stratification-balance measure anywhere in the pipeline. Separately, `random_state` is a default arg (`42`) that `run_splits` never passes, so the seed is neither CLI-configurable nor recorded in any output artefact.
+
 ### Croissant (`ecgbench/croissant.py`)
 Generates Croissant 1.1 JSON-LD using `mlcroissant` (optional dep, lazy import). Includes SHA-256 hashes for all CSVs.
 
@@ -94,6 +102,8 @@ Generates Croissant 1.1 JSON-LD using `mlcroissant` (optional dep, lazy import).
 
 ### Dataset (`ecgbench/dataset.py`)
 Single `ECGDataset` class loading any dataset via config. `metadata_source="hf"` (default) downloads fold CSVs from HuggingFace Hub; `"local"` reads from disk. `ecg_collate_fn` handles heterogeneous batches.
+
+**`metadata_source="local"` does not read the `output/` tree that `export_splits` writes.** `data_path` is a single argument serving two roles: the signal root used by `__getitem__`, and — in local mode — the splits root. `_load_from_local` probes `data_path/<version>/<split>/`, `data_path/<split>/`, then `data_path/<version>/folds.csv`, `data_path/folds.csv`. So local mode only works if the fold CSVs sit *inside* the raw dataset directory; pointing `data_path` at `output/<slug>/` breaks signal loading, and pointing it at the raw data breaks metadata loading. Either copy the fold CSVs into the data directory or use `metadata_source="hf"`.
 
 ### Public API (`ecgbench/__init__.py`)
 Catalogue and config imports are eager (lightweight). Everything else (`ECGDataset`, validation, splitting, croissant, download, `run_*` pipelines) is lazy-imported via `__getattr__` so `import ecgbench` doesn't pull in torch/wfdb/mlcroissant. A new public symbol that needs a heavy dep must be added to both `_LAZY_IMPORTS` and `__all__` — never imported at module top level.
@@ -113,11 +123,19 @@ output/<config-slug>/                 # local, from `ecgbench splits`
 
 Default split assignment is folds 1–8 → `train`, 9 → `val`, 10 → `test`, so `train/` holds 8 fold CSVs and `val/`, `test/` one each. Fold membership is identical between `original/` and `clean/`; `clean/` is a row subset.
 
-HuggingFace dataset repo `vlbthambawita/ECGBench` (default in both `dataset.py` and `cli/upload.py`) mirrors that tree with the dataset slug as top-level prefix: `<slug>/<version>/<split>/fold_<N>.csv` and `<slug>/<version>/folds.csv`. This is what `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`.
+HuggingFace dataset repo `vlbthambawita/ECGBench` mirrors that tree with the dataset slug as top-level prefix: `<slug>/<version>/<split>/fold_<N>.csv` and `<slug>/<version>/folds.csv`. This is what `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`.
+
+The repo id is **overridable on upload but hard-coded on download**: `run_upload(hf_repo_id=...)` takes it as a parameter with a `--hf-repo-id` CLI flag, while `ECGDataset._load_from_hf` assigns `repo_id = "vlbthambawita/ECGBench"` inline with no override. Forking to a different Hub repo therefore requires a source edit in `dataset.py`.
 
 ## Testing
 
 Tests never touch real ECG data or the network. `tests/conftest.py` builds `DatasetConfig` objects directly in Python (not from YAML — so config fixtures can drift from the shipped YAML), synthetic numpy signal arrays per failure mode (`synthetic_signal_bad_nan`, `_flat`, `_truncated`, `_amplitude_outlier`, …), mock metadata DataFrames, and `tmp_splits_dir`, a full `{original,clean}/{train,val,test}/fold_N.csv` + `folds.csv` tree in `tmp_path`. Checks are tested against arrays, not files, so no WFDB I/O is involved.
+
+Three coverage gaps to know before trusting a green run:
+
+- **There is no on-disk WFDB fixture.** Nothing exercises `validate_dataset()` end-to-end, `_load_signal()`, or `ECGDataset.__getitem__` against real files — the parallel `ProcessPoolExecutor` path in `validation/engine.py` is untested. Anything touching signal I/O needs a manual smoke run against real data.
+- **`tmp_splits_dir` uses folds 1–5** (train=[1,2,3], val=[4], test=[5]), not the production 1–8/9/10 convention documented above. A test passing on this fixture proves nothing about the real fold mapping.
+- **`TestECGDatasetLocal` bypasses the constructor** via `ECGDataset.__new__` and assigns attributes by hand, so `__init__` — `resolve_data_path`, split/version validation, `signal_col` resolution — is never covered.
 
 Optional-extra tests guard with `pytest.importorskip` (`torch` in `test_dataset.py`, `mlcroissant` in `test_croissant.py`/`test_cli.py`) — a base install silently skips them, so install `.[dev]`. HF upload is exercised via `monkeypatch` + `--dry-run`.
 
@@ -149,4 +167,6 @@ There is no CI test/lint job — run `pytest` and `ruff`/`black` locally before 
 
 - `ECGBench_architecture/ARCHITECTURE.md` — end-to-end flow in Mermaid diagrams; every box names a real function/class, so it doubles as a map into the source.
 - `ADD_DATASET_TODO.md` — full per-dataset checklist (discovery → catalogue → config → splitter → splits → tests → upload), with a Gotchas section covering the silent-failure traps. Verified against the code; use it as the authoritative procedure rather than the condensed "Adding a New Dataset" steps above.
+- `DATASET_ANALYSIS_PLAN.md` — design doc for the per-dataset analysis scripts (statistical tables + optional Plotly HTML report). **Not yet implemented, and its §0 decisions are contested** — it proposes replacing `ecgbench splits` with unpackaged `scripts/analyse_<slug>.py` files. Read §0 before acting on it.
+- `ecgbench_expenctation.txt` — the requirements the analysis plan derives from, plus a second (unimplemented) set covering loader-side preprocessing, lead filters, and per-dataset metadata filters.
 - `CLI_PLAN.md`, `webiste_paln_todo.md` — design notes for the CLI and the Markdown-driven website; historical, both already implemented.

@@ -1,0 +1,14 @@
+ECG Bench should have following capabilities:
+
+Loading data to ML/DL:
+1. Give dataset local location, ability to load data which are ready to use with pytorch data loader
+2. ECGBench Huggingfacce dtaaset will provided pre-extrated record ids under datasetname/split name (train, validation and test)/fold numbers
+3. if user want splits like train, validation and test, ability to use that format
+4. if user want fold format, ability to select specific fold or folds to use
+5. if user want, they can apply custom preprocessing functions or avaialble pre-processing functions
+6. User can apply lead filters to select specific leads as well
+7. Each dataset will have different filters based on their data and meta data
+
+SCRIPTS to analyse given dataset:
+1. if user input a dataset path, these scripts(one per dataset), will analyse the dataset and produce records IDs to identify the records from original datasets and put into fold csv files and will produce statistical table which are relevan to data analysis.
+2. if user want, user can enable a parameters to generate html based data analysis report with rich plots 
