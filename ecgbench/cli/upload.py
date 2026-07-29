@@ -70,9 +70,12 @@ def run_upload(
             if not version_dir.exists():
                 logger.warning("  %s/ not found, skipping", version)
                 continue
-            for csv_file in version_dir.rglob("*.csv"):
-                rel_path = csv_file.relative_to(data_root)
-                files_to_upload.append((csv_file, str(rel_path)))
+            # export.py writes croissant.json inside each version directory, not
+            # at the dataset root, so it has to be collected here.
+            for pattern in ("*.csv", "croissant.json"):
+                for path in sorted(version_dir.rglob(pattern)):
+                    rel_path = path.relative_to(data_root)
+                    files_to_upload.append((path, str(rel_path)))
 
         for extra_file in ("validation_report.json", "croissant.json"):
             extra_path = dataset_dir / extra_file

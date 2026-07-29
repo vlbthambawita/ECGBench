@@ -104,6 +104,34 @@ def test_run_upload_dry_run_counts_files(tmp_path: Path, monkeypatch):
     assert counts == {dataset_slug: 3}
 
 
+def test_run_upload_includes_per_version_croissant(tmp_path: Path, monkeypatch, caplog):
+    """croissant.json lives inside each version dir, not at the dataset root."""
+    monkeypatch.setenv("HF_TOKEN", "dummy-token-for-dry-run")
+
+    dataset_slug = "demo"
+    ds_dir = tmp_path / dataset_slug
+    for version in ("clean", "original"):
+        (ds_dir / version / "train").mkdir(parents=True)
+        pd.DataFrame({"record_id": ["a"], "filename": ["x"]}).to_csv(
+            ds_dir / version / "train" / "fold_1.csv", index=False
+        )
+        (ds_dir / version / "croissant.json").write_text("{}")
+    (ds_dir / "validation_report.json").write_text("{}")
+
+    with caplog.at_level("INFO"):
+        counts = run_upload(
+            data_dir=tmp_path,
+            datasets=[dataset_slug],
+            dry_run=True,
+        )
+
+    # 2 CSVs + 2 croissant.json + 1 validation_report.json = 5 files
+    assert counts == {dataset_slug: 5}
+    listed = caplog.text
+    assert f"{dataset_slug}/clean/croissant.json" in listed
+    assert f"{dataset_slug}/original/croissant.json" in listed
+
+
 def test_run_upload_missing_dataset_dir(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "dummy-token-for-dry-run")
     counts = run_upload(
