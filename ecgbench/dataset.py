@@ -41,19 +41,30 @@ def _require_wfdb():
         )
 
 
-def _load_signal(record_path: str, signal_format: str) -> np.ndarray:
-    """Load ECG signal. Returns shape (leads, samples)."""
+def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) -> np.ndarray:
+    """Load ECG signal from file. Returns shape (leads, samples) in millivolts."""
     if signal_format == "wfdb":
-        wfdb = _require_wfdb()
+        import wfdb
+
         record = wfdb.rdrecord(record_path)
         if record.p_signal is None:
             raise ValueError(f"Signal is None for record: {record_path}")
-        return record.p_signal.T.astype(np.float32)
+        signal = record.p_signal.T.astype(np.float32)
+    elif signal_format == "csv":
+        # One column per lead, one row per sample, with a header row naming the
+        # leads — transposed relative to what ECGBench returns.
+        signal = np.loadtxt(
+            record_path, delimiter=",", skiprows=1, dtype=np.float32, ndmin=2
+        ).T
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb"
+            "Currently supported: wfdb, csv"
         )
+
+    if unit_scale != 1.0:
+        signal = signal * np.float32(unit_scale)
+    return signal
 
 
 def _parse_dict_string(value: str) -> dict | str:
@@ -307,7 +318,9 @@ class ECGDataset(_TorchDataset):
             signal_path = str(Path(signal_path).with_suffix(""))
         full_path = str(self.data_path / signal_path)
 
-        signal = _load_signal(full_path, self.config.signal_format)
+        signal = _load_signal(
+            full_path, self.config.signal_format, self.config.signal_unit_scale
+        )
         signal_tensor = torch.from_numpy(signal).float()
 
         if self.transform is not None:

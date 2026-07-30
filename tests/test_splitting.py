@@ -333,3 +333,84 @@ class TestMimicIVECGDemoSplitter:
                     f"Subject {subject_id} appears in more than one fold"
                 )
         assert sum(len(f) for f in result.folds.values()) == len(df)
+
+
+class TestChapmanSplitter:
+    """Chapman normalises xlsx/csv metadata and builds ECGData/<name>.csv paths."""
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config,
+            slug="chapman_shaoxing",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="FileName",
+            patient_id_column=None,
+            signal_path_columns={500: "signal_path"},
+            label_column="Rhythm",
+            signal_format="csv",
+            signal_unit_scale=0.001,
+        )
+
+    def _source(self, tmp_path):
+        pd.DataFrame({
+            "FileName": ["MUSE_C", "MUSE_A", "MUSE_B"],
+            "Rhythm": ["AFIB", "SB", "SB"],
+            "Beat": ["RBBB TWC", "NONE", "TWC"],
+            "PatientAge": [85, 59, 20],
+            "Gender": ["MALE", "FEMALE", "FEMALE"],
+        }).to_csv(tmp_path / "Diagnostics.csv", index=False)
+        (tmp_path / "ECGData").mkdir()
+        return tmp_path
+
+    def test_signal_paths_get_dir_and_extension(self, sample_config, tmp_path):
+        """FileName is a bare stem: both ECGData/ and .csv have to be added."""
+        from ecgbench.splitting.strategies.chapman import build_metadata
+
+        config = self._config(sample_config)
+        df = build_metadata(self._source(tmp_path), config)
+
+        assert list(df["FileName"]) == ["MUSE_A", "MUSE_B", "MUSE_C"]  # sorted
+        assert df.loc[0, "signal_path"] == "ECGData/MUSE_A.csv"
+
+    def test_metadata_is_cached_to_disk(self, sample_config, tmp_path):
+        """validate_dataset re-reads metadata_csv, so it must land on disk."""
+        splitter = get_splitter("chapman_shaoxing")
+        config = self._config(sample_config)
+        source = self._source(tmp_path)
+        generated = source / config.metadata_csv
+        assert not generated.exists()
+
+        first = splitter.load_metadata(source, config)
+        assert generated.exists()
+        # The cached file must carry the fixed-up path, not the bare stem — that
+        # asymmetry is what used to make every record fail corrupt_header.
+        assert "ECGData/MUSE_A.csv" in generated.read_text()
+
+        second = splitter.load_metadata(source, config)
+        pd.testing.assert_frame_equal(first, second)
+
+    def test_missing_signal_dir_raises(self, sample_config, tmp_path):
+        from ecgbench.splitting.strategies.chapman import build_metadata
+
+        pd.DataFrame({"FileName": ["x"], "Rhythm": ["SB"]}).to_csv(
+            tmp_path / "Diagnostics.csv", index=False
+        )
+        with pytest.raises(FileNotFoundError, match="signal directory"):
+            build_metadata(tmp_path, self._config(sample_config))
+
+    def test_missing_source_metadata_raises(self, sample_config, tmp_path):
+        from ecgbench.splitting.strategies.chapman import build_metadata
+
+        with pytest.raises(FileNotFoundError, match="Diagnostics"):
+            build_metadata(tmp_path, self._config(sample_config))
+
+    def test_stratifies_on_rhythm(self, sample_config, tmp_path):
+        splitter = get_splitter("chapman_shaoxing")
+        config = self._config(sample_config)
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "rhythm"
+        assert labels.value_counts().to_dict() == {"SB": 2, "AFIB": 1}

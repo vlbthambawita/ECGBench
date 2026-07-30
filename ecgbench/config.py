@@ -97,6 +97,10 @@ class DatasetConfig:
 
     # Signal properties
     signal_format: str = "wfdb"
+    #: Multiply raw sample values by this to get millivolts. WFDB applies its own
+    #: header gain, so leave at 1.0 there; CSV/numpy sources stored in microvolts
+    #: need 0.001, or amplitude_outlier fires on every record.
+    signal_unit_scale: float = 1.0
     leads: int = 12
     duration_seconds: float = 10.0
     sampling_rates: list[int] = field(default_factory=lambda: [500])
@@ -249,6 +253,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         doi=raw.get("doi", ""),
         creators=_parse_creators(raw.get("creators")),
         signal_format=raw.get("signal_format", "wfdb"),
+        signal_unit_scale=float(raw.get("signal_unit_scale", 1.0)),
         leads=raw.get("leads", 12),
         duration_seconds=raw.get("duration_seconds", 10.0),
         sampling_rates=raw.get("sampling_rates", [500]),

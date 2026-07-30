@@ -20,7 +20,12 @@ creators:
     url: null
 
 # --- Signal Properties ---
-signal_format: "wfdb"             # One of: wfdb, edf, csv, mat, numpy, hdf5
+signal_format: "wfdb"             # One of: wfdb, csv (edf/mat/numpy/hdf5 not implemented)
+signal_unit_scale: 1.0            # Multiply raw samples by this to get millivolts.
+                                  #   wfdb applies its own header gain -> leave at 1.0
+                                  #   CSV/array data stored in microvolts -> 0.001
+                                  # Get this wrong and amplitude_outlier fires on
+                                  # every record (or never fires at all).
 leads: 12                         # Number of ECG leads
 duration_seconds: 10              # Nominal recording duration in seconds
 sampling_rates: [500]             # Available sampling rates in Hz

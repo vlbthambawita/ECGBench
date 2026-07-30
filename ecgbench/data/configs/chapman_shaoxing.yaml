@@ -1,23 +1,38 @@
-# ECGBench Config: Chapman-Shaoxing
-# ==================================
-# Chapman University, Shaoxing People's Hospital 12-Lead ECG Database
-# https://physionet.org/content/ecg-arrhythmia/1.0.0/
+# ECGBench Config: Chapman-Shaoxing (figshare release)
+# =====================================================
+# A 12-lead electrocardiogram database for arrhythmia research covering more than
+# 10,000 patients — figshare collection 4560497, version 2.
+# https://figshare.com/collections/ChapmanECG/4560497/2
+#
+# NOTE: this is the original 10,646-record figshare release, with CSV signals and
+# Diagnostics.xlsx metadata. It is NOT the PhysioNet `ecg-arrhythmia` project —
+# see the `ecg_arrhythmia` config for that 45,152-record WFDB merge of the
+# Chapman-Shaoxing and Ningbo cohorts. The two hold the same recordings for the
+# Chapman-Shaoxing patients: waveforms for a matched pair agree to 0.0005 mV,
+# with figshare storing microvolts and PhysioNet millivolts.
+#
+# Fetch it with:
+#   python examples/download_chapman_figshare.py --dest /path/to/chapman-figshare/
 
 name: "Chapman-Shaoxing"
 slug: "chapman_shaoxing"
-version: "1.0.0"
-url: "https://physionet.org/content/ecg-arrhythmia/1.0.0/"
-download_url: null  # PhysioNet credentialed access — no direct download
-license: "https://physionet.org/content/ecg-arrhythmia/1.0.0/LICENSE.txt"
+version: "2"  # figshare collection version, not a semantic version
+url: "https://figshare.com/collections/ChapmanECG/4560497/2"
+download_url: null  # six separate files — use examples/download_chapman_figshare.py
+license: "CC0-1.0"  # https://creativecommons.org/publicdomain/zero/1.0/
 description: >
-  A 12-lead ECG dataset with 10,646 recordings from Chapman University and
-  Shaoxing People's Hospital. Each recording is 10 seconds at 500 Hz with
-  rhythm and beat annotations. The dataset covers multiple arrhythmia types
-  including atrial fibrillation, atrial flutter, AV block, and more.
+  A 12-lead ECG dataset of 10,646 patient recordings from Chapman University and
+  Shaoxing People's Hospital, released on figshare as one CSV per record. Each
+  recording is 10 seconds at 500 Hz with 12 leads in the standard order, stored in
+  microvolts. Metadata gives a single-label rhythm diagnosis (11 classes), a
+  space-separated multi-label beat/condition annotation, age, sex, and eleven
+  automated measurements (ventricular and atrial rate, QRS duration, QT interval,
+  axes, fiducial points). A denoised copy of every signal ships alongside the raw
+  one as ECGDataDenoised/.
 citation: >
-  Zheng, J., Zhang, J., Danioko, S., et al. A 12-lead electrocardiogram
-  database for arrhythmia research covering more than 10,000 patients.
-  Scientific Data 7, 48 (2020).
+  Zheng, J., Zhang, J., Danioko, S., Yao, H., Guo, H., Rakovski, C. A 12-lead
+  electrocardiogram database for arrhythmia research covering more than 10,000
+  patients. Scientific Data 7, 48 (2020).
 doi: "10.1038/s41597-020-0386-x"
 
 creators:
@@ -28,27 +43,33 @@ creators:
     name: "Shaoxing People's Hospital"
 
 # --- Signal Properties ---
-signal_format: "wfdb"
+signal_format: "csv"      # one CSV per record: 5000 rows x 12 lead columns + header
+signal_unit_scale: 0.001  # stored in microvolts; scale to millivolts
 leads: 12
 duration_seconds: 10
 sampling_rates: [500]
 default_sampling_rate: 500
 
 # --- File Structure ---
-metadata_csv: "Diagnostics.csv"
+# The release ships Diagnostics.xlsx (not CSV) and FileName holds a bare stem with
+# no directory or extension. ChapmanSplitter normalises both into this generated
+# file on first run, so the validation engine — which re-reads metadata_csv from
+# disk — resolves the same paths the splitter does. The dataset root must be
+# writable.
+metadata_csv: "ecgbench_metadata.csv"
 metadata_csv_separator: ","
 record_id_column: "FileName"
-patient_id_column: "PatientId"
+patient_id_column: null  # one record per patient; there is no PatientId column
 
 signal_path_columns:
-  500: "FileName"  # Needs "ECGData/" prefix — handled by ChapmanSplitter
+  500: "signal_path"  # e.g. ECGData/MUSE_20180113_171327_27000.csv
 
 # --- Labels ---
 label_column: "Rhythm"
 label_format: "single"
 
 stratification:
-  method: "direct"
+  method: "direct"  # Rhythm is already one label per record
 
 # --- Predefined Splits ---
 has_predefined_splits: false
@@ -65,13 +86,11 @@ validation:
     - flat_line
     - corrupt_header
     - amplitude_outlier
-  amplitude_range_mv: [-10.0, 10.0]
+  amplitude_range_mv: [-10.0, 10.0]  # after signal_unit_scale converts to mV
 
 # --- Labels ---
-# Declarative: every column of Diagnostics.csv except the join key, which covers
-# Rhythm, Beat and the measurement columns. UNVERIFIED — no local copy of this
-# dataset was available when the block was written, and the config's
-# signal_format/path handling is known to be wrong for the figshare layout.
+# Declarative: every column of the source Diagnostics.csv except the join key —
+# the rhythm and beat annotations, demographics, and the eleven measurements.
 labels:
   source_csv: "Diagnostics.csv"
   join_column: "FileName"
@@ -85,12 +104,17 @@ croissant:
     - "Chapman-Shaoxing"
     - "12-lead"
     - "arrhythmia"
-    - "PhysioNet"
+    - "figshare"
   rai_data_collection: >
-    Collected from clinical routine at Shaoxing People's Hospital, China.
-    Rhythm annotations assigned by clinical experts.
+    Collected during clinical routine at Shaoxing People's Hospital, China.
+    Rhythm and beat annotations were assigned by licensed physicians and reviewed
+    by a second expert; the measurement columns come from the recording cart's
+    automated analysis.
   rai_data_biases: >
-    The dataset originates from a single hospital in Shaoxing, China.
-    Patient demographics reflect the local population.
+    A single hospital in Shaoxing, China, so patient demographics reflect the
+    local population and referral patterns. Rhythm classes are highly imbalanced:
+    sinus bradycardia accounts for 3,889 of 10,646 records while the rarest class
+    (SAAWR) has 7.
   rai_personal_sensitive_info: >
-    The dataset has been de-identified. Age and sex are available as metadata.
+    De-identified. Age and sex are retained; record identifiers are the original
+    MUSE export names, which embed the acquisition date and time.

@@ -21,7 +21,8 @@ pick both up front and keep them straight.
 ## Phase 0 — Discovery (before writing anything)
 
 - [ ] Locate the dataset's **official source URL**, **license**, **citation**, **DOI**.
-- [ ] Confirm signal **format** (`wfdb` / `edf` / `csv` / `mat` / `numpy` / `hdf5`).
+- [ ] Confirm signal **format**. `wfdb` and `csv` are implemented; anything else raises `NotImplementedError` in `_load_signal` and needs a branch there (in **both** `validation/engine.py` and `dataset.py` — they each have a copy).
+- [ ] Confirm the **units of the stored samples** and set `signal_unit_scale` so they reach ECGBench as millivolts (µV → `0.001`). Read one file and check the peak amplitude: a QRS peaking near 1000 is microvolts, near 1.0 is millivolts.
 - [ ] Confirm **leads**, **duration (s)**, **sampling rate(s)**, **default rate**.
 - [ ] Download a small subset locally and inspect the **metadata CSV**:
   - record ID column name
@@ -33,6 +34,8 @@ pick both up front and keep them straight.
 - [ ] Sanity-check **expected samples = duration_s × sampling_rate** per rate.
 - [ ] Write down the **headline figures the paper/landing page claims** — record count, patient count, per-class breakdown — *before* you look at the data. These are what you will check the shipped files against in Phase 1.
 - [ ] Check for a **changelog** in the dataset root (`*changelog*`, `CHANGES`, release notes on the landing page). It is the authoritative explanation when the shipped version disagrees with the paper.
+- [ ] Check whether the metadata is really a **CSV**. `.xlsx` needs converting — `validate_dataset` re-reads `metadata_csv` from disk with `pandas.read_csv`, so an in-memory conversion is not enough. Convert in the acquisition script, and have the splitter generate a normalised CSV (see `chapman.py`).
+- [ ] If the source is **several files** rather than one archive, `download_url` cannot express it — write an acquisition script under `examples/download_<name>.py` that md5-verifies each file (see `download_chapman_figshare.py`).
 - [ ] Note any quirks for the PR description (credentialed access, weird encodings, missing leads in some records, etc.).
 
 ## Phase 1 — Catalogue entry (optional but recommended)
@@ -254,7 +257,8 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - **Path prefixes.** `signal_path_columns` values must resolve relative to `data_path`. If the source CSV stores bare filenames but signals live in a subdirectory, fix it in the splitter's `load_metadata` — don't ship a config that only works when the user pre-rewrites paths.
 - **Predefined splits are 1-indexed.** Fold numbers in `predefined_splits.fold_mapping` follow the same 1..N convention as generated folds.
 - **`expected_samples` per rate.** Every rate listed in `sampling_rates` should have a key in `validation.expected_samples`, or `truncated_signal` will fire spuriously.
-- **`amplitude_range_mv`.** Units are millivolts. Datasets stored in microvolts or ADC counts will trip `amplitude_outlier` en masse — convert in the splitter or adjust the range deliberately.
+- **`amplitude_range_mv`.** Units are millivolts. Datasets stored in microvolts or ADC counts trip `amplitude_outlier` on every record — set `signal_unit_scale` (0.001 for µV) rather than widening the range. The figshare Chapman release is the worked example: raw values run to ±2750, which is ±2.75 mV.
+- **A path fix-up that lives only in the splitter is a bug, not a fix.** `validate_dataset` re-reads `metadata_csv` from disk and rebuilds paths from the raw column, so it never sees what `load_metadata` changed in memory. Chapman shipped this way for months and every record failed `corrupt_header`. Write the normalised frame to disk as the config's `metadata_csv`, the way `chapman.py` and `ecg_arrhythmia.py` now do.
 - **Published figures rarely match the shipped version.** PhysioNet reissues datasets and papers are not revised. PTB-XL v1.0.3 dropped 38 duplicate/triplicate records relative to the v1.0.1 the paper describes, so every superclass count is 6-17 records smaller. Copying the paper's table produces figures nobody can reproduce. Recompute, then note both values and the reason — see the Phase 1 subsection above.
 - **A class breakdown is not the stratification label.** They differ in cardinality: the breakdown counts every class a record carries, the stratification label is one class per record. Say which quantity a table shows. And derive both from the same loader — PTB-XL once had a hardcoded splitter map that drifted from the shipped `scp_statements.csv` (465 records in OTHER instead of 411) precisely because there were two sources.
 - **Labels never reach the batch unless you fill in `labels:`.** Fold CSVs are identification-only by design, so a dataset with a perfect config and no `labels:` block silently returns no ground truth. If the data genuinely has none, declare `available: false` with a reason rather than leaving the block out.

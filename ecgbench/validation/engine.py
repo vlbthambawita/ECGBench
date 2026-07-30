@@ -46,20 +46,30 @@ class ValidationResult:
     excluded_records: int
 
 
-def _load_signal(record_path: str, signal_format: str) -> np.ndarray:
-    """Load ECG signal from file. Returns shape (leads, samples)."""
+def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) -> np.ndarray:
+    """Load ECG signal from file. Returns shape (leads, samples) in millivolts."""
     if signal_format == "wfdb":
         import wfdb
 
         record = wfdb.rdrecord(record_path)
         if record.p_signal is None:
             raise ValueError(f"Signal is None for record: {record_path}")
-        return record.p_signal.T.astype(np.float32)
+        signal = record.p_signal.T.astype(np.float32)
+    elif signal_format == "csv":
+        # One column per lead, one row per sample, with a header row naming the
+        # leads — transposed relative to what ECGBench returns.
+        signal = np.loadtxt(
+            record_path, delimiter=",", skiprows=1, dtype=np.float32, ndmin=2
+        ).T
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb"
+            "Currently supported: wfdb, csv"
         )
+
+    if unit_scale != 1.0:
+        signal = signal * np.float32(unit_scale)
+    return signal
 
 
 def _validate_single_record(
@@ -98,7 +108,9 @@ def _validate_single_record(
 
     # Try to load the signal — corrupt_header check
     try:
-        signal = _load_signal(record_path, signal_format)
+        signal = _load_signal(
+            record_path, signal_format, config_dict.get("signal_unit_scale", 1.0)
+        )
     except Exception as e:
         if "corrupt_header" in check_names:
             all_issues.append(f"corrupt_header:{e}")
@@ -140,6 +152,7 @@ def _config_to_dict(config: DatasetConfig) -> dict:
         "version": config.version,
         "url": config.url,
         "default_sampling_rate": config.default_sampling_rate,
+        "signal_unit_scale": config.signal_unit_scale,
     }
     if config.validation:
         result["validation"] = {
@@ -198,7 +211,8 @@ def validate_dataset(
     for _, row in df.iterrows():
         record_id = str(row[config.record_id_column])
         signal_path = str(row[signal_col])
-        # Remove file extension for wfdb (it adds .dat/.hea itself)
+        # wfdb.rdrecord wants the base name and adds .dat/.hea itself; every
+        # other format needs the extension left alone.
         if config.signal_format == "wfdb":
             signal_path = str(Path(signal_path).with_suffix(""))
         record_path = str(data_path / signal_path)

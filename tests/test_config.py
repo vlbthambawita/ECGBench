@@ -29,7 +29,13 @@ def test_load_chapman_config():
     assert config.name == "Chapman-Shaoxing"
     assert config.slug == "chapman_shaoxing"
     assert config.has_predefined_splits is False
-    assert config.patient_id_column == "PatientId"
+    # figshare release: CSV signals in microvolts, one record per patient.
+    assert config.signal_format == "csv"
+    assert config.signal_unit_scale == 0.001
+    assert config.patient_id_column is None
+    assert config.record_id_column == "FileName"
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.signal_path_columns == {500: "signal_path"}
     assert config.stratification is not None
     assert config.stratification.method == "direct"
 

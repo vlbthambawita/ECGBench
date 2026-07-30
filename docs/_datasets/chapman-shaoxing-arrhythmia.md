@@ -24,12 +24,15 @@ related:
     shares_records: true
     verified: true
     note: >
-      This PhysioNet release merges the Chapman-Shaoxing and Ningbo cohorts.
-      10,247 of its 45,152 records are numbered in the Chapman-Shaoxing range
-      (JS00001-JS10646) against 10,646 in the figshare release, so the overlap is
-      large but not complete. Formats and labels differ: WFDB with SNOMED-CT #Dx
-      codes here, CSV with Rhythm/Beat annotations there. Do not train on one and
-      evaluate on the other.
+      This PhysioNet release merges the Chapman-Shaoxing and Ningbo cohorts, and
+      holds the same recordings as the figshare release for the Chapman-Shaoxing
+      patients: JS00001 and MUSE_20180113_171327_27000 agree to 0.0005 mV across
+      all 12 leads and 5,000 samples, figshare storing microvolts and PhysioNet
+      millivolts. 10,247 of the 45,152 records here are numbered in the
+      Chapman-Shaoxing range (JS00001-JS10646) against 10,646 on figshare, so the
+      overlap is large but not complete. Labels differ — SNOMED-CT #Dx codes here,
+      Rhythm/Beat annotations plus automated measurements there. Never train on one
+      and evaluate on the other.
   - slug: "ningbo-first-hospital-ecg-database-idiopathic-ventricular-arrhythmia"
     relation: "same_cohort"
     shares_records: false
