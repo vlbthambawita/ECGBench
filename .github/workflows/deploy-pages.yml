@@ -7,6 +7,8 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-pages.yml'
+    tags:
+      - 'v[0-9]*'
   workflow_dispatch:
 
 permissions:
@@ -24,6 +26,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # `git describe` below needs tags, which depth-1 omits
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -33,6 +37,32 @@ jobs:
         with:
           source: ./docs
           destination: ./_site
+
+      - name: Write _version.json into built site
+        # index.html fetches this at runtime and keeps the version badge hidden
+        # until it loads, so without this step the badge never appears on Pages.
+        # Jekyll excludes _*-prefixed files, hence writing it after the build.
+        # actions/jekyll-build-pages@v1 runs in a container and produces _site/
+        # as root, so reclaim ownership first.
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" _site
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$TAG" = "$GITHUB_REF" ]; then
+            # Not a tag push (e.g. a docs/** change): show the latest release
+            # reachable from HEAD rather than "dev".
+            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
+          fi
+
+          cat > _site/_version.json <<EOF
+          {
+            "tag": "${TAG}",
+            "sha": "${GITHUB_SHA:0:12}",
+            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          echo "Wrote _site/_version.json:"
+          cat _site/_version.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

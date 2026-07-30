@@ -107,6 +107,7 @@
       color: var(--muted);
     }
     #version-badge .vt {
+      text-decoration: none;
       background: rgba(124,106,247,0.15);
       border: 1px solid rgba(124,106,247,0.35);
       color: var(--accent2);
@@ -559,7 +560,8 @@
     </a>
   </div>
   <div id="version-badge">
-    <span id="vbadge-tag" class="vt"></span>
+    <a id="vbadge-tag" class="vt" href="https://github.com/vlbthambawita/ECGBench/releases"
+       target="_blank" rel="noopener"></a>
     <span id="vbadge-sha" class="vs"></span>
     <span id="vbadge-date" class="vs"></span>
   </div>
@@ -1000,7 +1002,7 @@ loader = <span class="func">DataLoader</span>(dataset, batch_size=<span class="s
 <script>
   // Load version badge from _version.json written by CI at deploy time
   (function () {
-    fetch('_version.json?_=' + Date.now())
+    fetch('{{ "/_version.json" | relative_url }}?_=' + Date.now())
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (v) {
         if (!v) return;
@@ -1010,6 +1012,7 @@ loader = <span class="func">DataLoader</span>(dataset, batch_size=<span class="s
         var dateEl = document.getElementById('vbadge-date');
         if (v.tag) {
           tagEl.textContent = v.tag;
+          tagEl.href = 'https://github.com/vlbthambawita/ECGBench/releases/tag/' + v.tag;
         } else {
           tagEl.textContent = 'dev';
         }

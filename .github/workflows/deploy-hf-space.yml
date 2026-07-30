@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # `git describe` below needs tags, which depth-1 omits
 
       - name: Validate HF_TOKEN secret
         env:
@@ -57,7 +59,9 @@ jobs:
 
           TAG="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG" == refs/* ]]; then
-            TAG="dev"
+            # Not a tag push: show the latest release reachable from HEAD rather
+            # than "dev", so a docs-only change does not blank the version badge.
+            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
           fi
           SHA="${GITHUB_SHA:0:12}"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
