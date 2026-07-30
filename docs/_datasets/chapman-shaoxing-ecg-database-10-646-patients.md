@@ -108,6 +108,15 @@ sections:
       sample["labels"]["Beat"]        # 'LVHV'  (space-separated, multi-label)
       sample["labels"]["QTCorrected"] # 454
 
+      # Signals are stored in microvolts; signal_unit_scale converts them to mV,
+      # so the tensor above is already in mV. Ask for microvolts back with
+      # units="uV", and select leads by name:
+      two = ECGDataset("chapman_shaoxing", split="train",
+                       data_path="/path/to/chapman-figshare/",
+                       leads=["II", "V5"], units="uV")
+      two[0]["signal"].shape  # (2, 5000)
+      two.units               # 'uV'
+
   - type: links
     title: "References"
     items:

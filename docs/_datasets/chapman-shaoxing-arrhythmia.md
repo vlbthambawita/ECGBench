@@ -110,6 +110,7 @@ sections:
           split="train",
           version="clean",
           data_path="/path/to/ecg-arrhythmia/1.0.0/",
+          labels=True,   # SNOMED-CT #Dx codes, acronyms, age, sex
       )
 
       loader = DataLoader(dataset, batch_size=32, collate_fn=ecg_collate_fn)
@@ -117,7 +118,13 @@ sections:
       for batch in loader:
           signals = batch["signal"]        # (B, 12, 5000) at 500 Hz
           record_ids = batch["record_id"]  # e.g. "JS00001"
+          labels = batch["labels"]         # list of dicts; dx is multi-label
           break
+
+      # Labels need ecgbench_metadata.csv, which the splitter generates from the
+      # WFDB headers — run `ecgbench splits` once before using labels=True.
+      # Leads are in the standard order; select by name to stay portable:
+      #   ECGDataset("ecg_arrhythmia", ..., leads=["II", "V5"], units="uV")
 
   - type: links
     title: "References"

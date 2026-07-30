@@ -114,7 +114,10 @@ recomputed v1.0.3 counts, and the 38 dropped duplicates that explain the gap.
 
 - [ ] `cp ecgbench/data/configs/_template.yaml ecgbench/data/configs/<config-slug>.yaml`
 - [ ] Fill in **Identity** block (`name`, `slug`, `version`, `url`, `download_url`, `license`, `description`, `citation`, `doi`, `creators`). `download_url` should be a direct zip/tar.gz URL or `null` if the source needs credentialed access.
-- [ ] Fill in **Signal Properties**.
+- [ ] Fill in **Signal Properties** — including the three fields that are easy to skip and silently wrong:
+  - `signal_format` (`wfdb` or `csv`);
+  - `signal_unit_scale`, so samples reach ECGBench as millivolts (`0.001` for microvolts). Everything downstream — `amplitude_range_mv`, `units=`, the tensors users train on — assumes mV;
+  - `lead_names`, in the order the **files** store them and spelled as the source spells them. `ECGDataset(leads=...)` is unusable without it.
 - [ ] Fill in **File Structure**: `metadata_csv`, separator, `record_id_column`, `patient_id_column`, `signal_path_columns` (rate → column).
 - [ ] Fill in **Labels** (`label_column`, `label_format`).
 - [ ] Fill in **stratification** block (and provide `mapping_source` + `superclass_column` if using `superclass_mapping`).
@@ -196,7 +199,8 @@ Decide which path applies and do **one**:
 
 ## Phase 5 — Tests
 
-- [ ] Add a `test_load_<config-slug>_config()` function to `tests/test_config.py`, alongside the existing `test_load_ptbxl_config` / `test_load_chapman_config`. These are hand-written per dataset, not parametrised — there is no table to extend.
+- [ ] Add a `test_load_<config-slug>_config()` function to `tests/test_config.py`, alongside the existing `test_load_ptbxl_config` / `test_load_chapman_config`. These are hand-written per dataset, not parametrised — there is no table to extend. Assert `signal_format`, `signal_unit_scale` and `lead_names` explicitly: those three are silent when wrong.
+- [ ] Add the dataset to `TestShippedLeadNames` in `tests/test_dataset.py`, which asserts the declared lead order against what the files hold.
 - [ ] If you wrote a custom splitter, add a unit test under `tests/test_splitting.py` using synthetic data from `tests/conftest.py` patterns. Cover at minimum: `load_metadata` shape, label distribution, patient grouping if applicable.
 - [ ] Run the full suite: `pytest`. Note that `conftest.py` builds `DatasetConfig` objects **in Python, not from the shipped YAML**, so a green suite does not prove your new YAML parses — the Phase 2 `load_config()` smoke-test is what covers that.
 - [ ] Confirm optional-extra tests actually ran rather than skipping (`torch` for `test_dataset.py`, `mlcroissant` for `test_croissant.py`/`test_cli.py`): install `.[dev]` and check `pytest -rs` output for unexpected skips.
@@ -214,6 +218,8 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - [ ] Surface the dataset's own gotchas in the output — non-standard lead order, raw codes with no acronym, labels requiring a prior pipeline run.
 - [ ] **Run it and paste nothing you did not see.** Numbers in comments must come from a real run.
 - [ ] Use `dataset.labels_df` for split-level statistics rather than iterating the Dataset — iterating decodes every signal.
+- [ ] Print the dataset's `lead_names`, and if the order is non-standard, demonstrate `leads=[...]` selecting by name so a reader sees the fix rather than just the warning (see `load_mimic_iv_ecg_demo.py`).
+- [ ] If the source is not in millivolts, show `units="uV"` returning the original scale, so the `signal_unit_scale` conversion is visible rather than implicit (see `load_chapman_shaoxing.py`).
 
 ## Phase 6 — HuggingFace Hub upload (optional)
 
@@ -239,7 +245,9 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 ## Phase 7 — Wrap up
 
 - [ ] Cross-check the catalogue entry's `records`/`patients` against the pipeline's own output (`original.total` in the `ecgbench splits` summary). If they disagree, one of them is wrong — usually the config filters or drops rows you did not expect.
-- [ ] Update the `README.md` "Dataset Catalogue" section if applicable.
+- [ ] Update `README.md` if the dataset adds a capability the docs do not yet mention — a new `signal_format`, a units quirk, an unusual label shape. The parameter table and the "Leads and units" table both list per-dataset facts that go stale.
+- [ ] Add the dataset's lead order to the table in the README's **Leads and units** section.
+- [ ] Update the "Loading with ECGBench" `code` section in the catalogue entry to show `labels=True`, and `leads=`/`units=` where the dataset has a quirk worth demonstrating. **Run the snippet before pasting it** — a stale example on a dataset page is how the broken PTB-XL one survived.
 - [ ] Flip `status:` to `completed` in `docs/_datasets/<catalogue-slug>.md` (created back in Phase 1 — don't create a second entry here).
 - [ ] Commit: config YAML, optional splitter + its `strategies/__init__.py` import, catalogue Markdown entry, tests, any docs. Keep generated output (`output/`) out of the commit.
 - [ ] Remember `docs/**` changes trigger the Pages and HF Space deploys on `main`, while Python-only changes deploy nothing until a `v*` tag is pushed.

@@ -627,19 +627,29 @@ uv pip install -e <span class="string">".[dev]"</span>
 
 <span class="comment"># Load PTB-XL training data (folds 1-8, 100 Hz)</span>
 dataset = <span class="func">ECGDataset</span>(
-    physionet_path=<span class="string">"/path/to/physionet.org/files/ptb-xl/1.0.3/"</span>,
-    dataset_name=<span class="string">"ptbxl"</span>,
+    <span class="string">"ptbxl"</span>,
     split=<span class="string">"train"</span>,
-    frequency=<span class="string">"100"</span>,
+    version=<span class="string">"clean"</span>,
+    data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
+    sampling_rate=<span class="string">100</span>,
+    labels=<span class="string">True</span>,          <span class="comment"># attach diagnoses, demographics, report</span>
 )
 
 <span class="comment"># Create DataLoader with custom collate for mixed metadata</span>
 loader = <span class="func">DataLoader</span>(dataset, batch_size=<span class="string">32</span>, collate_fn=ecg_collate_fn)
 
 <span class="keyword">for</span> batch <span class="keyword">in</span> loader:
-    signals = batch[<span class="string">"signal"</span>]   <span class="comment"># (B, channels, samples)</span>
-    ecg_ids = batch[<span class="string">"ecg_id"</span>]   <span class="comment"># list of IDs</span>
+    signals = batch[<span class="string">"signal"</span>]      <span class="comment"># (B, 12, 1000) float32, millivolts</span>
+    ids     = batch[<span class="string">"record_id"</span>]   <span class="comment"># tensor of ecg_id values</span>
+    labels  = batch[<span class="string">"labels"</span>]      <span class="comment"># list of per-record dicts</span>
     <span class="keyword">break</span>
+
+<span class="comment"># Pick specific leads by name, and choose the output unit.</span>
+<span class="comment"># Names, not indices: lead order differs between datasets.</span>
+subset = <span class="func">ECGDataset</span>(
+    <span class="string">"ptbxl"</span>, split=<span class="string">"train"</span>, data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
+    leads=[<span class="string">"I"</span>, <span class="string">"II"</span>, <span class="string">"V5"</span>], units=<span class="string">"uV"</span>,
+)
     </div>
   </div>
 </section>

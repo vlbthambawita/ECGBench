@@ -102,6 +102,7 @@ sections:
           version="clean",
           data_path="/path/to/ptb-xl/1.0.3/",
           sampling_rate=100,
+          labels=True,          # attach SCP codes, super/subclasses, report, demographics
       )
 
       loader = DataLoader(dataset, batch_size=32, collate_fn=ecg_collate_fn)
@@ -110,15 +111,23 @@ sections:
           signals = batch["signal"]     # (B, 12, 1000) float32, at 100 Hz
           ecg_ids = batch["record_id"]  # tensor of ecg_id values
           folds   = batch["fold"]       # tensor of fold numbers (1-10)
+          labels  = batch["labels"]     # list of per-record dicts
           break
+
+      # Lead order here is I II III AVR AVL AVF V1-V6 — note the uppercase
+      # spelling. Selecting by name is case-insensitive and dataset-independent:
+      limb = ECGDataset("ptbxl", split="train", data_path="/path/to/ptb-xl/1.0.3/",
+                        leads=["I", "II", "aVL"], units="uV")
+      limb[0]["signal"].shape   # (3, 5000)
+      limb.lead_names           # ('I', 'II', 'AVL')
 
   - type: code
     title: "Getting the labels"
     language: python
     body: |
-      # ECGBench's fold CSVs are identification-only — record ID, patient ID,
-      # signal paths, fold and split. Labels stay in the source metadata, so
-      # join them on ecg_id when you need ground truth.
+      # ECGDataset(labels=True) does this join for you. Do it by hand only when
+      # you want the labels without building a Dataset — for class weights,
+      # filtering, or inspection. Fold CSVs are identification-only.
       import ast
       import pandas as pd
 

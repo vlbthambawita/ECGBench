@@ -92,16 +92,96 @@ test_ds = ECGDataset("ptbxl", split="test", data_path="/data/ptb-xl/1.0.3/")
 loader = DataLoader(train_ds, batch_size=32, collate_fn=ecg_collate_fn)
 ```
 
-### K-fold cross-validation
+### Selecting specific folds
+
+`fold_numbers` picks individual folds out of a split:
 
 ```python
-for k in range(1, 11):
-    val_ds = ECGDataset("ptbxl", split="val", fold_numbers=[k], data_path="...")
-    test_fold = k % 10 + 1
-    test_ds = ECGDataset("ptbxl", split="test", fold_numbers=[test_fold], data_path="...")
-    train_folds = [f for f in range(1, 11) if f != k and f != test_fold]
-    train_ds = ECGDataset("ptbxl", split="train", fold_numbers=train_folds, data_path="...")
+ECGDataset("ptbxl", split="train", fold_numbers=[3], data_path="...")       # one fold
+ECGDataset("ptbxl", split="train", fold_numbers=[1, 2, 5], data_path="...") # several
 ```
+
+**A fold only exists in the split it was exported to** — folds 1-8 under `train/`,
+9 under `val/`, 10 under `test/`. Asking for fold 9 with `split="train"` is a 404,
+so a rotation has to look each fold up in its own split:
+
+```python
+from torch.utils.data import ConcatDataset
+
+SPLIT_OF_FOLD = {**{n: "train" for n in range(1, 9)}, 9: "val", 10: "test"}
+
+def folds(slug, numbers, **kw):
+    parts = [ECGDataset(slug, split=SPLIT_OF_FOLD[n], fold_numbers=[n], **kw)
+             for n in numbers]
+    return ConcatDataset(parts) if len(parts) > 1 else parts[0]
+
+# fold 7 as test, fold 10 as val, the other eight as train
+test  = folds("ptbxl", [7],  data_path="...")
+val   = folds("ptbxl", [10], data_path="...")
+train = folds("ptbxl", [n for n in range(1, 11) if n not in (7, 10)], data_path="...")
+```
+
+`ConcatDataset` yields the same sample dicts, so `ecg_collate_fn` still works — but
+it has no `.metadata_df` or `.labels_df`, so combine those yourself if you need them.
+
+### Labels
+
+Fold CSVs are **identification-only** by design — record ID, patient ID, signal
+paths, fold, split. Ground truth stays with the source dataset, so `labels=True`
+needs a local copy of it:
+
+```python
+ds = ECGDataset("ptbxl", split="train", data_path="/data/ptb-xl/1.0.3/", labels=True)
+
+ds[0]["labels"]["superclasses"]   # ['MI', 'STTC']  — multi-label
+ds[0]["labels"]["report"]         # the cardiologist's text
+ds.labels_df                      # the whole split's labels, aligned to metadata_df
+```
+
+Or without a Dataset at all, for class weights and filtering:
+
+```python
+from ecgbench import load_labels
+
+labels = load_labels("chapman_shaoxing", data_path="/data/chapman-figshare/")
+labels["Rhythm"].value_counts()
+```
+
+Each dataset exposes its own fields — SCP codes plus diagnostic super/subclasses
+for PTB-XL, SNOMED-CT codes for `ecg_arrhythmia`, rhythm/beat annotations and
+eleven automated measurements for `chapman_shaoxing`. A dataset that genuinely has
+none (`mimic_iv_ecg_demo`) raises `LabelsUnavailableError` naming where labels
+could come from, rather than returning empty columns.
+
+### Leads and units
+
+Select and reorder leads **by name**, and choose the output unit:
+
+```python
+ds = ECGDataset("mimic_iv_ecg_demo", split="train", data_path="...",
+                leads=["I", "II", "aVL", "V5"], units="uV")
+
+ds[0]["signal"].shape   # (4, 5000)
+ds.lead_names           # ('I', 'II', 'aVL', 'V5')
+ds.units                # 'uV'
+```
+
+Names, not indices, because **lead order is not consistent across datasets**:
+
+| Dataset | Order in the files |
+|---|---|
+| `ptbxl` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
+| `ecg_arrhythmia` | I, II, III, aVR, aVL, aVF, V1-V6 |
+| `chapman_shaoxing` | I, II, III, aVR, aVL, aVF, V1-V6 |
+| `mimic_iv_ecg_demo` | I, II, III, aVR, **aVF, aVL**, V1-V6 (transposed) |
+
+`signal[4]` is aVL in three of them and aVF in the fourth, so slicing by index
+across datasets silently crosses two leads. Matching is case-insensitive; an
+unknown lead lists what is available; a duplicate is rejected.
+
+Both are **read-time adapters**: they shape the returned tensor only. Source files,
+fold CSVs and validation are untouched — a record excluded for a flat V6 stays
+excluded even if you never load V6.
 
 ### ECGDataset parameters
 
@@ -115,14 +195,21 @@ for k in range(1, 11):
 | `fold_numbers` | `list[int] \| None` | `None` | Specific folds to load; None = all |
 | `transform` | `Callable \| None` | `None` | Transform applied to signal tensor |
 | `metadata_source` | `str` | `"hf"` | `"hf"` (HuggingFace) or `"local"` |
+| `labels` | `bool` | `False` | Attach per-record labels as `sample["labels"]`; needs local source data |
+| `leads` | `list[str] \| None` | `None` | Select and reorder leads by name, e.g. `["I", "II", "V5"]` |
+| `units` | `str` | `"mV"` | `"mV"` or `"uV"` — applied before `transform` |
 
 ### Output format
 
 Each sample is a dict:
-- `signal` -- float32 tensor `(leads, samples)`
+- `signal` -- float32 tensor `(leads, samples)`, in millivolts unless `units="uV"`
 - `record_id` -- record identifier
 - `split`, `fold` -- split name and fold number
+- `labels` -- dict of the dataset's label and metadata fields (only with `labels=True`)
 - All other CSV columns as tensors (numeric) or raw values (str/dict)
+
+The dataset object also carries `ds.lead_names` and `ds.units`, so the tensor is
+self-describing.
 
 ## Data Versions
 

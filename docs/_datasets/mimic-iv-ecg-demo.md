@@ -85,6 +85,15 @@ sections:
           record_ids = batch["record_id"]  # study_id values
           break
 
+      # This dataset stores aVF BEFORE aVL, so signal[4] is a different physical
+      # lead here than in every other dataset. Selecting by name fixes that:
+      ds = ECGDataset("mimic_iv_ecg_demo", split="train",
+                      data_path="/path/to/mimic-iv-ecg-demo/0.1/",
+                      leads=["I", "II", "aVL", "V5"])
+      ds.lead_names   # ('I', 'II', 'aVL', 'V5') — aVL is taken from stored row 5
+
+      # labels=True raises LabelsUnavailableError here: the demo ships none.
+
   - type: links
     title: "References"
     items:
