@@ -93,9 +93,13 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     Imported lazily so ``import ecgbench.labels`` stays cheap and a broken
     per-dataset module cannot take the whole package down.
     """
-    from ecgbench.labels import ptbxl
+    from ecgbench.labels import ludb, ptbdb, ptbxl
 
-    return {"ptbxl": ptbxl.load_labels}
+    return {
+        "ptbxl": ptbxl.load_labels,
+        "ptbdb": ptbdb.load_labels,
+        "ludb": ludb.load_labels,
+    }
 
 
 def load_labels(

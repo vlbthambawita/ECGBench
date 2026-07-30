@@ -1,0 +1,113 @@
+# ECGBench Config: Lobachevsky University Electrocardiography Database (LUDB)
+# ==========================================================================
+# https://physionet.org/content/ludb/1.0.1/
+#
+# 200 records, one per patient, 12 leads at 500 Hz for 10 seconds. The dataset's
+# distinguishing feature is its manual P/QRS/T delineation: 12 annotation files
+# per record, one per lead, marking wave onsets, peaks and offsets. Those are
+# boundary annotations, not diagnoses — the diagnoses are in ludb.csv.
+
+name: "Lobachevsky University ECG Database (LUDB)"
+slug: "ludb"
+version: "1.0.1"
+url: "https://physionet.org/content/ludb/1.0.1/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "ODC-By-1.0"  # LICENSE.txt: Open Data Commons Attribution License
+description: >
+  200 twelve-lead ECG records from 200 patients at Nizhny Novgorod City Hospital
+  No. 5, each 10 seconds at 500 Hz. Every record carries manually determined
+  P, QRS and T wave boundaries and peaks for all 12 leads — 58,429 annotated
+  waves in total — which makes this the reference dataset for delineation rather
+  than classification. Diagnoses are given in ludb.csv across nine categorised
+  columns covering rhythm, electric axis, conduction abnormalities,
+  extrasystolies, hypertrophies, cardiac pacing, ischemia, repolarization
+  abnormalities and other states, plus age and sex.
+citation: >
+  Kalyakulina, A.I., Yusipov, I.I., Moskalenko, V.A., et al. LUDB: A New Open-Access
+  Validation Tool for Electrocardiogram Delineation Algorithms. IEEE Access 8,
+  186181-186190 (2020).
+doi: "10.1109/ACCESS.2020.3029211"
+
+creators:
+  - type: Organization
+    name: "Lobachevsky University, Nizhny Novgorod"
+    url: "https://eng.unn.ru/"
+  - type: Organization
+    name: "Nizhny Novgorod City Hospital No. 5"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+signal_unit_scale: 1.0  # headers declare mV; per-record, per-lead gains vary
+leads: 12
+lead_names: ["i", "ii", "iii", "avr", "avl", "avf",
+             "v1", "v2", "v3", "v4", "v5", "v6"]  # lowercase in every header
+duration_seconds: 10
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# ludb.csv has the labels but no signal path, and every string cell in it carries
+# a trailing newline. LUDBSplitter writes this normalised file on first run, so
+# the validation engine — which re-reads metadata_csv from disk — resolves the
+# same paths the splitter does. The dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "ID"
+patient_id_column: null  # one record per patient; no patient column exists
+
+signal_path_columns:
+  500: "signal_path"  # e.g. data/1
+
+# --- Labels ---
+label_column: "primary_rhythm"
+label_format: "single"
+
+stratification:
+  method: "custom_function"  # LUDBSplitter takes primary_rhythm from the loader
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    500: 5000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ludb.py strips the trailing newlines and splits
+# the newline-joined multi-label cells into lists.
+labels:
+  source_csv: "ludb.csv"
+  join_column: "ID"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "LUDB"
+    - "12-lead"
+    - "delineation"
+    - "P-QRS-T annotation"
+    - "PhysioNet"
+  rai_data_collection: >
+    Recorded at Nizhny Novgorod City Hospital No. 5 and annotated by
+    cardiologists, who marked P, QRS and T boundaries and peaks on every lead of
+    every record.
+  rai_data_biases: >
+    A single Russian hospital and only 200 records. Rhythm labels are dominated by
+    sinus rhythm (142 of 200), and most diagnosis categories are very sparse —
+    cardiac pacing appears in 10 records, other states in 9, extrasystolies in 14
+    with almost every value unique. Patients skew male (115 of 200).
+  rai_personal_sensitive_info: >
+    De-identified. Age and sex are provided; one patient's age is recorded as
+    ">89" rather than a number, an age-capping convention.

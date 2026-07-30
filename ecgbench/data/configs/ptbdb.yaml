@@ -1,0 +1,123 @@
+# ECGBench Config: PTB Diagnostic ECG Database
+# ============================================
+# https://physionet.org/content/ptbdb/1.0.0/
+#
+# The unusual one in this catalogue on three counts, all verified against the
+# files: 15 signals rather than 12 (the standard leads plus the three Frank leads
+# vx/vy/vz, which live in a companion .xyz file), VARIABLE-LENGTH records
+# (11 distinct lengths, 32 s to 120 s), and no metadata file at all — every
+# clinical field lives in the per-record .hea comment block.
+
+name: "PTB Diagnostic ECG Database"
+slug: "ptbdb"
+version: "1.0.0"
+url: "https://physionet.org/content/ptbdb/1.0.0/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "ODC-By-1.0"  # from the PhysioNet landing page; the mirror has no LICENSE file
+description: >
+  549 ECG records from 290 subjects recorded at the Benjamin Franklin University
+  Clinic, Berlin. Each record has 15 simultaneous signals — the conventional
+  12 leads plus the three Frank vectorcardiography leads vx, vy and vz — sampled
+  at 1000 Hz with 16-bit resolution. Recordings are between 32 and 120 seconds
+  long and differ in length from one another. Headers carry 47 clinical fields
+  per record, including the admission diagnosis, infarction localisation, a full
+  haemodynamics panel and the therapy history. 113 of the 290 patients
+  contributed more than one recording, up to seven.
+citation: >
+  Bousseljot, R., Kreiseler, D., Schnabel, A. Nutzung der EKG-Signaldatenbank
+  CARDIODAT der PTB über das Internet. Biomedizinische Technik 40(S1), S317 (1995).
+doi: "10.13026/C28C71"
+
+creators:
+  - type: Organization
+    name: "Physikalisch-Technische Bundesanstalt (PTB)"
+    url: "https://www.ptb.de/"
+  - type: Organization
+    name: "Benjamin Franklin University Clinic, Berlin"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+signal_unit_scale: 1.0  # headers declare mV with a uniform gain of 2000
+leads: 15               # 12 conventional + 3 Frank leads
+# Lowercase in every header, and the three Frank leads come last. Leads 1-12 are
+# stored in the .dat file, 13-15 in the .xyz companion; wfdb reads both.
+lead_names: ["i", "ii", "iii", "avr", "avl", "avf",
+             "v1", "v2", "v3", "v4", "v5", "v6",
+             "vx", "vy", "vz"]
+duration_seconds: 115.2  # nominal: the most common length. Records are NOT uniform.
+sampling_rates: [1000]
+default_sampling_rate: 1000
+
+# --- File Structure ---
+# No metadata file ships with this dataset. PTBDBSplitter builds this one from the
+# .hea comment blocks on first run, via ecgbench.labels.ptbdb. The validation
+# engine reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+patient_id_column: "patient_id"  # patientNNN directory; 113 patients have >1 record
+
+signal_path_columns:
+  1000: "signal_path"  # e.g. patient001/s0010_re
+
+# --- Labels ---
+label_column: "diagnosis"  # 'Reason for admission' from the header comments
+label_format: "single"
+
+stratification:
+  method: "custom_function"  # PTBDBSplitter takes primary_diagnosis from the loader
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 15
+  # expected_samples is deliberately EMPTY. Records genuinely differ in length
+  # (32000 to 120012 samples), and check_truncated_signal returns [] when the rate
+  # has no entry — which is the intended way to disable a check that cannot apply.
+  # Adding a 1000 key here would fail every record shorter than it.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Wider than the usual +/-10 mV: several records show saturation-like
+  # excursions past 8 mV that are real recordings, not corruption.
+  amplitude_range_mv: [-15.0, 15.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ptbdb.py parses the 47 header fields. There is no
+# source CSV to point at — the headers are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "PTB"
+    - "15-lead"
+    - "Frank leads"
+    - "vectorcardiography"
+    - "myocardial infarction"
+    - "PhysioNet"
+  rai_data_collection: >
+    Recorded at the Benjamin Franklin University Clinic in Berlin and digitised by
+    the Physikalisch-Technische Bundesanstalt. Clinical fields were transcribed
+    from hospital records alongside each recording.
+  rai_data_biases: >
+    A single German clinic, and heavily skewed towards myocardial infarction: 368
+    of 549 records are MI and 80 are healthy controls, together 82% of the data.
+    Seven diagnosis classes have fewer than 10 records and 27 records carry no
+    diagnosis at all. Sex is skewed male (391 of 549 records).
+  rai_personal_sensitive_info: >
+    De-identified, but the clinical fields are unusually detailed for an open ECG
+    dataset — haemodynamic measurements, catheterisation dates, coronary stenosis
+    percentages, and medication before, during and after admission. Ages are
+    recorded in years, and one record has no sex recorded.

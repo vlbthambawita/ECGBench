@@ -78,6 +78,43 @@ def test_load_mimic_iv_ecg_demo_config():
     assert config.validation.expected_samples[500] == 5000
 
 
+def test_load_ptbdb_config():
+    """PTBDB is the 15-lead, variable-length, no-metadata-file dataset."""
+    config = load_config("ptbdb")
+    assert config.slug == "ptbdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 15
+    assert config.lead_names[-3:] == ["vx", "vy", "vz"]  # Frank leads
+    assert config.sampling_rates == [1000]
+    # No metadata ships: PTBDBSplitter generates this from the .hea comments.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 113 of 290 patients have more than one recording, so grouping is required.
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # Records are genuinely variable length; an entry here would fail most of them.
+    assert config.validation.expected_samples == {}
+    assert config.validation.amplitude_range_mv == (-15.0, 15.0)
+
+
+def test_load_ludb_config():
+    """LUDB: 200 delineation-annotated records, lowercase lead names."""
+    config = load_config("ludb")
+    assert config.slug == "ludb"
+    assert config.version == "1.0.1"
+    assert config.signal_format == "wfdb"
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    assert config.lead_names == ["i", "ii", "iii", "avr", "avl", "avf",
+                                 "v1", "v2", "v3", "v4", "v5", "v6"]
+    assert config.record_id_column == "ID"
+    assert config.patient_id_column is None  # one record per patient
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.validation.expected_samples[500] == 5000
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
@@ -85,6 +122,8 @@ def test_list_available_configs():
     assert "chapman_shaoxing" in slugs
     assert "ecg_arrhythmia" in slugs
     assert "mimic_iv_ecg_demo" in slugs
+    assert "ptbdb" in slugs
+    assert "ludb" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 

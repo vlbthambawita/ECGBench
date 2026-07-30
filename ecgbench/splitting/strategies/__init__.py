@@ -1,3 +1,11 @@
 """Strategy modules — imported to trigger @register side effects."""
 
-from . import chapman, ecg_arrhythmia, generic, mimic_iv_ecg_demo, ptbxl  # noqa: F401
+from . import (  # noqa: F401
+    chapman,
+    ecg_arrhythmia,
+    generic,
+    ludb,
+    mimic_iv_ecg_demo,
+    ptbdb,
+    ptbxl,
+)

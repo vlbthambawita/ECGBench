@@ -161,6 +161,12 @@ class TestSplitterRegistry:
         splitter = get_splitter("mimic_iv_ecg_demo")
         assert type(splitter).__name__ == "MimicIVECGDemoSplitter"
 
+    def test_ptbdb_splitter(self):
+        assert type(get_splitter("ptbdb")).__name__ == "PTBDBSplitter"
+
+    def test_ludb_splitter(self):
+        assert type(get_splitter("ludb")).__name__ == "LUDBSplitter"
+
     def test_unknown_falls_back_to_generic(self):
         splitter = get_splitter("some_unknown_dataset")
         assert type(splitter).__name__ == "GenericSplitter"
@@ -414,3 +420,163 @@ class TestChapmanSplitter:
 
         assert labels.name == "rhythm"
         assert labels.value_counts().to_dict() == {"SB": 2, "AFIB": 1}
+
+
+class TestPTBDBSplitter:
+    """PTBDB derives everything from the .hea comment blocks."""
+
+    HEADER = (
+        "s0001_re 15 1000 38400\r\n"
+        "s0001_re.dat 16 2000 16 0 -489 -8337 0 i\r\n"
+        "# age: 81\r\n"
+        "# sex: female\r\n"
+        "# Diagnose:\r\n"
+        "# Reason for admission: Myocardial infarction\r\n"
+        "# Additional diagnoses: n/a\r\n"
+        "# Catheterization date: 01/10/1990\r\n"
+        "# Therapy:\r\n"
+        "# Catheterization date: 02/10/1990\r\n"
+    )
+
+    def _tree(self, tmp_path, diagnoses):
+        """One patient dir per diagnosis, some with two records."""
+        for i, diagnosis in enumerate(diagnoses, start=1):
+            d = tmp_path / f"patient{i:03d}"
+            d.mkdir()
+            for j in range(1, 3 if i % 2 == 0 else 2):  # every other patient: 2 records
+                header = self.HEADER.replace("Myocardial infarction", diagnosis)
+                (d / f"s{i:03d}{j}_re.hea").write_text(header, encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ptbdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"}, default_sampling_rate=1000,
+            label_column="diagnosis", leads=15,
+        )
+
+    def test_parses_crlf_comment_block(self, tmp_path):
+        from ecgbench.labels.ptbdb import parse_header_comments
+
+        (tmp_path / "x.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "x.hea")
+
+        assert fields["age"] == "81"
+        assert fields["sex"] == "female"
+        assert fields["Reason for admission"] == "Myocardial infarction"
+        # 'n/a' is the dataset's absence marker, normalised to empty.
+        assert fields["Additional diagnoses"] == ""
+        # The repeated key is kept, not silently overwritten.
+        assert fields["Catheterization date"] == "01/10/1990"
+        assert fields["Catheterization date (2)"] == "02/10/1990"
+
+    def test_builds_patient_id_and_signal_path(self, sample_config, tmp_path):
+        splitter = get_splitter("ptbdb")
+        config = self._config(sample_config)
+        df = splitter.load_metadata(self._tree(tmp_path, ["Healthy control"] * 3), config)
+
+        assert set(df["patient_id"]) == {"patient001", "patient002", "patient003"}
+        assert df.loc[0, "signal_path"].startswith("patient001/")
+        assert (tmp_path / config.metadata_csv).exists()
+
+    def test_missing_records_raise(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="patient..../..hea|headers"):
+            get_splitter("ptbdb").load_metadata(tmp_path, self._config(sample_config))
+
+    def test_rare_diagnoses_pool_and_missing_becomes_unknown(self, sample_config, tmp_path):
+        from ecgbench.labels.ptbdb import OTHER, UNKNOWN
+
+        splitter = get_splitter("ptbdb")
+        config = self._config(sample_config)
+        # 12 controls survive; one Myocarditis and one undiagnosed do not.
+        tree = self._tree(tmp_path, ["Healthy control"] * 8 + ["Myocarditis", "n/a"])
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(tree, config), config
+        )
+        counts = labels.value_counts().to_dict()
+
+        assert counts["Healthy control"] >= 10
+        assert OTHER in counts          # Myocarditis pooled
+        assert UNKNOWN not in counts    # only one, so it pooled into OTHER too
+
+
+class TestLUDBSplitter:
+    """LUDB's CSV is newline-polluted and multi-label; the loader normalises it."""
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ludb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="ID", patient_id_column=None,
+            signal_path_columns={500: "signal_path"}, label_column="primary_rhythm",
+        )
+
+    def _source(self, tmp_path, n=12):
+        rows = []
+        for i in range(1, n + 1):
+            rows.append({
+                "ID": i,
+                "Sex": "F\n" if i % 2 else "M\n",
+                "Age": ">89\n" if i == 1 else f"{40 + i}\n",
+                "Rhythms": "Sinus rhythm\n" if i > 2 else "Atrial fibrillation\n",
+                "Electric axis of the heart": "Electric axis of the heart: normal\n",
+                "Conduction abnormalities": None,
+                "Extrasystolies": None,
+                "Hypertrophies": "Left atrial hypertrophy\nLeft ventricular hypertrophy\n",
+                "Cardiac pacing": None,
+                "Ischemia": None,
+                "Non-specific repolarization abnormalities": None,
+                "Other states": None,
+            })
+        pd.DataFrame(rows).to_csv(tmp_path / "ludb.csv", index=False)
+        (tmp_path / "data").mkdir()
+        return tmp_path
+
+    def test_strips_trailing_newlines(self, sample_config, tmp_path):
+        from ecgbench.labels.ludb import load_labels
+
+        df = load_labels(self._source(tmp_path), self._config(sample_config))
+
+        assert df.loc[2, "sex"] == "M"           # was 'M\n'
+        assert df.loc[3, "electric_axis"] == "normal"  # prefix and dot stripped
+
+    def test_multi_label_cells_become_lists(self, sample_config, tmp_path):
+        from ecgbench.labels.ludb import load_labels
+
+        df = load_labels(self._source(tmp_path), self._config(sample_config))
+
+        assert df.loc[1, "hypertrophies"] == [
+            "Left atrial hypertrophy", "Left ventricular hypertrophy",
+        ]
+        assert df.loc[1, "conduction_abnormalities"] == []
+
+    def test_non_numeric_age_is_kept_raw(self, sample_config, tmp_path):
+        from ecgbench.labels.ludb import load_labels
+
+        df = load_labels(self._source(tmp_path), self._config(sample_config))
+
+        assert df.loc[1, "age_raw"] == ">89"
+        assert pd.isna(df.loc[1, "age"])
+        assert df.loc[2, "age"] == 42
+
+    def test_signal_paths_and_list_flattening(self, sample_config, tmp_path):
+        splitter = get_splitter("ludb")
+        config = self._config(sample_config)
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert df.loc[0, "signal_path"] == "data/1"
+        # Lists would round-trip through CSV as their repr, so they are joined.
+        assert df.loc[0, "hypertrophies"] == (
+            "Left atrial hypertrophy;Left ventricular hypertrophy"
+        )
+
+    def test_missing_data_dir_raises(self, sample_config, tmp_path):
+        pd.DataFrame({"ID": [1]}).to_csv(tmp_path / "ludb.csv", index=False)
+        with pytest.raises(FileNotFoundError, match="signal directory"):
+            get_splitter("ludb").load_metadata(tmp_path, self._config(sample_config))

@@ -191,6 +191,7 @@ class TestShippedConfigs:
             ("ptbxl", "ptbxl_database.csv", "ecg_id"),
             ("chapman_shaoxing", "Diagnostics.csv", "FileName"),
             ("ecg_arrhythmia", "ecgbench_metadata.csv", "record_name"),
+            ("ludb", "ludb.csv", "ID"),
         ],
     )
     def test_available_datasets_declare_a_source(self, slug, source_csv, join_column):
@@ -200,6 +201,25 @@ class TestShippedConfigs:
         assert spec is not None and spec.available
         assert spec.source_csv == source_csv
         assert spec.join_column == join_column
+
+    def test_ptbdb_labels_come_from_headers_not_a_csv(self):
+        """PTBDB ships no metadata file at all — the loader parses .hea comments."""
+        from ecgbench.config import load_config
+
+        spec = load_config("ptbdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # nothing to point at; headers are the source
+        assert spec.join_column == "record_name"
+
+    def test_variable_length_dataset_disables_the_truncation_check(self):
+        """PTBDB records differ in length, so expected_samples must stay empty.
+
+        check_truncated_signal returns [] when the rate has no entry; adding one
+        would fail every record shorter than it.
+        """
+        from ecgbench.config import load_config
+
+        assert load_config("ptbdb").validation.expected_samples == {}
 
     def test_mimic_demo_declares_labels_unavailable_with_a_reason(self):
         from ecgbench.config import load_config

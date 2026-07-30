@@ -174,10 +174,19 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ecg_arrhythmia` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `chapman_shaoxing` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `mimic_iv_ecg_demo` | I, II, III, aVR, **aVF, aVL**, V1-V6 (transposed) |
+| `ludb` | i, ii, iii, avr, avl, avf, v1-v6 (**lowercase**) |
+| `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
 
-`signal[4]` is aVL in three of them and aVF in the fourth, so slicing by index
-across datasets silently crosses two leads. Matching is case-insensitive; an
-unknown lead lists what is available; a duplicate is rejected.
+`signal[4]` is aVL in most of them and aVF in MIMIC, so slicing by index across
+datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
+works on the lowercase datasets too — an unknown lead lists what is available, and
+a duplicate is rejected.
+
+PTBDB is the one dataset that is not 12-lead: it stores 15 signals, the
+conventional twelve plus the three Frank vectorcardiography leads. `leads=` is how
+you take the standard twelve out of it. Its records are also **variable length**
+(32 s to 120 s), so batching needs a cropping `transform` — see
+`examples/load_ptbdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

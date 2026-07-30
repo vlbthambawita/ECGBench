@@ -299,20 +299,40 @@ class TestShippedLeadNames:
     """Every implemented dataset must declare its true lead order."""
 
     @pytest.mark.parametrize(
-        ("slug", "expected"),
+        ("slug", "limb", "chest"),
         [
-            ("ptbxl", ["I", "II", "III", "AVR", "AVL", "AVF"]),
-            ("ecg_arrhythmia", ["I", "II", "III", "aVR", "aVL", "aVF"]),
-            ("chapman_shaoxing", ["I", "II", "III", "aVR", "aVL", "aVF"]),
+            ("ptbxl", ["I", "II", "III", "AVR", "AVL", "AVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            ("ecg_arrhythmia", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            ("chapman_shaoxing", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
             # aVF and aVL transposed — the reason leads= takes names, not indices.
-            ("mimic_iv_ecg_demo", ["I", "II", "III", "aVR", "aVF", "aVL"]),
+            ("mimic_iv_ecg_demo", ["I", "II", "III", "aVR", "aVF", "aVL"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Lowercase in the headers, and PTBDB adds the three Frank leads.
+            ("ludb", ["i", "ii", "iii", "avr", "avl", "avf"],
+             ["v1", "v2", "v3", "v4", "v5", "v6"]),
+            ("ptbdb", ["i", "ii", "iii", "avr", "avl", "avf"],
+             ["v1", "v2", "v3", "v4", "v5", "v6", "vx", "vy", "vz"]),
         ],
     )
-    def test_lead_names_match_the_files(self, slug, expected):
+    def test_lead_names_match_the_files(self, slug, limb, chest):
         from ecgbench.config import load_config
 
-        names = load_config(slug).lead_names
+        config = load_config(slug)
+        names = config.lead_names
         assert names is not None, f"{slug} declares no lead_names"
-        assert len(names) == 12
-        assert names[:6] == expected
-        assert names[6:] == ["V1", "V2", "V3", "V4", "V5", "V6"]
+        assert names[:6] == limb
+        assert names[6:] == chest
+        # leads is a count of what lead_names lists, not an assumption of 12.
+        assert len(names) == config.leads
+
+    def test_ptbdb_declares_fifteen_leads(self):
+        """PTBDB is the one dataset that is not 12-lead: 12 + Frank vx/vy/vz."""
+        from ecgbench.config import load_config
+
+        config = load_config("ptbdb")
+        assert config.leads == 15
+        assert config.lead_names[-3:] == ["vx", "vy", "vz"]
+        assert config.validation.expected_leads == 15
