@@ -70,15 +70,22 @@ sections:
       `diagnostic == 1`.
 
       **The stratification label is a different quantity from this table.**
-      `PTBXLSplitter` reduces each record to one superclass by highest
-      confidence, and it maps codes with its own hardcoded table rather than
-      reading `scp_statements.csv`. That table has drifted: it omits five
-      diagnostic codes (`ANEUR`, `EL`, `IPLMI`, `IPMI`, `ISCAN`) and includes
-      seven that the shipped file does not flag as diagnostic (`APTS`, `ISCA`,
-      `ISCI`, `NT_`, `STD_`, `STE_`, `TAB_`). So the split stratifies on
-      NORM 9,243 / MI 4,003 / CD 3,447 / STTC 3,324 / HYP 1,317 / OTHER 465,
-      where the statement table would give OTHER 411. Use the join shown below
-      for training targets, not the stratification label.
+      `primary_superclass` reduces each record to *one* superclass by summed
+      likelihood, so its distribution — NORM 9,243 / STTC 4,158 / MI 4,079 /
+      CD 3,162 / HYP 746 / OTHER 411 — is not the multi-label table above.
+      2,358 records (10.8%) have two or more superclasses tied on likelihood, and
+      PTB-XL likelihood `0.0` means "present but not graded" rather than
+      "absent", so which class wins a tie is settled by a fixed arbitrary order,
+      not by the data. **Train on `superclasses` or `subclasses`, never on
+      `primary_superclass`.**
+
+      Both now come from the same derivation. `PTBXLSplitter` used to carry its
+      own hardcoded code map, which had drifted from `scp_statements.csv` — five
+      diagnostic codes missing, seven non-diagnostic ones treated as diagnostic,
+      putting 465 records in OTHER instead of 411. It now takes the label from
+      `ecgbench.labels.ptbxl`, so the two cannot disagree. Fold assignments are
+      unchanged, because PTB-XL folds come from the official `strat_fold` column
+      and the stratification label only records what they were balanced on.
 
   - type: code
     title: "Loading with ECGBench"

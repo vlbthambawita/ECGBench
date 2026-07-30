@@ -74,6 +74,25 @@ validation:
     - amplitude_outlier           # Samples outside physiological range
   amplitude_range_mv: [-10.0, 10.0]
 
+# --- Labels [REQUIRED if the dataset has any] ---
+# Exported fold CSVs are identification-only, so labels always come from the
+# source dataset. This block says where. Declarative form covers a column select
+# plus a join; anything needing a real derivation gets a module in
+# ecgbench/labels/<slug>.py (see labels/ptbxl.py) which is dispatched by slug.
+labels:
+  source_csv: ""        # File holding the labels, relative to the dataset root.
+  separator: ","
+  join_column: ""       # Column in source_csv matching record_id_column above.
+  columns: null         # List of columns to expose; null -> all except join_column.
+
+# If the dataset genuinely ships no labels, say so instead — ECGDataset(labels=True)
+# then raises LabelsUnavailableError quoting the reason, rather than returning
+# empty columns. Always point at where labels COULD be obtained.
+# labels:
+#   available: false
+#   unavailable_reason: >
+#     This subset ships identifiers only. Diagnoses are in the full release: <url>
+
 # --- Croissant Metadata ---
 croissant:
   keywords: ["ECG", "electrocardiography"]

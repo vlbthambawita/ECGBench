@@ -48,6 +48,26 @@ class PredefinedSplitConfig:
 
 
 @dataclass
+class LabelConfig:
+    """Where a dataset's per-record labels and metadata come from.
+
+    Exported fold CSVs are identification-only, so ground truth always lives in
+    the source dataset. This block says which file holds it and how to join it
+    back to the fold CSVs. Datasets needing a derivation beyond a column select
+    (PTB-XL's SCP-to-superclass reduction, say) get a module in
+    ``ecgbench/labels/`` instead; the fields here still describe the source file
+    so a missing-file error can name it.
+    """
+
+    available: bool = True
+    source_csv: str | None = None  # relative to the dataset root
+    separator: str = ","
+    join_column: str | None = None  # column in source_csv holding record ids
+    columns: list[str] | None = None  # None -> every column except join_column
+    unavailable_reason: str = ""  # required when available is False
+
+
+@dataclass
 class CroissantConfig:
     """Croissant (MLCommons) metadata fields."""
 
@@ -101,6 +121,9 @@ class DatasetConfig:
     # Validation
     validation: ValidationConfig | None = None
 
+    # Labels
+    labels: LabelConfig | None = None
+
     # Croissant
     croissant: CroissantConfig = field(default_factory=CroissantConfig)
 
@@ -147,6 +170,24 @@ def _parse_predefined_splits(raw: dict | None) -> PredefinedSplitConfig | None:
     for split_name, folds in raw.get("fold_mapping", {}).items():
         fold_mapping[split_name] = list(folds) if folds else []
     return PredefinedSplitConfig(column=raw["column"], fold_mapping=fold_mapping)
+
+
+def _parse_labels(raw: dict | None) -> LabelConfig | None:
+    if not raw:
+        return None
+    available = raw.get("available", True)
+    if not available:
+        return LabelConfig(
+            available=False,
+            unavailable_reason=raw.get("unavailable_reason", ""),
+        )
+    return LabelConfig(
+        available=True,
+        source_csv=raw.get("source_csv"),
+        separator=raw.get("separator", ","),
+        join_column=raw.get("join_column"),
+        columns=raw.get("columns"),
+    )
 
 
 def _parse_croissant(raw: dict | None) -> CroissantConfig:
@@ -223,6 +264,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         has_predefined_splits=raw.get("has_predefined_splits", False),
         predefined_splits=_parse_predefined_splits(raw.get("predefined_splits")),
         validation=_parse_validation(raw.get("validation")),
+        labels=_parse_labels(raw.get("labels")),
         croissant=_parse_croissant(raw.get("croissant")),
     )
 

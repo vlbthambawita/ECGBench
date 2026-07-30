@@ -83,6 +83,21 @@ validation:
     - amplitude_outlier
   amplitude_range_mv: [-10.0, 10.0]  # header gain is 1000/mV, so wfdb yields mV
 
+# --- Labels ---
+# Declarative: the metadata CSV the splitter generates from the WFDB headers
+# already holds the SNOMED codes and demographics, so labels need no extra file.
+# Note this means labels are only available after `ecgbench splits` has run once.
+labels:
+  source_csv: "ecgbench_metadata.csv"
+  join_column: "record_name"
+  columns:
+    - dx                  # raw SNOMED-CT codes, comma separated (multi-label)
+    - dx_acronyms         # the same codes as acronyms, where a mapping exists
+    - primary_dx          # first listed code — the rhythm diagnosis
+    - primary_dx_acronym  # what stratification uses
+    - age
+    - sex
+
 # --- Croissant Metadata ---
 croissant:
   keywords:

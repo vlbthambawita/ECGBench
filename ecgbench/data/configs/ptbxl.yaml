@@ -76,6 +76,15 @@ validation:
     - amplitude_outlier
   amplitude_range_mv: [-10.0, 10.0]
 
+# --- Labels ---
+# Derivation lives in ecgbench/labels/ptbxl.py (SCP codes -> diagnostic
+# superclasses/subclasses via scp_statements.csv). That module is authoritative:
+# PTBXLSplitter takes its stratification label from it rather than keeping a
+# second copy of the mapping.
+labels:
+  source_csv: "ptbxl_database.csv"
+  join_column: "ecg_id"
+
 # --- Croissant Metadata ---
 croissant:
   keywords:

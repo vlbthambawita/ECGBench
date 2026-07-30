@@ -330,3 +330,51 @@ def tmp_splits_dir(tmp_path) -> Path:
         master.to_csv(tmp_path / version / "folds.csv", index=False)
 
     return tmp_path
+
+
+@pytest.fixture
+def tmp_labels_data(tmp_path, sample_config) -> Path:
+    """A source CSV for the declarative label loader, keyed like sample_config."""
+    pd.DataFrame({
+        "rec": ["rec_0", "rec_1", "rec_2"],
+        "diagnosis": ["AFIB", "NORM", "AFIB"],
+        "age": [61, 44, 78],
+        "note": ["atrial fibrillation", "normal", "af with rvr"],
+    }).to_csv(tmp_path / "source_labels.csv", index=False)
+    return tmp_path
+
+
+@pytest.fixture
+def tmp_ptbxl_label_data(tmp_path) -> Path:
+    """Minimal ptbxl_database.csv + scp_statements.csv for the PTB-XL loader.
+
+    Covers the cases the derivation has to get right: a single-superclass record,
+    a multi-superclass record, a record whose only statements are non-diagnostic
+    (so it must land in OTHER), and a tie between two superclasses.
+    """
+    pd.DataFrame({
+        "ecg_id": [1, 2, 3, 4],
+        "patient_id": [10, 11, 12, 13],
+        "scp_codes": [
+            "{'NORM': 100.0, 'SR': 0.0}",       # NORM only
+            "{'IMI': 100.0, 'NDT': 50.0}",      # MI (+ STTC via NDT)
+            "{'SR': 0.0, 'ABQRS': 0.0}",        # no diagnostic statement -> OTHER
+            "{'LVH': 100.0, 'IMI': 100.0}",     # HYP vs MI tie
+        ],
+        "age": [56, 62, 71, 48],
+        "sex": [1, 0, 0, 1],
+        "report": ["sinusrhythmus", "infarkt", "unauffaellig", "hypertrophie"],
+        "strat_fold": [1, 2, 9, 10],
+        "filename_lr": ["records100/00000/00001_lr"] * 4,
+        "filename_hr": ["records500/00000/00001_hr"] * 4,
+    }).to_csv(tmp_path / "ptbxl_database.csv", index=False)
+
+    pd.DataFrame({
+        "index": ["NORM", "IMI", "NDT", "LVH", "SR", "ABQRS"],
+        "diagnostic": [1, 1, 1, 1, 0, 0],
+        "form": [0, 0, 1, 0, 0, 1],
+        "rhythm": [0, 0, 0, 0, 1, 0],
+        "diagnostic_class": ["NORM", "MI", "STTC", "HYP", None, None],
+        "diagnostic_subclass": ["NORM", "IMI", "STTC", "LVH", None, None],
+    }).set_index("index").to_csv(tmp_path / "scp_statements.csv")
+    return tmp_path

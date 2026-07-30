@@ -35,6 +35,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "generate_croissant": ".croissant",
     "save_croissant": ".croissant",
     "validate_croissant": ".croissant",
+    # Labels
+    "load_labels": ".labels",
     # Download
     "download_dataset": ".download",
     "resolve_data_path": ".download",
@@ -79,6 +81,8 @@ __all__ = [
     "generate_croissant",
     "save_croissant",
     "validate_croissant",
+    # Labels
+    "load_labels",
     # Download
     "download_dataset",
     "resolve_data_path",

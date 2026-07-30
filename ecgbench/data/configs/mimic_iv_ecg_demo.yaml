@@ -79,6 +79,18 @@ validation:
     - amplitude_outlier
   amplitude_range_mv: [-10.0, 10.0]  # header gain is 200/mV, so wfdb yields mV
 
+# --- Labels ---
+# This subset genuinely has none. record_list.csv is identifiers and timestamps
+# only; machine_measurements.csv belongs to the full credentialed release.
+labels:
+  available: false
+  unavailable_reason: >
+    The demo subset ships record_list.csv only — identifiers and timestamps, no
+    diagnoses, age or sex. Machine measurements and report text are part of the
+    full MIMIC-IV-ECG release (credentialed):
+    https://physionet.org/content/mimic-iv-ecg/1.0/ — or join diagnoses from
+    MIMIC-IV itself on subject_id.
+
 # --- Croissant Metadata ---
 croissant:
   keywords:

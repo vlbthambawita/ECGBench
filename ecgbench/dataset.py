@@ -82,10 +82,17 @@ class ECGDataset(_TorchDataset):
         fold_numbers: Specific fold(s) to load. None = all folds for the split.
         transform: Optional callable applied to the signal tensor
         metadata_source: "hf" (download fold CSVs from HuggingFace) or "local".
+        labels: attach per-record labels and metadata as ``sample["labels"]``.
+                Needs a local copy of the source dataset — fold CSVs on the Hub
+                carry identifiers only, never labels.
 
     Example:
         >>> train_ds = ECGDataset("ptbxl", split="train", data_path="/data/ptb-xl/1.0.3/")
         >>> loader = DataLoader(train_ds, batch_size=32, collate_fn=ecg_collate_fn)
+
+        >>> ds = ECGDataset("ptbxl", split="train", data_path="...", labels=True)
+        >>> ds[0]["labels"]["superclasses"]
+        ['NORM']
     """
 
     def __init__(
@@ -98,6 +105,7 @@ class ECGDataset(_TorchDataset):
         fold_numbers: list[int] | None = None,
         transform: Callable | None = None,
         metadata_source: str = "hf",
+        labels: bool = False,
     ):
         super().__init__()
 
@@ -136,6 +144,9 @@ class ECGDataset(_TorchDataset):
                 f"No signal_path_column for rate {self.sampling_rate}. "
                 f"Available: {list(self.config.signal_path_columns.keys())}"
             )
+
+        # Labels: loaded once and aligned to this split, never per __getitem__.
+        self.labels_df = self._load_labels() if labels else None
 
     def _load_metadata(self, fold_numbers: list[int] | None) -> pd.DataFrame:
         """Load fold CSV metadata from HuggingFace Hub or local disk."""
@@ -236,6 +247,39 @@ class ECGDataset(_TorchDataset):
         dfs = [pd.read_csv(f) for f in files]
         return pd.concat(dfs, ignore_index=True)
 
+    def _load_labels(self) -> pd.DataFrame:
+        """Load per-record labels, reindexed to this split's records in order.
+
+        Row i of the result corresponds to row i of ``metadata_df``, so
+        ``__getitem__`` is a positional lookup with no per-item join.
+        """
+        from ecgbench.labels import load_labels
+
+        label_df = load_labels(self.config, self.data_path)
+
+        record_ids = self.metadata_df[self.config.record_id_column]
+        if label_df.index.dtype != record_ids.dtype:
+            # Fold CSVs and source CSVs can disagree on int vs str for the same
+            # IDs, which would silently reindex to all-NaN.
+            label_df = label_df.set_index(label_df.index.astype(str))
+            record_ids = record_ids.astype(str)
+
+        aligned = label_df.reindex(record_ids)
+        missing = int(aligned.isna().all(axis=1).sum())
+        if missing == len(aligned):
+            raise ValueError(
+                f"No record in split '{self.split}' matched a label row. Check that "
+                f"'{self.config.labels.join_column}' in "
+                f"{self.config.labels.source_csv} holds the same IDs as "
+                f"'{self.config.record_id_column}' in the fold CSVs."
+            )
+        if missing:
+            logger.warning(
+                "%d of %d records in split '%s' have no label row",
+                missing, len(aligned), self.split,
+            )
+        return aligned.reset_index(drop=True)
+
     def __len__(self) -> int:
         return len(self.metadata_df)
 
@@ -279,6 +323,11 @@ class ECGDataset(_TorchDataset):
         # Add fold if available
         if "fold" in row.index:
             result["fold"] = int(row["fold"])
+
+        # Labels stay in their own dict: a nested key cannot collide with
+        # "signal"/"fold"/"split", and ecg_collate_fn keeps dicts as a list.
+        if self.labels_df is not None:
+            result["labels"] = self.labels_df.iloc[idx].to_dict()
 
         # Add all other metadata
         for col in self.metadata_df.columns:

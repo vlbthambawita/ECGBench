@@ -67,6 +67,16 @@ validation:
     - amplitude_outlier
   amplitude_range_mv: [-10.0, 10.0]
 
+# --- Labels ---
+# Declarative: every column of Diagnostics.csv except the join key, which covers
+# Rhythm, Beat and the measurement columns. UNVERIFIED — no local copy of this
+# dataset was available when the block was written, and the config's
+# signal_format/path handling is known to be wrong for the figshare layout.
+labels:
+  source_csv: "Diagnostics.csv"
+  join_column: "FileName"
+  columns: null  # null -> every column except the join key
+
 # --- Croissant Metadata ---
 croissant:
   keywords:

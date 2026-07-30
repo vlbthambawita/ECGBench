@@ -74,9 +74,7 @@ figures and the reason.
 - [ ] If the splitter's stratification label is a *different quantity* from the breakdown table (single-label vs multi-label, or a different mapping source), say so explicitly and point readers at the metadata join for training targets. A table that looks like ground truth but isn't is worse than no table.
 
 `docs/_datasets/ptb-xl.md` is the worked example: the paper's v1.0.1 counts, the
-recomputed v1.0.3 counts, the 38 dropped duplicates that explain the gap, and the
-note that `PTBXLSplitter`'s hardcoded code map has drifted from the shipped
-`scp_statements.csv`.
+recomputed v1.0.3 counts, and the 38 dropped duplicates that explain the gap.
 
 ## Phase 2 — Config YAML
 
@@ -91,6 +89,31 @@ note that `PTBXLSplitter`'s hardcoded code map has drifted from the shipped
 - [ ] Fill in **croissant** block (`keywords`, `rai_data_collection`, `rai_data_biases`, `rai_personal_sensitive_info`).
 - [ ] Smoke-test the config loads: `python -c "from ecgbench import load_config; print(load_config('<config-slug>'))"`.
 
+## Phase 2b — Labels
+
+Users get labels through `ECGDataset(labels=True)` or `load_labels(slug, data_path)`.
+Both dispatch on the `labels:` block you fill in here, so **a dataset without this
+block returns no ground truth** — the fold CSVs never carry labels.
+
+- [ ] Find where the labels actually live. It is often *not* `metadata_csv`: PTB-XL needs `scp_statements.csv` as well, and `ecg_arrhythmia`'s labels only exist in the metadata CSV the splitter generates from WFDB headers.
+- [ ] Fill in the `labels:` block — `source_csv`, `join_column` (the column holding record IDs, which may be named differently from `record_id_column`), and `columns` (or `null` for everything but the join key).
+- [ ] **If the dataset genuinely has no labels, say so** with `available: false` and an `unavailable_reason` that points at where labels *could* come from (the full release, another module, a linked dataset). `labels=True` then raises `LabelsUnavailableError` quoting that reason. Silently returning empty columns is not acceptable.
+- [ ] Decide declarative vs module:
+  - **Declarative (default).** A column select plus a join. No Python.
+  - **Module** — `ecgbench/labels/<config-slug>.py` exposing `load_labels(data_path, config) -> DataFrame` indexed by the record ID — when labels need decoding, a taxonomy join, several source files, or a derived column. Register it in `_custom_loaders()` in `ecgbench/labels/__init__.py`.
+- [ ] Expose the **full** label hierarchy, not just what stratification needs — raw codes, superclasses *and* subclasses, report/note text, demographics. Users select from the dict; they cannot recover what you dropped.
+- [ ] **Make the label loader the single source of truth.** If the splitter needs a stratification label, it must derive it from this loader (attach the column in `load_metadata`), never re-implement the mapping. PTB-XL previously had two copies that drifted apart — that is the bug this rule prevents.
+- [ ] Say in the docstring whether labels are **multi-label**, and how many records carry none. If you provide a single-label reduction for stratification, name it clearly (`primary_*`), document how ties break, and tell users not to train on it.
+- [ ] Smoke-test: `python -c "from ecgbench import load_labels; df = load_labels('<config-slug>', '<path>'); print(df.shape); print(df.head())"`.
+- [ ] Check the record IDs join. `load_labels` raises on duplicate IDs, and `ECGDataset` raises when *nothing* matches, but a partial match only logs a warning — confirm the matched count is what you expect.
+- [ ] Add an example script (Phase 5b) and a test in `tests/test_labels.py`.
+
+**Labels are never uploaded to the Hub.** Only fold CSVs are. That is partly
+practical (the Hub tree is identifiers) and partly licensing: redistributing
+labels is fine for CC-BY sources and *not* for credentialed ones such as
+MIMIC-IV. So `labels=True` requires a local copy of the source dataset, and the
+missing-file error must name the file and say where to get it.
+
 ## Phase 3 — Splitter strategy
 
 Decide which path applies and do **one**:
@@ -98,9 +121,9 @@ Decide which path applies and do **one**:
 - [ ] **Generic path (default).** No code needed — `GenericSplitter` is the fallback. Use this if the metadata CSV can be read as-is and `label_column` works directly for stratification.
 - [ ] **Custom path.** Required if any of the following are true:
   - signal paths need transformation (prefix, suffix, joined columns) → see `chapman.py`
-  - labels need decoding (dict-strings, superclass mapping) → see `ptbxl.py`
   - multiple metadata files need to be joined
   - records need filtering before splitting
+  - a stratification label must be derived — but derive it by calling the Phase 2b label loader and attaching the column in `load_metadata`, as `ptbxl.py` does. Do not re-implement a mapping the label loader already owns.
 
   If custom:
   - [ ] Create `ecgbench/splitting/strategies/<config-slug>.py`
@@ -143,7 +166,20 @@ Decide which path applies and do **one**:
 - [ ] If you wrote a custom splitter, add a unit test under `tests/test_splitting.py` using synthetic data from `tests/conftest.py` patterns. Cover at minimum: `load_metadata` shape, label distribution, patient grouping if applicable.
 - [ ] Run the full suite: `pytest`. Note that `conftest.py` builds `DatasetConfig` objects **in Python, not from the shipped YAML**, so a green suite does not prove your new YAML parses — the Phase 2 `load_config()` smoke-test is what covers that.
 - [ ] Confirm optional-extra tests actually ran rather than skipping (`torch` for `test_dataset.py`, `mlcroissant` for `test_croissant.py`/`test_cli.py`): install `.[dev]` and check `pytest -rs` output for unexpected skips.
+- [ ] Add label tests to `tests/test_labels.py`: the declarative block parses, the source columns resolve, and — for datasets with no labels — that `available: false` carries a reason. Fixtures build tiny source CSVs in `tmp_path`; no real data.
 - [ ] Run lint/format: `ruff check ecgbench/ && black ecgbench/`. There is no CI test/lint job — local is the only gate.
+
+### Phase 5b — Example script
+
+Every dataset with a config gets `examples/load_<config-slug>.py`. These are the
+only end-to-end runnable documentation ECGBench has, and they are what catches
+API drift — a stale example is how the broken PTB-XL snippet survived.
+
+- [ ] Copy the closest existing example (`load_ptbxl.py` for rich labels, `load_ecg_arrhythmia.py` for multi-label codes, `load_mimic_iv_ecg_demo.py` for a dataset with none).
+- [ ] Show: config summary, `len(dataset)`, one sample's keys and label fields, the label distribution over the split, one batch through `DataLoader` + `ecg_collate_fn`, and how to turn labels into a target tensor.
+- [ ] Surface the dataset's own gotchas in the output — non-standard lead order, raw codes with no acronym, labels requiring a prior pipeline run.
+- [ ] **Run it and paste nothing you did not see.** Numbers in comments must come from a real run.
+- [ ] Use `dataset.labels_df` for split-level statistics rather than iterating the Dataset — iterating decodes every signal.
 
 ## Phase 6 — HuggingFace Hub upload (optional)
 
@@ -190,5 +226,8 @@ Decide which path applies and do **one**:
 - **`expected_samples` per rate.** Every rate listed in `sampling_rates` should have a key in `validation.expected_samples`, or `truncated_signal` will fire spuriously.
 - **`amplitude_range_mv`.** Units are millivolts. Datasets stored in microvolts or ADC counts will trip `amplitude_outlier` en masse — convert in the splitter or adjust the range deliberately.
 - **Published figures rarely match the shipped version.** PhysioNet reissues datasets and papers are not revised. PTB-XL v1.0.3 dropped 38 duplicate/triplicate records relative to the v1.0.1 the paper describes, so every superclass count is 6-17 records smaller. Copying the paper's table produces figures nobody can reproduce. Recompute, then note both values and the reason — see the Phase 1 subsection above.
-- **A class breakdown is not the stratification label.** They can differ in cardinality (multi-label counts vs one label per record) *and* in mapping source. `PTBXLSplitter` maps SCP codes with a hardcoded dict rather than the shipped `scp_statements.csv`, and the two have drifted apart. If your dataset page shows a breakdown, say which quantity it is.
+- **A class breakdown is not the stratification label.** They differ in cardinality: the breakdown counts every class a record carries, the stratification label is one class per record. Say which quantity a table shows. And derive both from the same loader — PTB-XL once had a hardcoded splitter map that drifted from the shipped `scp_statements.csv` (465 records in OTHER instead of 411) precisely because there were two sources.
+- **Labels never reach the batch unless you fill in `labels:`.** Fold CSVs are identification-only by design, so a dataset with a perfect config and no `labels:` block silently returns no ground truth. If the data genuinely has none, declare `available: false` with a reason rather than leaving the block out.
+- **A single-label reduction of multi-label data is a trap.** Name it `primary_*`, document how ties break, and say plainly it is for stratification only. In PTB-XL 10.8% of records have tied superclasses, so the "primary" class is partly an artefact of the tie-break rule.
+- **`ecgbench_metadata.csv`-style generated sources mean labels depend on pipeline order.** `ecg_arrhythmia` labels only exist after `ecgbench splits` has run once, because that is what scans the WFDB headers. Say so in the example script, and let `LabelSourceMissingError` name the file.
 - **Heavy deps stay lazy.** Do not add `import wfdb` / `import torch` / `import mlcroissant` at module top-level in any file imported by `ecgbench/__init__.py`'s eager path. Import inside functions instead.
