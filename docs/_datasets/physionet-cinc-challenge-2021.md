@@ -18,4 +18,28 @@ paper_title: "CinC 2021"
 paper_doi: "https://doi.org/10.23919/CinC53138.2021.9662687"
 search_keywords: "cinc challenge 2021 physionet china russia germany usa michigan chapman ningbo"
 patients_class: "count-na"
+
+related:
+  - slug: "physionet-cinc-challenge-2020"
+    relation: "sibling_release"
+    shares_records: true
+    verified: false
+    note: >
+      The 2021 challenge reuses the 2020 training sources and adds more. Treat
+      results across the two years as sharing records.
+  - slug: "ptb-xl"
+    relation: "contains"
+    shares_records: true
+    verified: false
+    note: >
+      PTB-XL is one of the challenge training sources, so evaluating a
+      challenge-trained model on PTB-XL is testing on training data. Composition
+      taken from the challenge description, not verified against files.
+  - slug: "cpsc-2018-china-physiological-signal-challenge-2018"
+    relation: "contains"
+    shares_records: true
+    verified: false
+    note: >
+      CPSC-2018 is one of the challenge training sources. Composition taken from
+      the challenge description, not verified against files.
 ---

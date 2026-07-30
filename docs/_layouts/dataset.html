@@ -63,6 +63,14 @@
     <section class="dataset-section dataset-section-body">{{ content }}</section>
   {% endif %}
 
+  {%- comment -%}
+  Related datasets render automatically whenever a relationship touches this page,
+  in either direction — no `sections:` entry needed, so declaring a link on one
+  page is enough to make it appear on both.
+  {%- endcomment -%}
+  {% include related-edges.html slug=page.slug %}
+  {% if related_count > 0 %}{% include sections/related.html %}{% endif %}
+
   <footer class="dataset-footer">
     <a href="https://github.com/vlbthambawita/ECGBench/edit/main/docs/_datasets/{{ page.slug }}.md" target="_blank">Edit this page on GitHub</a>
   </footer>

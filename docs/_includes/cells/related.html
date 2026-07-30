@@ -1,0 +1,12 @@
+{%- include related-edges.html slug=include.row.slug -%}
+<td class="related-cell">
+  {% if related_count > 0 %}
+    <a class="related-badge{% if related_leak %} related-badge-leak{% endif %}"
+       href="{{ '/datasets/' | append: include.row.slug | append: '.html#related' | relative_url }}"
+       title="{{ related_count }} related dataset{% if related_count != 1 %}s{% endif %}{% if related_leak %} — shares records, mind test-set leakage{% endif %}">
+      {% if related_leak %}&#9888;{% else %}&#8596;{% endif %} {{ related_count }}
+    </a>
+  {% else %}
+    <span class="related-none">&mdash;</span>
+  {% endif %}
+</td>

@@ -1,0 +1,34 @@
+{%- comment -%}
+Count the relationships touching include.slug, in both directions.
+
+Relationships are declared once, in one endpoint's front matter — the same rule
+catalogue.py follows. Jekyll cannot run that Python, so the reverse direction is
+recomputed here by scanning the collection. Writing both directions by hand is
+what this avoids: the copies would drift.
+
+Sets: related_count (int), related_leak ("true" if any edge shares records).
+Rendering is done by sections/related.html, which loops again rather than
+serialising these into strings — notes contain newlines and punctuation.
+{%- endcomment -%}
+
+{%- assign related_count = 0 -%}
+{%- assign related_leak = false -%}
+{%- assign self_entry = site.datasets | where: "slug", include.slug | first -%}
+
+{%- if self_entry.related -%}
+  {%- assign related_count = self_entry.related | size -%}
+  {%- for link in self_entry.related -%}
+    {%- if link.shares_records -%}{%- assign related_leak = true -%}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+{%- for other in site.datasets -%}
+  {%- if other.slug != include.slug and other.related -%}
+    {%- for link in other.related -%}
+      {%- if link.slug == include.slug -%}
+        {%- assign related_count = related_count | plus: 1 -%}
+        {%- if link.shares_records -%}{%- assign related_leak = true -%}{%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}

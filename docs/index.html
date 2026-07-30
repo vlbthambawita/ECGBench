@@ -508,6 +508,21 @@
     .chart-card .plotly-chart { width: 100%; height: 320px; }
     .chart-card.tall   .plotly-chart { height: 420px; }
 
+    /* Related-dataset badge in the catalogue table */
+    .related-cell { text-align: center; white-space: nowrap; }
+    .related-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: .78rem;
+      text-decoration: none;
+      color: #4b5563;
+      border: 1px solid #d1d5db;
+    }
+    .related-badge:hover { border-color: #9ca3af; }
+    .related-badge-leak { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
+    .related-none { opacity: .35; }
+
     @media (max-width: 640px) {
       header { padding: 40px 16px 32px; }
       .stats { padding: 24px 16px; }

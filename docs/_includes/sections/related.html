@@ -1,0 +1,50 @@
+{%- comment -%}
+Related datasets, both directions. Rendered by _layouts/dataset.html whenever any
+relationship touches this page, so it needs no `sections:` entry.
+{%- endcomment -%}
+{%- assign self_entry = site.datasets | where: "slug", page.slug | first -%}
+<section class="dataset-section dataset-section-related" id="related">
+  <h2>Related datasets</h2>
+  <p class="related-intro">
+    Relationships are declared once and mirrored automatically. A
+    <strong>shares records</strong> pair contains some of the same recordings, so
+    training on one and evaluating on the other contaminates the test set.
+    <em>Verified</em> means the overlap was checked against the actual data files;
+    otherwise it is taken from documentation.
+  </p>
+
+  <ul class="related-list">
+    {%- for link in self_entry.related -%}
+      {%- assign other = site.datasets | where: "slug", link.slug | first -%}
+      <li class="related-item">
+        <span class="related-relation">this dataset <strong>{{ link.relation | replace: '_', ' ' }}</strong></span>
+        {% if other %}
+          <a href="{{ '/datasets/' | append: link.slug | append: '.html' | relative_url }}">{{ other.name }}</a>
+        {% else %}
+          <span class="related-missing">{{ link.slug }}</span>
+        {% endif %}
+        {% if link.shares_records %}<span class="related-tag related-tag-leak">shares records</span>{% endif %}
+        {% if link.verified %}<span class="related-tag related-tag-ok">verified</span>
+        {% else %}<span class="related-tag related-tag-unverified">unverified</span>{% endif %}
+        {% if link.note %}<div class="related-note">{{ link.note | markdownify }}</div>{% endif %}
+      </li>
+    {%- endfor -%}
+
+    {%- for other in site.datasets -%}
+      {%- if other.slug != page.slug and other.related -%}
+        {%- for link in other.related -%}
+          {%- if link.slug == page.slug -%}
+            <li class="related-item">
+              <a href="{{ '/datasets/' | append: other.slug | append: '.html' | relative_url }}">{{ other.name }}</a>
+              <span class="related-relation"><strong>{{ link.relation | replace: '_', ' ' }}</strong> this dataset</span>
+              {% if link.shares_records %}<span class="related-tag related-tag-leak">shares records</span>{% endif %}
+              {% if link.verified %}<span class="related-tag related-tag-ok">verified</span>
+              {% else %}<span class="related-tag related-tag-unverified">unverified</span>{% endif %}
+              {% if link.note %}<div class="related-note">{{ link.note | markdownify }}</div>{% endif %}
+            </li>
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+    {%- endfor -%}
+  </ul>
+</section>

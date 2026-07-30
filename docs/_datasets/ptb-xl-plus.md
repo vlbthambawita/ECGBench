@@ -17,4 +17,14 @@ leads: 12
 paper_title: "PTB-XL+: A Comprehensive ECG Feature Dataset"
 paper_doi: "https://doi.org/10.1038/s41597-023-02153-8"
 search_keywords: "ptb-xl+ karlsruhe germany features snomed"
+
+related:
+  - slug: "ptb-xl"
+    relation: "derived_from"
+    shares_records: true
+    verified: false
+    note: >
+      Feature and annotation layer over the same PTB-XL records (12SL and Uni-G
+      measurements, plus fiducial points). Documented as derived; not checked
+      against the files.
 ---

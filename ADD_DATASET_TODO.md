@@ -49,10 +49,40 @@ about is a field that silently does nothing on the other.
 - [ ] Set `status` to one of the keys of `docs/_data/statuses.yml` — `not_started`, `implementing`, `completed`, `needs_review`.
 - [ ] Set `order` (int) — controls sort position within the category.
 - [ ] Add a `sections:` list for the detail page. Each entry's `type` must have a matching partial in `docs/_includes/sections/`: `description`, `table`, `code`, `links`, `notebook`, `plot`.
+- [ ] Add a `related:` block if the dataset overlaps any other — see below.
 - [ ] Verify it shows up: `python -c "import ecgbench; print(ecgbench.get_dataset('<Name>'))"`.
 - [ ] Verify the count went up: `python -c "import ecgbench; print(len(ecgbench.list_datasets()))"`.
 
 A catalogue entry is *not* required to run splits/validation — the YAML config drives the pipeline — but datasets without one are invisible to discovery APIs and to the website.
+
+### Declare overlaps with other datasets
+
+Datasets in this catalogue are not independent: challenge sets bundle other
+datasets, demo subsets are carved out of full releases, derived releases re-label
+the same recordings. A user who trains on one and evaluates on another has a
+contaminated test set and no warning. The `related:` block is how that gets said.
+
+```yaml
+related:
+  - slug: "other-catalogue-slug"   # must be an existing docs/_datasets/<slug>.md
+    relation: "contains"           # contains | subset_of | derived_from |
+                                   # has_derivative | same_cohort | sibling_release
+    shares_records: true           # do the two hold any of the SAME recordings?
+    verified: true                 # was the overlap checked against the data files?
+    note: >
+      What overlaps, how much, and what a user must not do because of it.
+```
+
+- [ ] **Declare each relationship once, on one side only.** `catalogue.py` derives the inverse (`contains` ↔ `subset_of`, `derived_from` ↔ `has_derivative`, `same_cohort` and `sibling_release` are symmetric) and the website recomputes it in Liquid. Declaring both directions double-counts on the site and `pytest` fails.
+- [ ] Set `shares_records` honestly. It is the field that flags leakage; a shared *cohort* with different recordings is `false`.
+- [ ] Set `verified: true` **only** if you checked the overlap against the actual data files. Documentation and papers are `false`. Say which in the note.
+- [ ] Give every `shares_records: true` edge a note saying what a user must not do — a warning with no explanation is not actionable, and a test enforces the note.
+- [ ] Quantify the overlap when you can, and record the join key or the reason there isn't one. The MIMIC demo overlaps the full release in 658 of 659 records but their `study_id`s are disjoint, so a naive key comparison reports 0% — exactly the trap a note prevents.
+- [ ] Run `pytest tests/test_catalogue.py` — it checks that every slug resolves, every relation is in the vocabulary, every edge is mirrored, and the Python and website edge counts agree.
+
+Worked examples: `mimic-iv-ecg.md` (verified from the files, with the study_id
+caveat), `physionet-cinc-challenge-2021.md` (unverified, taken from the challenge
+description), `chapman-shaoxing-arrhythmia.md` (partial overlap, quantified).
 
 ### Every published figure must be recomputed, and disagreements written down
 
@@ -230,4 +260,6 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - **Labels never reach the batch unless you fill in `labels:`.** Fold CSVs are identification-only by design, so a dataset with a perfect config and no `labels:` block silently returns no ground truth. If the data genuinely has none, declare `available: false` with a reason rather than leaving the block out.
 - **A single-label reduction of multi-label data is a trap.** Name it `primary_*`, document how ties break, and say plainly it is for stratification only. In PTB-XL 10.8% of records have tied superclasses, so the "primary" class is partly an artefact of the tie-break rule.
 - **`ecgbench_metadata.csv`-style generated sources mean labels depend on pipeline order.** `ecg_arrhythmia` labels only exist after `ecgbench splits` has run once, because that is what scans the WFDB headers. Say so in the example script, and let `LabelSourceMissingError` name the file.
+- **Overlapping datasets are the norm, not the exception.** Around a third of the catalogue sits in a family — CinC challenges bundle PTB-XL and CPSC-2018, CODE's subsets come out of CODE-full, MIMIC demo out of MIMIC full. Adding a dataset without checking whether it overlaps an existing one ships a silent leakage trap. Check before you write the entry.
+- **`shares_records` cannot be inferred from IDs alone.** The MIMIC demo and the full release hold the same 659 recordings but renumber `study_id` into a disjoint range and truncate timestamps to the minute, so comparing keys says 0% overlap while the truth is 99.8%. When IDs disagree, try a natural key (subject + timestamp) before concluding anything.
 - **Heavy deps stay lazy.** Do not add `import wfdb` / `import torch` / `import mlcroissant` at module top-level in any file imported by `ecgbench/__init__.py`'s eager path. Import inside functions instead.

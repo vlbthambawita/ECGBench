@@ -206,3 +206,26 @@ a:hover { text-decoration: underline; }
 }
 .dataset-footer a { color: var(--muted); }
 .dataset-footer a:hover { color: var(--accent); }
+
+/* --- Related datasets ---------------------------------------------------- */
+.dataset-section-related .related-intro { font-size: 0.9rem; opacity: 0.8; }
+.related-list { list-style: none; padding: 0; }
+.related-item {
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+.related-relation { opacity: 0.75; }
+.related-note { font-size: 0.9rem; opacity: 0.85; margin-top: 0.25rem; }
+.related-note p { margin: 0; }
+.related-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.75rem;
+  font-size: 0.72rem;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.related-tag-leak { color: #b45309; }
+.related-tag-ok { color: #15803d; }
+.related-tag-unverified { color: #6b7280; }

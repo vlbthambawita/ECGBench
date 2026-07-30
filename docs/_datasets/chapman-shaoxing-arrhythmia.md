@@ -18,6 +18,26 @@ paper_title: "Zheng et al., Scientific Reports, 2020"
 paper_doi: "https://doi.org/10.1038/s41598-020-59821-7"
 search_keywords: "chapman shaoxing arrhythmia china usa ningbo ecg-arrhythmia snomed wfdb"
 
+related:
+  - slug: "chapman-shaoxing-ecg-database-10-646-patients"
+    relation: "contains"
+    shares_records: true
+    verified: true
+    note: >
+      This PhysioNet release merges the Chapman-Shaoxing and Ningbo cohorts.
+      10,247 of its 45,152 records are numbered in the Chapman-Shaoxing range
+      (JS00001-JS10646) against 10,646 in the figshare release, so the overlap is
+      large but not complete. Formats and labels differ: WFDB with SNOMED-CT #Dx
+      codes here, CSV with Rhythm/Beat annotations there. Do not train on one and
+      evaluate on the other.
+  - slug: "ningbo-first-hospital-ecg-database-idiopathic-ventricular-arrhythmia"
+    relation: "same_cohort"
+    shares_records: false
+    verified: false
+    note: >
+      Same institution, and 34,905 of the records here are the Ningbo cohort. The
+      334-record figshare Idiopathic Ventricular Arrhythmia dataset is a separate
+      release; whether its records also appear here is unconfirmed.
 sections:
   - type: description
     title: "Overview"

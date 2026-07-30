@@ -7,3 +7,4 @@ access:   { label: "Access" }
 status:   { label: "Status" }
 origin:   { label: "Origin" }
 paper:    { label: "Paper" }
+related:  { label: "Related" }
