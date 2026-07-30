@@ -7,8 +7,17 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-pages.yml'
-    tags:
-      - 'v[0-9]*'
+    # No tag trigger. The github-pages environment restricts deployments to the
+    # default branch by default, so a tag-ref run is rejected at the "waiting"
+    # stage with "not allowed to deploy to github-pages due to environment
+    # protection rules" — the build never even starts.
+    #
+    # Consequence: the version badge shows the newest tag reachable when the site
+    # was last built, so a release cut without a docs change leaves it one behind.
+    # Two ways to close that gap:
+    #   - Settings -> Environments -> github-pages -> Deployment branches and
+    #     tags: add a tag rule "v*", then restore the tags: trigger here; or
+    #   - run this workflow manually from main after tagging (workflow_dispatch).
   workflow_dispatch:
 
 permissions:
