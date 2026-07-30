@@ -31,7 +31,9 @@ sections:
 
       ECGBench bundles a deterministic 10-fold stratified patient-level split
       derived from the SCP superclass labels, ready to consume via the
-      `ECGDataset` class.
+      `ECGDataset` class. Note that the published fold CSVs carry identifiers,
+      signal paths and fold assignments only — no labels. Join them back to
+      `ptbxl_database.csv` on `ecg_id` for ground truth, as shown below.
 
   - type: table
     title: "Diagnostic superclass breakdown"
@@ -50,21 +52,53 @@ sections:
       from ecgbench import ECGDataset, ecg_collate_fn
       from torch.utils.data import DataLoader
 
-      # Load the training split (folds 1-8) at 100 Hz
+      # Load the training split (folds 1-8) at 100 Hz.
+      # Fold CSVs come from the Hub; signals are read from your local copy.
       dataset = ECGDataset(
-          physionet_path="/path/to/ptb-xl/1.0.3/",
-          dataset_name="ptbxl",
+          "ptbxl",
           split="train",
-          frequency="100",
+          version="clean",
+          data_path="/path/to/ptb-xl/1.0.3/",
+          sampling_rate=100,
       )
 
       loader = DataLoader(dataset, batch_size=32, collate_fn=ecg_collate_fn)
 
       for batch in loader:
-          signals = batch["signal"]     # (B, 12, 1000) at 100 Hz
-          ecg_ids = batch["ecg_id"]     # list of record IDs
-          labels  = batch["scp_codes"]  # list of per-record SCP dicts
+          signals = batch["signal"]     # (B, 12, 1000) float32, at 100 Hz
+          ecg_ids = batch["record_id"]  # tensor of ecg_id values
+          folds   = batch["fold"]       # tensor of fold numbers (1-10)
           break
+
+  - type: code
+    title: "Getting the labels"
+    language: python
+    body: |
+      # ECGBench's fold CSVs are identification-only — record ID, patient ID,
+      # signal paths, fold and split. Labels stay in the source metadata, so
+      # join them on ecg_id when you need ground truth.
+      import ast
+      import pandas as pd
+
+      PTBXL = "/path/to/ptb-xl/1.0.3/"
+      src = pd.read_csv(PTBXL + "ptbxl_database.csv")
+
+      labelled = dataset.metadata_df.merge(
+          src[["ecg_id", "scp_codes", "age", "sex", "report"]],
+          on="ecg_id", how="left", validate="one_to_one",
+      )
+
+      # scp_codes is a dict-string of SCP code -> confidence. Map it to the five
+      # diagnostic superclasses via the statement table shipped with PTB-XL.
+      stmt = pd.read_csv(PTBXL + "scp_statements.csv", index_col=0)
+      code2class = stmt.loc[stmt.diagnostic == 1, "diagnostic_class"].to_dict()
+
+      labelled["superclasses"] = labelled.scp_codes.map(
+          lambda s: sorted({code2class[c] for c in ast.literal_eval(s) if c in code2class})
+      )
+      # -> ecg_id 1: ['NORM']; ecg_id 39: ['MI', 'STTC'] (fold 9, so it is in val)
+      # 5,144 of the 21,799 records carry more than one superclass, so treat this
+      # as multi-label. The single superclass used for stratification is a lossy view.
 
   - type: code
     title: "Inspecting the catalogue entry"
