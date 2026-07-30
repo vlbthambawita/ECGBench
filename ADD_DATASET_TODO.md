@@ -31,6 +31,8 @@ pick both up front and keep them straight.
 - [ ] Decide stratification: `direct`, `superclass_mapping` (needs a mapping CSV), or `custom_function` (needs a custom splitter — see Phase 3).
 - [ ] Decide if **predefined splits** exist (e.g. PTB-XL `strat_fold`). If yes, note the column and which fold values go to train/val/test.
 - [ ] Sanity-check **expected samples = duration_s × sampling_rate** per rate.
+- [ ] Write down the **headline figures the paper/landing page claims** — record count, patient count, per-class breakdown — *before* you look at the data. These are what you will check the shipped files against in Phase 1.
+- [ ] Check for a **changelog** in the dataset root (`*changelog*`, `CHANGES`, release notes on the landing page). It is the authoritative explanation when the shipped version disagrees with the paper.
 - [ ] Note any quirks for the PR description (credentialed access, weird encodings, missing leads in some records, etc.).
 
 ## Phase 1 — Catalogue entry (optional but recommended)
@@ -51,6 +53,30 @@ about is a field that silently does nothing on the other.
 - [ ] Verify the count went up: `python -c "import ecgbench; print(len(ecgbench.list_datasets()))"`.
 
 A catalogue entry is *not* required to run splits/validation — the YAML config drives the pipeline — but datasets without one are invisible to discovery APIs and to the website.
+
+### Every published figure must be recomputed, and disagreements written down
+
+**Do not copy record counts, patient counts or class breakdowns from the paper.**
+Papers describe the version the authors had; PhysioNet reissues datasets. Recompute
+every number from the files you actually downloaded, put the recomputed value in
+the entry, and — when it differs from the published one — add a note giving both
+figures and the reason.
+
+- [ ] Recompute `records` and `patients` from the metadata (`len(df)`, `df[patient_id].nunique()`) and compare with the Phase 0 figures.
+- [ ] Recompute any **per-class breakdown** you put in a `table` section, and state the derivation in the entry (which column, which mapping file, which filter) so a reader can reproduce it.
+- [ ] If any figure differs, add a `description` section — conventionally titled "About those counts" — carrying **all** of:
+  - the recomputed value and the published value, side by side (a `Diff` column in the table works well);
+  - the version each belongs to;
+  - the cause, cited to the changelog if there is one (e.g. "v1.0.3 dropped 38 duplicate records, see `ptbxl_v103_changelog.txt`");
+  - the exact derivation used to recompute.
+- [ ] State whether class counts are **multi-label**, and if so that they do not sum to the record total — give both sums.
+- [ ] Say how many records fall into **no class** at all, and what the splitter labels them.
+- [ ] If the splitter's stratification label is a *different quantity* from the breakdown table (single-label vs multi-label, or a different mapping source), say so explicitly and point readers at the metadata join for training targets. A table that looks like ground truth but isn't is worse than no table.
+
+`docs/_datasets/ptb-xl.md` is the worked example: the paper's v1.0.1 counts, the
+recomputed v1.0.3 counts, the 38 dropped duplicates that explain the gap, and the
+note that `PTBXLSplitter`'s hardcoded code map has drifted from the shipped
+`scp_statements.csv`.
 
 ## Phase 2 — Config YAML
 
@@ -142,6 +168,7 @@ Decide which path applies and do **one**:
 
 ## Phase 7 — Wrap up
 
+- [ ] Cross-check the catalogue entry's `records`/`patients` against the pipeline's own output (`original.total` in the `ecgbench splits` summary). If they disagree, one of them is wrong — usually the config filters or drops rows you did not expect.
 - [ ] Update the `README.md` "Dataset Catalogue" section if applicable.
 - [ ] Flip `status:` to `completed` in `docs/_datasets/<catalogue-slug>.md` (created back in Phase 1 — don't create a second entry here).
 - [ ] Commit: config YAML, optional splitter + its `strategies/__init__.py` import, catalogue Markdown entry, tests, any docs. Keep generated output (`output/`) out of the commit.
@@ -162,4 +189,6 @@ Decide which path applies and do **one**:
 - **Predefined splits are 1-indexed.** Fold numbers in `predefined_splits.fold_mapping` follow the same 1..N convention as generated folds.
 - **`expected_samples` per rate.** Every rate listed in `sampling_rates` should have a key in `validation.expected_samples`, or `truncated_signal` will fire spuriously.
 - **`amplitude_range_mv`.** Units are millivolts. Datasets stored in microvolts or ADC counts will trip `amplitude_outlier` en masse — convert in the splitter or adjust the range deliberately.
+- **Published figures rarely match the shipped version.** PhysioNet reissues datasets and papers are not revised. PTB-XL v1.0.3 dropped 38 duplicate/triplicate records relative to the v1.0.1 the paper describes, so every superclass count is 6-17 records smaller. Copying the paper's table produces figures nobody can reproduce. Recompute, then note both values and the reason — see the Phase 1 subsection above.
+- **A class breakdown is not the stratification label.** They can differ in cardinality (multi-label counts vs one label per record) *and* in mapping source. `PTBXLSplitter` maps SCP codes with a hardcoded dict rather than the shipped `scp_statements.csv`, and the two have drifted apart. If your dataset page shows a breakdown, say which quantity it is.
 - **Heavy deps stay lazy.** Do not add `import wfdb` / `import torch` / `import mlcroissant` at module top-level in any file imported by `ecgbench/__init__.py`'s eager path. Import inside functions instead.

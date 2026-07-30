@@ -37,13 +37,48 @@ sections:
 
   - type: table
     title: "Diagnostic superclass breakdown"
-    headers: ["Superclass", "Description", "Records"]
+    headers: ["Superclass", "Description", "Records (v1.0.3)", "Paper (v1.0.1)", "Diff"]
     rows:
-      - ["NORM", "Normal ECG", "9,514"]
-      - ["MI",   "Myocardial Infarction", "5,486"]
-      - ["STTC", "ST/T changes", "5,250"]
-      - ["CD",   "Conduction disturbance", "4,907"]
-      - ["HYP",  "Hypertrophy", "2,655"]
+      - ["NORM", "Normal ECG",             "9,514", "9,528", "-14"]
+      - ["MI",   "Myocardial Infarction",  "5,469", "5,486", "-17"]
+      - ["STTC", "ST/T changes",           "5,235", "5,250", "-15"]
+      - ["CD",   "Conduction disturbance", "4,898", "4,907", "-9"]
+      - ["HYP",  "Hypertrophy",            "2,649", "2,655", "-6"]
+
+  - type: description
+    title: "About those counts"
+    body: |
+      **The published figures do not match the version ECGBench splits.** The
+      Scientific Data paper reports counts for v1.0.1 (21,837 records); v1.0.3
+      ships 21,799 after dropping 38 duplicate and triplicate records and
+      revising some labels by consensus, as documented in the dataset's own
+      `ptbxl_v103_changelog.txt`. Every superclass is therefore a little smaller
+      than the paper says. The "Records (v1.0.3)" column above is recomputed from
+      the shipped files, so those are the numbers you will actually reproduce.
+
+      Two further caveats on reading the table:
+
+      - **Counts are multi-label and do not sum to the record total.** 5,144
+        records carry more than one superclass, so the five figures sum to 27,765
+        against 21,799 records.
+      - **411 records have no diagnostic superclass at all** — their SCP
+        statements are all form or rhythm statements, with no entry flagged
+        `diagnostic` in `scp_statements.csv`.
+
+      Recomputed with: SCP codes from `ptbxl_database.csv`, mapped through the
+      `diagnostic_class` column of `scp_statements.csv` for rows where
+      `diagnostic == 1`.
+
+      **The stratification label is a different quantity from this table.**
+      `PTBXLSplitter` reduces each record to one superclass by highest
+      confidence, and it maps codes with its own hardcoded table rather than
+      reading `scp_statements.csv`. That table has drifted: it omits five
+      diagnostic codes (`ANEUR`, `EL`, `IPLMI`, `IPMI`, `ISCAN`) and includes
+      seven that the shipped file does not flag as diagnostic (`APTS`, `ISCA`,
+      `ISCI`, `NT_`, `STD_`, `STE_`, `TAB_`). So the split stratifies on
+      NORM 9,243 / MI 4,003 / CD 3,447 / STTC 3,324 / HYP 1,317 / OTHER 465,
+      where the statement table would give OTHER 411. Use the join shown below
+      for training targets, not the stratification label.
 
   - type: code
     title: "Loading with ECGBench"
