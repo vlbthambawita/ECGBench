@@ -201,7 +201,7 @@ ecgbench splits --dataset ecg_arrhythmia \
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dataset` | str | *required* | Dataset slug (e.g. `ptbxl`, `chapman_shaoxing`, `ecg_arrhythmia`) |
+| `--dataset` | str | *required* | Dataset slug — see `list_available_configs()` (e.g. `ptbxl`, `ecg_arrhythmia`, `mimic_iv_ecg_demo`) |
 | `--data-path` | path | auto-download | Path to the dataset root directory |
 | `--output-dir` | path | `output/<dataset>/` | Output directory for fold CSVs + metadata |
 | `--sampling-rate` | int | config default | Sampling rate to validate against |

@@ -1,0 +1,105 @@
+# ECGBench Config: MIMIC-IV-ECG Demo
+# ==================================
+# MIMIC-IV-ECG Diagnostic Electrocardiogram Matched Subset — Demo
+# https://physionet.org/content/mimic-iv-ecg-demo/0.1/
+#
+# NOTE: this is the 659-record open demo, not the ~800,000-record credentialed
+# MIMIC-IV-ECG 1.0 release. The demo ships identifiers and timestamps only —
+# machine_measurements.csv (the ECG report text and measurements) is part of the
+# full release and is absent here, so there are no labels to stratify on.
+
+name: "MIMIC-IV-ECG Demo"
+slug: "mimic_iv_ecg_demo"
+version: "0.1"
+url: "https://physionet.org/content/mimic-iv-ecg-demo/0.1/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "https://physionet.org/content/mimic-iv-ecg-demo/0.1/LICENSE.txt"
+description: >
+  The open demo subset of MIMIC-IV-ECG: 659 twelve-lead diagnostic ECGs from 92
+  patients at Beth Israel Deaconess Medical Center, in WFDB format at 500 Hz for
+  10 seconds. Records are linked to MIMIC-IV by subject_id and study_id, and each
+  carries an acquisition timestamp. Note the non-standard lead order stored in
+  every header — I, II, III, aVR, aVF, aVL, V1-V6, with aVF and aVL transposed
+  relative to the usual convention. Records per patient are highly uneven
+  (1 to 52, median 5), so patient-level grouping is essential.
+citation: >
+  Gow, B., Pollard, T., Greenbaum, N., et al. MIMIC-IV-ECG-Diagnostic
+  Electrocardiogram Matched Subset (version 0.1). PhysioNet (2022).
+doi: "10.13026/4eqn-kt76"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Deaconess Medical Center"
+    url: "https://www.bidmc.org/"
+  - type: Organization
+    name: "MIT Laboratory for Computational Physiology"
+    url: "https://lcp.mit.edu/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+leads: 12
+duration_seconds: 10
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+metadata_csv: "record_list.csv"
+metadata_csv_separator: ","
+record_id_column: "study_id"
+patient_id_column: "subject_id"  # 659 records / 92 subjects — grouping matters
+
+signal_path_columns:
+  # Already relative to the dataset root and extension-free, which is what
+  # wfdb.rdrecord expects — no path fix-up needed.
+  500: "path"  # e.g. files/p10000032/s107143276/107143276
+
+# --- Labels ---
+# The demo carries no diagnoses, age or sex. MimicIVECGDemoSplitter materialises
+# this column as a single constant class so the split is purely patient-grouped.
+label_column: "label"
+label_format: "single"
+
+stratification:
+  method: "custom_function"  # MimicIVECGDemoSplitter: constant label, no strata
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    500: 5000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]  # header gain is 200/mV, so wfdb yields mV
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "MIMIC-IV"
+    - "12-lead"
+    - "demo"
+    - "PhysioNet"
+  rai_data_collection: >
+    Routine clinical 12-lead ECGs recorded at Beth Israel Deaconess Medical
+    Center, Boston, and matched to MIMIC-IV admissions by subject_id. This demo
+    subset is a small sample of the full MIMIC-IV-ECG release, published openly
+    for exploration and teaching.
+  rai_data_biases: >
+    A 92-patient sample from a single US academic medical centre, so it is far
+    too small to be representative and carries that centre's case mix. Records
+    per patient range from 1 to 52, meaning a handful of frequently-imaged
+    patients contribute a large share of all records.
+  rai_personal_sensitive_info: >
+    De-identified under HIPAA Safe Harbor; timestamps are date-shifted into the
+    future, which is why acquisition years fall outside the real study period.
+    No age or sex is included in this subset. Identifiers are the MIMIC-IV
+    subject_id and study_id, which link to other MIMIC-IV modules.

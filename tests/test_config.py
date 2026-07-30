@@ -54,12 +54,31 @@ def test_load_ecg_arrhythmia_config():
     assert config.validation.expected_samples[500] == 5000
 
 
+def test_load_mimic_iv_ecg_demo_config():
+    """Test loading mimic_iv_ecg_demo.yaml produces valid DatasetConfig."""
+    config = load_config("mimic_iv_ecg_demo")
+    assert config.slug == "mimic_iv_ecg_demo"
+    assert config.version == "0.1"
+    assert config.signal_format == "wfdb"
+    assert config.metadata_csv == "record_list.csv"
+    assert config.record_id_column == "study_id"
+    # 659 records from 92 subjects — grouping is the point of this config.
+    assert config.patient_id_column == "subject_id"
+    assert config.signal_path_columns == {500: "path"}
+    assert config.has_predefined_splits is False
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.validation is not None
+    assert config.validation.expected_samples[500] == 5000
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
     assert "ptbxl" in slugs
     assert "chapman_shaoxing" in slugs
     assert "ecg_arrhythmia" in slugs
+    assert "mimic_iv_ecg_demo" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 

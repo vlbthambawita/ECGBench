@@ -157,6 +157,10 @@ class TestSplitterRegistry:
         splitter = get_splitter("ecg_arrhythmia")
         assert type(splitter).__name__ == "ECGArrhythmiaSplitter"
 
+    def test_mimic_demo_splitter(self):
+        splitter = get_splitter("mimic_iv_ecg_demo")
+        assert type(splitter).__name__ == "MimicIVECGDemoSplitter"
+
     def test_unknown_falls_back_to_generic(self):
         splitter = get_splitter("some_unknown_dataset")
         assert type(splitter).__name__ == "GenericSplitter"
@@ -269,4 +273,63 @@ class TestECGArrhythmiaSplitter:
         assert result.group_column is None
         assert result.split_metadata["method"] == "StratifiedKFold"
         assert result.n_folds == 3
+        assert sum(len(f) for f in result.folds.values()) == len(df)
+
+
+class TestMimicIVECGDemoSplitter:
+    """The MIMIC demo has no labels, so grouping is the only real guarantee."""
+
+    def test_load_metadata_reads_shipped_csv(self, mimic_demo_config, tmp_mimic_demo_data):
+        splitter = get_splitter("mimic_iv_ecg_demo")
+        df = splitter.load_metadata(tmp_mimic_demo_data, mimic_demo_config)
+
+        assert len(df) == 20
+        assert df["subject_id"].nunique() == 5
+        # Paths are used as-is: relative to the data root and extension-free.
+        first = df.loc[df["study_id"] == 100000320, "path"].item()
+        assert first == "files/p10000032/s100000320/100000320"
+        assert Path(first).suffix == ""
+
+    def test_label_column_is_materialised(self, mimic_demo_config, tmp_mimic_demo_data):
+        """The config declares label_column, so the column must actually exist."""
+        splitter = get_splitter("mimic_iv_ecg_demo")
+        df = splitter.load_metadata(tmp_mimic_demo_data, mimic_demo_config)
+
+        assert mimic_demo_config.label_column in df.columns
+        assert set(df[mimic_demo_config.label_column]) == {"UNLABELLED"}
+
+    def test_missing_columns_raise(self, mimic_demo_config, tmp_mimic_demo_data):
+        pd.DataFrame({"study_id": [1], "path": ["files/x/y/1"]}).to_csv(
+            tmp_mimic_demo_data / "record_list.csv", index=False
+        )
+        splitter = get_splitter("mimic_iv_ecg_demo")
+
+        with pytest.raises(ValueError, match="missing expected columns"):
+            splitter.load_metadata(tmp_mimic_demo_data, mimic_demo_config)
+
+    def test_stratification_is_single_class(self, mimic_demo_config, tmp_mimic_demo_data):
+        splitter = get_splitter("mimic_iv_ecg_demo")
+        df = splitter.load_metadata(tmp_mimic_demo_data, mimic_demo_config)
+        labels = splitter.get_stratification_labels(df, mimic_demo_config)
+
+        assert labels.nunique() == 1
+        assert len(labels) == len(df)
+        assert labels.index.equals(df.index)
+
+    def test_subjects_never_span_folds(self, mimic_demo_config, tmp_mimic_demo_data):
+        """The one guarantee that matters: 20 records from only 5 subjects."""
+        splitter = get_splitter("mimic_iv_ecg_demo")
+        df = splitter.load_metadata(tmp_mimic_demo_data, mimic_demo_config)
+        labels = splitter.get_stratification_labels(df, mimic_demo_config)
+
+        result = split_dataset(df, labels, mimic_demo_config, n_folds=3)
+
+        assert result.group_column == "subject_id"
+        assert result.split_metadata["method"] == "StratifiedGroupKFold"
+        subject_fold: dict[int, int] = {}
+        for fold_num, fold_df in result.folds.items():
+            for subject_id in fold_df["subject_id"]:
+                assert subject_fold.setdefault(subject_id, fold_num) == fold_num, (
+                    f"Subject {subject_id} appears in more than one fold"
+                )
         assert sum(len(f) for f in result.folds.values()) == len(df)

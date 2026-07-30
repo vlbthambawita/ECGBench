@@ -256,6 +256,58 @@ def tmp_ecg_arrhythmia_data(tmp_path) -> Path:
 
 
 @pytest.fixture
+def mimic_demo_config() -> DatasetConfig:
+    """MIMIC-IV-ECG-Demo-like config: no labels, patient grouping essential."""
+    return DatasetConfig(
+        name="MIMIC-IV-ECG Demo",
+        slug="mimic_iv_ecg_demo",
+        version="0.1",
+        url="https://physionet.org/content/mimic-iv-ecg-demo/0.1/",
+        leads=12,
+        duration_seconds=10.0,
+        sampling_rates=[500],
+        default_sampling_rate=500,
+        metadata_csv="record_list.csv",
+        record_id_column="study_id",
+        patient_id_column="subject_id",
+        signal_path_columns={500: "path"},
+        label_column="label",
+        label_format="single",
+        stratification=StratificationConfig(method="custom_function"),
+        validation=ValidationConfig(
+            expected_leads=12,
+            expected_samples={500: 5000},
+            checks=["missing_leads", "nan_values", "truncated_signal",
+                    "flat_line", "corrupt_header", "amplitude_outlier"],
+            amplitude_range_mv=(-10.0, 10.0),
+        ),
+    )
+
+
+@pytest.fixture
+def tmp_mimic_demo_data(tmp_path) -> Path:
+    """A miniature MIMIC-IV-ECG Demo tree: just the shipped record_list.csv.
+
+    Records-per-subject is deliberately uneven (12, 4, 2, 1, 1) to mirror the
+    real subset's skew. No signal files — the splitter only reads the CSV.
+    """
+    rows = []
+    for subject_id, n_studies in ((10000032, 12), (10001217, 4), (10001725, 2),
+                                  (10002428, 1), (10002495, 1)):
+        for i in range(n_studies):
+            study_id = subject_id * 10 + i
+            rows.append({
+                "subject_id": subject_id,
+                "study_id": study_id,
+                "file_name": study_id,
+                "ecg_time": f"2180-07-{i + 1:02d} 08:44:24",
+                "path": f"files/p{subject_id}/s{study_id}/{study_id}",
+            })
+    pd.DataFrame(rows).to_csv(tmp_path / "record_list.csv", index=False)
+    return tmp_path
+
+
+@pytest.fixture
 def tmp_splits_dir(tmp_path) -> Path:
     """Create a temporary splits directory with sample CSVs."""
     for version in ("clean", "original"):
