@@ -102,6 +102,12 @@ class DatasetConfig:
     #: need 0.001, or amplitude_outlier fires on every record.
     signal_unit_scale: float = 1.0
     leads: int = 12
+    #: Lead names in the order the files store them, spelled as the source spells
+    #: them. Required for ECGDataset(leads=...) — without it nothing knows which
+    #: row is which, and two datasets in this catalogue do not use the standard
+    #: order. Matching is case-insensitive, so PTB-XL's "AVR" and Chapman's "aVR"
+    #: both answer to either.
+    lead_names: list[str] | None = None
     duration_seconds: float = 10.0
     sampling_rates: list[int] = field(default_factory=lambda: [500])
     default_sampling_rate: int = 500
@@ -255,6 +261,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         signal_format=raw.get("signal_format", "wfdb"),
         signal_unit_scale=float(raw.get("signal_unit_scale", 1.0)),
         leads=raw.get("leads", 12),
+        lead_names=raw.get("lead_names"),
         duration_seconds=raw.get("duration_seconds", 10.0),
         sampling_rates=raw.get("sampling_rates", [500]),
         default_sampling_rate=raw.get("default_sampling_rate", 500),

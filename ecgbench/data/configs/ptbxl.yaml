@@ -29,6 +29,8 @@ creators:
 # --- Signal Properties ---
 signal_format: "wfdb"
 leads: 12
+# NB: PTB-XL spells the augmented leads uppercase; matching is case-insensitive.
+lead_names: ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 duration_seconds: 10
 sampling_rates: [500, 100]
 default_sampling_rate: 500

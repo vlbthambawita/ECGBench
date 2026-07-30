@@ -24,6 +24,7 @@ pick both up front and keep them straight.
 - [ ] Confirm signal **format**. `wfdb` and `csv` are implemented; anything else raises `NotImplementedError` in `_load_signal` and needs a branch there (in **both** `validation/engine.py` and `dataset.py` — they each have a copy).
 - [ ] Confirm the **units of the stored samples** and set `signal_unit_scale` so they reach ECGBench as millivolts (µV → `0.001`). Read one file and check the peak amplitude: a QRS peaking near 1000 is microvolts, near 1.0 is millivolts.
 - [ ] Confirm **leads**, **duration (s)**, **sampling rate(s)**, **default rate**.
+- [ ] Record the **lead names in file order** into `lead_names:`, spelled as the source spells them. Read a header or CSV column row — never assume the standard order. `ECGDataset(leads=...)` cannot work without it, and two of the four implemented datasets deviate: MIMIC-IV-ECG stores aVF before aVL, PTB-XL spells them AVR/AVL/AVF.
 - [ ] Download a small subset locally and inspect the **metadata CSV**:
   - record ID column name
   - patient ID column (or confirm one-record-per-patient, set `null`)
@@ -266,4 +267,5 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - **`ecgbench_metadata.csv`-style generated sources mean labels depend on pipeline order.** `ecg_arrhythmia` labels only exist after `ecgbench splits` has run once, because that is what scans the WFDB headers. Say so in the example script, and let `LabelSourceMissingError` name the file.
 - **Overlapping datasets are the norm, not the exception.** Around a third of the catalogue sits in a family — CinC challenges bundle PTB-XL and CPSC-2018, CODE's subsets come out of CODE-full, MIMIC demo out of MIMIC full. Adding a dataset without checking whether it overlaps an existing one ships a silent leakage trap. Check before you write the entry.
 - **`shares_records` cannot be inferred from IDs alone.** The MIMIC demo and the full release hold the same 659 recordings but renumber `study_id` into a disjoint range and truncate timestamps to the minute, so comparing keys says 0% overlap while the truth is 99.8%. When IDs disagree, try a natural key (subject + timestamp) before concluding anything.
+- **Lead order is not a given.** `config.leads` is a count, not an order. `signal[4]` is aVL in PTB-XL, Chapman and ecg_arrhythmia, but aVF in MIMIC-IV-ECG. Fill in `lead_names:` from the files so `ECGDataset(leads=["aVL"])` returns the same physical lead everywhere; a model trained across datasets without it silently crosses two leads.
 - **Heavy deps stay lazy.** Do not add `import wfdb` / `import torch` / `import mlcroissant` at module top-level in any file imported by `ecgbench/__init__.py`'s eager path. Import inside functions instead.

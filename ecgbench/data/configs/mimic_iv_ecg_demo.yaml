@@ -38,6 +38,9 @@ creators:
 # --- Signal Properties ---
 signal_format: "wfdb"
 leads: 12
+# NB: aVF and aVL are TRANSPOSED relative to the usual convention —
+# every header in this dataset stores them in this order.
+lead_names: ["I", "II", "III", "aVR", "aVF", "aVL", "V1", "V2", "V3", "V4", "V5", "V6"]
 duration_seconds: 10
 sampling_rates: [500]
 default_sampling_rate: 500

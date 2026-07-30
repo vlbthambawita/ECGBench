@@ -77,6 +77,56 @@ def _parse_dict_string(value: str) -> dict | str:
     return value
 
 
+#: Output units the loader can produce. Signals reach here in millivolts, because
+#: signal_unit_scale has already normalised whatever the source stored.
+_UNIT_FACTORS = {"mv": 1.0, "uv": 1000.0, "\u00b5v": 1000.0}
+
+
+def _resolve_units(units: str) -> float:
+    factor = _UNIT_FACTORS.get(str(units).strip().lower())
+    if factor is None:
+        raise ValueError(
+            f"units must be one of 'mV', 'uV' (or '\u00b5V'), got {units!r}"
+        )
+    return factor
+
+
+def _resolve_leads(
+    requested: list[str], available: list[str] | None, slug: str
+) -> tuple[list[int], list[str]]:
+    """Map requested lead names to row indices in the stored signal.
+
+    Matching is case-insensitive because the catalogue is not consistent: PTB-XL
+    spells the augmented leads AVR/AVL/AVF, everything else aVR/aVL/aVF. Names
+    rather than indices are the whole point — MIMIC-IV-ECG stores aVF and aVL
+    transposed, so row 4 is a different physical lead there than elsewhere.
+    """
+    if not available:
+        raise ValueError(
+            f"Config '{slug}' does not declare lead_names, so leads= cannot be "
+            "resolved. Add lead_names to the dataset's YAML, in the order the "
+            "files store them."
+        )
+
+    lookup: dict[str, int] = {}
+    for position, name in enumerate(available):
+        lookup.setdefault(str(name).strip().lower(), position)
+
+    indices: list[int] = []
+    resolved: list[str] = []
+    for name in requested:
+        key = str(name).strip().lower()
+        if key not in lookup:
+            raise ValueError(
+                f"Lead {name!r} is not in '{slug}'. Available: {list(available)}"
+            )
+        if lookup[key] in indices:
+            raise ValueError(f"Lead {name!r} requested more than once")
+        indices.append(lookup[key])
+        resolved.append(available[lookup[key]])
+    return indices, resolved
+
+
 class ECGDataset(_TorchDataset):
     """PyTorch Dataset for loading any ECG dataset supported by ECGBench.
 
@@ -93,6 +143,11 @@ class ECGDataset(_TorchDataset):
         fold_numbers: Specific fold(s) to load. None = all folds for the split.
         transform: Optional callable applied to the signal tensor
         metadata_source: "hf" (download fold CSVs from HuggingFace) or "local".
+        leads: select and reorder leads by name, e.g. ``["I", "II", "V5"]``.
+               Case-insensitive; needs ``lead_names`` in the dataset's config.
+               The signal's first dimension becomes ``len(leads)``.
+        units: "mV" (default) or "uV" — applied after lead selection and before
+               ``transform``. Never affects validation or the exported folds.
         labels: attach per-record labels and metadata as ``sample["labels"]``.
                 Needs a local copy of the source dataset — fold CSVs on the Hub
                 carry identifiers only, never labels.
@@ -117,6 +172,8 @@ class ECGDataset(_TorchDataset):
         transform: Callable | None = None,
         metadata_source: str = "hf",
         labels: bool = False,
+        leads: list[str] | None = None,
+        units: str = "mV",
     ):
         super().__init__()
 
@@ -155,6 +212,21 @@ class ECGDataset(_TorchDataset):
                 f"No signal_path_column for rate {self.sampling_rate}. "
                 f"Available: {list(self.config.signal_path_columns.keys())}"
             )
+
+        # Lead selection and output units are read-time adapters: they shape the
+        # tensor __getitem__ returns and never touch the files, the fold CSVs, or
+        # validation — a record excluded for a bad V6 stays excluded even if you
+        # never load V6.
+        self._unit_factor = _resolve_units(units)
+        self.units = "mV" if self._unit_factor == 1.0 else "uV"
+
+        self.lead_names = tuple(self.config.lead_names) if self.config.lead_names else None
+        self._lead_index: list[int] | None = None
+        if leads is not None:
+            self._lead_index, names = _resolve_leads(
+                leads, self.config.lead_names, self.config.slug
+            )
+            self.lead_names = tuple(names)
 
         # Labels: loaded once and aligned to this split, never per __getitem__.
         self.labels_df = self._load_labels() if labels else None
@@ -321,7 +393,19 @@ class ECGDataset(_TorchDataset):
         signal = _load_signal(
             full_path, self.config.signal_format, self.config.signal_unit_scale
         )
+
+        if self._lead_index is not None:
+            if signal.shape[0] <= max(self._lead_index):
+                raise ValueError(
+                    f"Record {row.get(self.config.record_id_column)!r} has "
+                    f"{signal.shape[0]} leads, too few for the requested "
+                    f"{list(self.lead_names)}"
+                )
+            signal = signal[self._lead_index]
+
         signal_tensor = torch.from_numpy(signal).float()
+        if self._unit_factor != 1.0:
+            signal_tensor = signal_tensor * self._unit_factor
 
         if self.transform is not None:
             signal_tensor = self.transform(signal_tensor)

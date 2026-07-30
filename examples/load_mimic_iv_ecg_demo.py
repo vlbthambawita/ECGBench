@@ -79,10 +79,21 @@ def main():
     print(f"  keys:    {sorted(batch.keys())}")
     print(f"  studies: {batch['record_id'][:4].tolist()}...")
 
-    print("\nNote: every header in this dataset stores leads in a non-standard order —")
-    print("      I, II, III, aVR, aVF, aVL, V1-V6, with aVF and aVL transposed.")
-    print("      ECGBench does not reorder them, so signal[4] is aVF here and aVL")
-    print("      in PTB-XL. Reorder yourself before training across both.")
+    # This dataset stores aVF before aVL. Selecting by name makes that harmless:
+    # the same physical lead lands at the same index in every dataset.
+    print("\nLead order in the files:", ", ".join(config.lead_names))
+    print("  note aVF and aVL are transposed relative to the usual convention.")
+
+    named = ECGDataset(
+        "mimic_iv_ecg_demo", split=args.split, version=args.version,
+        data_path=args.data_path, leads=["I", "II", "aVL", "V5"], units="uV",
+    )
+    picked = named[0]["signal"]
+    print("\nleads=['I','II','aVL','V5'], units='uV':")
+    print(f"  shape {tuple(picked.shape)}  lead_names {named.lead_names}  units {named.units}")
+    print(f"  range {picked.min():.1f} to {picked.max():.1f} uV")
+    print("  Selecting by name reorders around the transposition — do this rather")
+    print("  than slicing by index if you train across datasets.")
 
 
 if __name__ == "__main__":

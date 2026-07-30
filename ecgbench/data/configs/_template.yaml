@@ -27,6 +27,11 @@ signal_unit_scale: 1.0            # Multiply raw samples by this to get millivol
                                   # Get this wrong and amplitude_outlier fires on
                                   # every record (or never fires at all).
 leads: 12                         # Number of ECG leads
+lead_names: []                    # [REQUIRED for ECGDataset(leads=...)] Lead names in
+                                  # the order the FILES store them, spelled as the source
+                                  # spells them. Read one record and copy what you see —
+                                  # do not assume the standard order. MIMIC-IV-ECG stores
+                                  # aVF before aVL, and PTB-XL spells them AVR/AVL/AVF.
 duration_seconds: 10              # Nominal recording duration in seconds
 sampling_rates: [500]             # Available sampling rates in Hz
 default_sampling_rate: 500        # Which rate to use by default
