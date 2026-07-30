@@ -232,3 +232,62 @@ class TestRelatedParsing:
         resolved = _with_reverse_edges(declared, [])
         assert len(resolved["a"]) == 1
         assert len(resolved["b"]) == 1
+
+
+class TestChallenge2021Relationships:
+    """Challenge 2021 is a meta-dataset: its overlaps are the leakage risk."""
+
+    def test_contains_ptb_xl_verified(self, by_slug):
+        link = next(
+            x for x in by_slug["physionet-cinc-challenge-2021"].related
+            if x.slug == "ptb-xl"
+        )
+        assert link.relation == "contains"
+        assert link.shares_records is True
+        assert link.verified is True
+        # The version detail is the actionable part: this cohort predates the 38
+        # duplicates PTB-XL v1.0.3 removed.
+        assert "21,837" in link.note
+
+    def test_contains_the_physionet_chapman_ningbo_release_verified(self, by_slug):
+        link = next(
+            x for x in by_slug["physionet-cinc-challenge-2021"].related
+            if x.slug == "chapman-shaoxing-arrhythmia"
+        )
+        assert link.relation == "contains"
+        assert link.shares_records is True
+        assert link.verified is True
+        # The misnamed record is the trap a name join falls into.
+        assert "S23074" in link.note
+
+    def test_cohort_overlaps_all_declare_shared_records(self, by_slug):
+        """Every source cohort with a catalogue entry must be flagged as shared."""
+        related = {x.slug: x for x in by_slug["physionet-cinc-challenge-2021"].related}
+        for slug in (
+            "ptb-xl",
+            "chapman-shaoxing-arrhythmia",
+            "ptb-diagnostic-ecg-database",
+            "st-petersburg-incart-12-lead-arrhythmia-database",
+            "cpsc-2018-china-physiological-signal-challenge-2018",
+        ):
+            assert slug in related, f"{slug} is a source cohort but is not declared"
+            assert related[slug].relation == "contains"
+            assert related[slug].shares_records is True
+
+    def test_cpsc_overlap_is_not_claimed_as_verified(self, by_slug):
+        """It rests on a count match, not on a file comparison — say so."""
+        link = next(
+            x for x in by_slug["physionet-cinc-challenge-2021"].related
+            if x.slug == "cpsc-2018-china-physiological-signal-challenge-2018"
+        )
+        assert link.verified is False
+
+    def test_source_datasets_see_the_inverse_edge(self, by_slug):
+        """A user starting from PTBDB must be warned too, via the derived inverse."""
+        link = next(
+            x for x in by_slug["ptb-diagnostic-ecg-database"].related
+            if x.slug == "physionet-cinc-challenge-2021"
+        )
+        assert link.relation == "subset_of"
+        assert link.derived is True
+        assert link.shares_records is True

@@ -159,3 +159,28 @@ def test_only_minimal_columns_in_original(
         "fold", "default_split", "is_valid", "quality_issues",
     }
     assert set(df.columns) == expected
+
+
+def test_repeated_signal_path_columns_are_deduplicated(sample_config):
+    """Several rates may share one path column — that must not duplicate it.
+
+    challenge2021 records each exist at exactly one of three sampling rates, so
+    the config points a single column at the nominal rate. An earlier version
+    keyed all three rates at the same column, and selecting the repeated name
+    made pandas write 'signal_path.1' and 'signal_path.2' into every fold CSV.
+    """
+    from dataclasses import replace
+
+    from ecgbench.splitting.export import _minimal_columns
+
+    config = replace(
+        sample_config,
+        signal_path_columns={257: "signal_path", 500: "signal_path", 1000: "signal_path"},
+    )
+    cols = _minimal_columns(config, include_quality=True)
+
+    assert cols.count("signal_path") == 1
+    assert len(cols) == len(set(cols))
+    # Deduplication must not reorder or drop anything else.
+    assert cols[0] == config.record_id_column
+    assert cols[-2:] == ["is_valid", "quality_issues"]

@@ -1,0 +1,188 @@
+# ECGBench Config: PhysioNet/CinC Challenge 2021
+# ==============================================
+# Will Two Do? Varying Dimensions in Electrocardiography
+# https://physionet.org/content/challenge-2021/1.0.3/
+#
+# This is the PUBLIC TRAINING SET only — 88,253 records, all that PhysioNet
+# published. The ~131k figure quoted for the challenge includes the hidden
+# validation and test sets, which were never released.
+#
+# It is a META-DATASET: eight source cohorts concatenated under training/, three
+# of which ECGBench also catalogues on their own. Records were renamed, so the
+# overlap is invisible from the identifiers. See the `related:` block in
+# docs/_datasets/physionet-cinc-challenge-2021.md before evaluating a
+# challenge-trained model on PTB-XL, CPSC-2018, Chapman-Shaoxing or Ningbo.
+#
+#   ningbo               34,905   500 Hz   10 s
+#   ptb-xl               21,837   500 Hz   10 s
+#   georgia              10,344   500 Hz   5-10 s
+#   chapman_shaoxing     10,247   500 Hz   10 s
+#   cpsc_2018             6,877   500 Hz   6-144 s
+#   cpsc_2018_extra       3,453   500 Hz   8-98 s
+#   ptb                     516  1000 Hz   32-120 s
+#   st_petersburg_incart     74   257 Hz   1800 s
+
+name: "PhysioNet/CinC Challenge 2021"
+slug: "challenge2021"
+version: "1.0.3"
+url: "https://physionet.org/content/challenge-2021/1.0.3/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "CC BY 4.0"  # LICENSE.txt in the dataset root
+description: >
+  The public training set of the 2021 PhysioNet/Computing in Cardiology
+  Challenge, "Will Two Do? Varying Dimensions in Electrocardiography": 88,253
+  12-lead ECG records pooled from eight source cohorts across China, Russia,
+  Germany and the USA, distributed in a single uniform WFDB tree. Diagnoses are
+  multi-label SNOMED-CT codes in the per-record header (#Dx) — 133 distinct
+  codes, 2.06 per record on average, of which 30 were scored by the challenge
+  metric. Age and sex are in the headers too. Unusually for ECGBench, sampling
+  rate (257/500/1000 Hz) and record length (5 s to 1800 s) both vary per record,
+  so both are exposed as per-record labels rather than dataset constants.
+citation: >
+  Reyna, M.A., Sadr, N., Alday, E.A.P., et al. Will Two Do? Varying Dimensions
+  in Electrocardiography: The PhysioNet/Computing in Cardiology Challenge 2021.
+  Computing in Cardiology 48, 1-4 (2021).
+doi: "10.13026/34va-7q14"
+
+creators:
+  - type: Organization
+    name: "Emory University"
+    url: "https://www.emory.edu/"
+  - type: Organization
+    name: "Georgia Institute of Technology"
+  - type: Organization
+    name: "Macquarie University"
+  - type: Organization
+    name: "PhysioNet/Computing in Cardiology Challenge"
+    url: "https://physionetchallenges.org/2021/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every signal in all 88,253 records declares a gain of 1000/mV, so wfdb's
+# p_signal is already millivolts. Verified by reading records from all eight
+# cohorts. (Headers spell the unit "/mV" in six cohorts and "/mv" in two — wfdb
+# does not care, and neither does anything downstream.)
+signal_unit_scale: 1.0
+leads: 12
+# Identical in all 88,253 records — checked, not assumed. This is the standard
+# order, unlike MIMIC-IV-ECG, and standard capitalisation, unlike PTB-XL.
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+duration_seconds: 10  # nominal: 87,663 of 88,253 records. Records are NOT uniform.
+
+# WARNING: unlike PTB-XL, where every record exists at BOTH 100 and 500 Hz, here
+# each record exists at exactly ONE rate — 500 Hz for 87,663 records, 1000 Hz for
+# the 516 `ptb` ones, 257 Hz for the 74 `st_petersburg_incart` ones. Sampling rate
+# is therefore a per-record PROPERTY, not a choice of representation, and all
+# three rates are listed here for documentation only. There is a single path
+# column (see signal_path_columns), keyed on the nominal 500 Hz, so
+# ECGDataset(sampling_rate=257) raises rather than silently handing back a mixed
+# -rate dataset. To select by rate, filter on the per-record `sampling_rate`
+# label column.
+sampling_rates: [257, 500, 1000]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# No metadata file of any kind ships with this dataset. Challenge2021Splitter
+# builds one from the WFDB headers on first run, via ecgbench.labels.challenge2021,
+# and caches it here. The validation engine re-reads it from disk, so the dataset
+# root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# No patient identifiers ship with this release, and records were renamed, so
+# patient linkage is unrecoverable from the published files. That is exact for
+# six cohorts (one record per patient) but NOT for two: the 516 `ptb` records
+# come from PTBDB, where 113 of 290 patients contributed several recordings, and
+# the 74 `st_petersburg_incart` records come from ~32 patients. Those 590 records
+# (0.67%) can therefore place the same patient in different folds.
+patient_id_column: null
+
+# One column for the whole dataset, keyed on the nominal rate. Records carry
+# their own rate in the WFDB header and wfdb reads it, so nothing needs a
+# per-rate column here — see the sampling_rates note above.
+signal_path_columns:
+  500: "signal_path"  # e.g. training/chapman_shaoxing/g1/JS00001.mat
+
+# --- Labels ---
+label_column: "dx"  # comma-separated SNOMED-CT codes from the #Dx header
+label_format: "comma_separated"
+
+stratification:
+  # Challenge2021Splitter stratifies on stratify_dx_abbreviation from the label
+  # loader: the globally rarest code each record carries. #Dx order is not
+  # clinically meaningful here, so there is no primary diagnosis to use instead.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The challenge's own train/validation/test division is not reproducible: only
+# the training set was ever published.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Deliberately EMPTY. Record length genuinely varies at every rate — 1,650
+  # distinct lengths in cpsc_2018 alone, 2,500 and 5,000 samples in georgia —
+  # and check_truncated_signal returns [] for a rate with no entry, which is the
+  # intended way to disable a check that cannot apply. Any value here would fail
+  # thousands of legitimate records.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Standard range, kept deliberately. The st_petersburg_incart cohort saturates
+  # at the 16-bit rail (+/-32.767 mV) and georgia/ningbo have isolated outliers;
+  # those are genuine quality defects, so they belong in original/ and not in
+  # clean/. Widening the range to admit them would defeat the check.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/challenge2021.py parses the headers and joins the
+# challenge's SNOMED-CT code table, which ECGBench packages as
+# ecgbench/data/challenge2021_dx_mapping.csv because none ships with the data.
+# There is no source CSV to point at — the headers are the source, so labels do
+# NOT depend on `ecgbench splits` having generated the metadata cache first.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "PhysioNet Challenge"
+    - "CinC 2021"
+    - "arrhythmia"
+    - "multi-label classification"
+    - "12-lead"
+    - "SNOMED-CT"
+  rai_data_collection: >
+    A pooled re-release of eight pre-existing clinical ECG cohorts, assembled by
+    the challenge organisers for the 2021 PhysioNet/CinC Challenge: CPSC-2018 and
+    its unused extra set (China), St Petersburg INCART (Russia), PTB and PTB-XL
+    (Germany), the Georgia 12-lead ECG Challenge Database (USA), and the
+    Chapman-Shaoxing and Ningbo First Hospital databases (China). Records were
+    converted to a common WFDB layout, renamed, and their original diagnostic
+    labels re-encoded as SNOMED-CT codes; label provenance and coding conventions
+    therefore differ between cohorts.
+  rai_data_biases: >
+    An eight-way concatenation, not a sample of any population: cohort sizes span
+    three orders of magnitude (34,905 Ningbo records versus 74 from St
+    Petersburg), so aggregate statistics are dominated by the Chinese cohorts.
+    Recording length varies from 5 s to 1800 s and sampling rate from 257 to 1000
+    Hz between cohorts, both of which correlate with the source and hence with
+    label distribution — a model can learn the cohort instead of the diagnosis.
+    Class balance is extreme, from 28,971 records for sinus rhythm to single
+    figures for the rarest codes, and labels were assigned by different teams
+    under different conventions. Three cohorts also appear separately in this
+    catalogue, so cross-dataset evaluation leaks unless the overlap is excluded.
+  rai_personal_sensitive_info: >
+    De-identified by the original providers. Age and sex are retained in the WFDB
+    headers; age is missing in 236 records and sex unknown in 23. No patient
+    identifiers are published, which also means recordings from the same patient
+    cannot be kept out of separate folds for the PTB and St Petersburg cohorts.

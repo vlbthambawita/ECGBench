@@ -315,6 +315,9 @@ class TestShippedLeadNames:
              ["v1", "v2", "v3", "v4", "v5", "v6"]),
             ("ptbdb", ["i", "ii", "iii", "avr", "avl", "avf"],
              ["v1", "v2", "v3", "v4", "v5", "v6", "vx", "vy", "vz"]),
+            # Identical across all 88,253 records of all eight source cohorts.
+            ("challenge2021", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

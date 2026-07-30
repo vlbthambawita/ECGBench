@@ -229,3 +229,77 @@ class TestShippedConfigs:
         assert spec.available is False
         # An unavailable block is only useful if it says where to look instead.
         assert "MIMIC-IV" in spec.unavailable_reason
+
+
+class TestChallenge2021Labels:
+    """The packaged SNOMED table and the multi-label derivation over it."""
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        """No metadata file ships, so labels do not depend on a prior pipeline run."""
+        from ecgbench.config import load_config
+
+        spec = load_config("challenge2021").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers are the source
+        assert spec.join_column == "record_name"
+
+    def test_packaged_mapping_covers_the_challenge_classes(self):
+        """133 codes, 30 scored, no duplicate code or abbreviation.
+
+        No code table ships with the dataset, so this file is the only mapping
+        from SNOMED codes to names. A duplicate code would silently drop a class.
+        """
+        from ecgbench.labels.challenge2021 import load_dx_mapping
+
+        mapping = load_dx_mapping()
+        assert len(mapping) == 133
+        assert mapping.index.is_unique
+        assert mapping["abbreviation"].is_unique
+        assert int(mapping["scored"].sum()) == 30
+        # Spot-check both halves of the table.
+        assert mapping.loc["164889003", "abbreviation"] == "AF"
+        assert bool(mapping.loc["164889003", "scored"]) is True
+        assert bool(mapping.loc["164951009", "scored"]) is False  # abQRS, unscored
+
+    def test_unknown_codes_are_kept_rather_than_dropped(self):
+        """A code absent from the table must surface, not vanish silently."""
+        import pandas as pd
+
+        from ecgbench.labels.challenge2021 import UNMAPPED, attach_dx_columns
+
+        # Two AF records make AF the common code, so the unknown one is rarest
+        # and reaches the stratification label — where it must be visible as
+        # UNMAPPED rather than passed off as a real class.
+        df = attach_dx_columns(
+            pd.DataFrame({"dx": ["164889003,999999999", "164889003", "164889003"]})
+        )
+
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "dx_abbreviations"] == f"AF,{UNMAPPED}"
+        assert df.loc[0, "scored_dx"] == "AF"  # unknown codes are never "scored"
+        assert df.loc[0, "stratify_dx"] == "999999999"
+        assert df.loc[0, "stratify_dx_abbreviation"] == UNMAPPED
+
+    def test_scored_subset_excludes_unscored_codes(self):
+        import pandas as pd
+
+        from ecgbench.labels.challenge2021 import attach_dx_columns
+
+        # AF is scored; abQRS (164951009) is not.
+        df = attach_dx_columns(pd.DataFrame({"dx": ["164889003,164951009"]}))
+
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "scored_dx"] == "AF"
+        assert df.loc[0, "n_scored_dx"] == 1
+
+    def test_stratify_reduction_breaks_ties_deterministically(self):
+        """Equally rare codes must resolve to the lowest numeric code, not scan order."""
+        import pandas as pd
+
+        from ecgbench.labels.challenge2021 import attach_dx_columns
+
+        forward = attach_dx_columns(pd.DataFrame({"dx": ["164889003,164890007"]}))
+        reversed_ = attach_dx_columns(pd.DataFrame({"dx": ["164890007,164889003"]}))
+
+        assert forward.loc[0, "stratify_dx"] == "164889003"
+        assert reversed_.loc[0, "stratify_dx"] == "164889003"

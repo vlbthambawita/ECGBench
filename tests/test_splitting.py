@@ -580,3 +580,125 @@ class TestLUDBSplitter:
         pd.DataFrame({"ID": [1]}).to_csv(tmp_path / "ludb.csv", index=False)
         with pytest.raises(FileNotFoundError, match="signal directory"):
             get_splitter("ludb").load_metadata(tmp_path, self._config(sample_config))
+
+
+class TestChallenge2021Splitter:
+    """Challenge 2021 pools eight cohorts and has no clinically primary diagnosis."""
+
+    def _header(self, name, dx, fs=500, nsamp=5000, age="54", sex="Female"):
+        return (
+            f"{name} 12 {fs} {nsamp}\n"
+            + "".join(
+                f"{name}.mat 16x1+24 1000.0(0)/mV 16 0 0 0 0 {lead}\n"
+                for lead in ("I", "II", "III", "aVR", "aVL", "aVF",
+                             "V1", "V2", "V3", "V4", "V5", "V6")
+            )
+            + f"# Age: {age}\n# Sex: {sex}\n# Dx: {dx}\n"
+            "# Rx: Unknown\n# Hx: Unknown\n# Sx: Unknown\n"
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: {cohort: [(name, dx), ...]} under training/<cohort>/g1/."""
+        for cohort, items in records.items():
+            d = tmp_path / "training" / cohort / "g1"
+            d.mkdir(parents=True, exist_ok=True)
+            for name, dx in items:
+                (d / f"{name}.hea").write_text(self._header(name, dx), encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="challenge2021", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={500: "signal_path"}, default_sampling_rate=500,
+            label_column="dx", leads=12,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.challenge2021 import Challenge2021Splitter
+
+        assert isinstance(get_splitter("challenge2021"), Challenge2021Splitter)
+
+    def test_builds_source_and_signal_path_and_caches_csv(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {
+            "ningbo": [("JS10647", "426783006")],
+            "ptb-xl": [("HR00001", "164889003")],
+        })
+        df = get_splitter("challenge2021").load_metadata(tree, config)
+
+        assert set(df["source"]) == {"ningbo", "ptb-xl"}
+        # Paths are relative to data_path and point at the .mat, not the .hea.
+        paths = dict(zip(df["record_name"], df["signal_path"]))
+        assert paths["JS10647"] == "training/ningbo/g1/JS10647.mat"
+        assert paths["HR00001"] == "training/ptb-xl/g1/HR00001.mat"
+        # Written to disk because validate_dataset re-reads it rather than
+        # reusing this frame.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_multi_label_codes_map_to_abbreviations(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        # AF + RBBB + TAb, in the order a real Chapman header lists them.
+        tree = self._tree(tmp_path, {
+            "chapman_shaoxing": [("JS00001", "164889003,59118001,164934002")],
+        })
+        row = get_splitter("challenge2021").load_metadata(tree, config).iloc[0]
+
+        assert row["n_dx"] == 3
+        assert row["dx_abbreviations"] == "AF,RBBB,TAb"
+        assert row["scored_dx"] == "AF,RBBB,TAb"  # all three are scored classes
+        assert "atrial fibrillation" in row["dx_names"]
+
+    def test_stratification_takes_the_rarest_code_not_the_first(
+        self, sample_config, tmp_path
+    ):
+        """The reduction must not depend on #Dx ordering, which is meaningless here."""
+        config = self._config(sample_config)
+        # NSR is common in this tiny corpus; AF appears once. A record carrying
+        # both must stratify on AF regardless of which is listed first.
+        tree = self._tree(tmp_path, {"ningbo": (
+            [(f"JS1{i:04d}", "426783006") for i in range(12)]
+            + [("JS19999", "426783006,164889003")]
+        )})
+        splitter = get_splitter("challenge2021")
+        df = splitter.load_metadata(tree, config)
+
+        strat = dict(zip(df["record_name"], df["stratify_dx_abbreviation"]))
+        assert strat["JS19999"] == "AF"     # rarest, though NSR is listed first
+        assert strat["JS10000"] == "NSR"
+
+    def test_rare_classes_pool_into_other(self, sample_config, tmp_path):
+        from ecgbench.splitting.strategies.challenge2021 import OTHER
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {"ningbo": (
+            [(f"JS1{i:04d}", "426783006") for i in range(12)]
+            + [("JS19999", "164889003")]
+        )})
+        splitter = get_splitter("challenge2021")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(tree, config), config
+        )
+        counts = labels.value_counts().to_dict()
+
+        assert counts["NSR"] == 12
+        assert counts[OTHER] == 1   # the single AF record
+        assert "AF" not in counts
+
+    def test_stratification_needs_load_metadata_first(self, sample_config, tmp_path):
+        import pandas as pd
+
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("challenge2021").get_stratification_labels(
+                pd.DataFrame({"record_name": ["A0001"]}), self._config(sample_config)
+            )
+
+    def test_missing_training_tree_raises(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="training"):
+            get_splitter("challenge2021").load_metadata(
+                tmp_path, self._config(sample_config)
+            )

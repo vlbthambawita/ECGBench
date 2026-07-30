@@ -42,7 +42,11 @@ def _minimal_columns(config: DatasetConfig, include_quality: bool = False) -> li
     cols.extend(["fold", "default_split"])
     if include_quality:
         cols.extend(["is_valid", "quality_issues"])
-    return cols
+    # Deduplicate, preserving order. A config may legitimately point several
+    # sampling rates at the same column (challenge2021 records each exist at only
+    # one rate), and selecting a repeated name yields duplicate CSV columns that
+    # pandas then writes as 'signal_path.1', 'signal_path.2'.
+    return list(dict.fromkeys(cols))
 
 
 def _select_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:

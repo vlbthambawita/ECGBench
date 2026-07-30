@@ -176,6 +176,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `mimic_iv_ecg_demo` | I, II, III, aVR, **aVF, aVL**, V1-V6 (transposed) |
 | `ludb` | i, ii, iii, avr, avl, avf, v1-v6 (**lowercase**) |
 | `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
+| `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
 
 `signal[4]` is aVL in most of them and aVF in MIMIC, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -187,6 +188,14 @@ conventional twelve plus the three Frank vectorcardiography leads. `leads=` is h
 you take the standard twelve out of it. Its records are also **variable length**
 (32 s to 120 s), so batching needs a cropping `transform` — see
 `examples/load_ptbdb.py`.
+
+`challenge2021` is the one dataset where **sampling rate varies per record**
+(257/500/1000 Hz), because it concatenates eight source cohorts. Rate is therefore
+a label to filter on, not a `sampling_rate=` argument, and record length spans 5 s
+to 1800 s so batching needs a cropping `transform` too. It also **contains** PTB-XL,
+PTBDB, INCART, CPSC-2018, Chapman-Shaoxing and Ningbo — its `source` label says
+which cohort each record came from, and evaluating on any of those after training
+on it is testing on training data. See `examples/load_challenge2021.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
