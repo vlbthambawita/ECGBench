@@ -201,6 +201,8 @@
       color: var(--text);
       overflow-x: auto;
       line-height: 1.7;
+      white-space: pre;   /* without this the browser collapses every newline */
+      margin: 0;          /* the pre element's default margin breaks the card */
     }
     .usage-card + .usage-card { margin-top: 16px; }
 
@@ -596,21 +598,19 @@
   <div class="install-grid">
     <div class="install-card">
       <h3>Quick Install</h3>
-      <div class="code-block">
+      <pre class="code-block">
 <span class="comment"># Using pip</span>
 pip install ecgbench
 
 <span class="comment"># Using uv (recommended)</span>
-uv pip install ecgbench
-      </div>
+uv pip install ecgbench</pre>
     </div>
     <div class="install-card">
       <h3>From Source (Development)</h3>
-      <div class="code-block">
+      <pre class="code-block">
 git clone https://github.com/vlbthambawita/ECGBench.git
 <span class="keyword">cd</span> ECGBench
-uv pip install -e <span class="string">".[dev]"</span>
-      </div>
+uv pip install -e <span class="string">".[dev]"</span></pre>
     </div>
   </div>
 </section>
@@ -624,7 +624,7 @@ uv pip install -e <span class="string">".[dev]"</span>
     the waveforms stay on your disk, since the source datasets are not redistributed.</div>
   <div class="usage-card">
     <h3>Load a split and iterate batches</h3>
-    <div class="code-block">
+    <pre class="code-block">
 <span class="keyword">from</span> ecgbench <span class="keyword">import</span> ECGDataset, ecg_collate_fn
 <span class="keyword">from</span> torch.utils.data <span class="keyword">import</span> DataLoader
 
@@ -643,13 +643,12 @@ loader = <span class="func">DataLoader</span>(dataset, batch_size=<span class="n
     signals = batch[<span class="string">"signal"</span>]      <span class="comment"># (B, 12, 1000) float32, millivolts</span>
     ids     = batch[<span class="string">"record_id"</span>]   <span class="comment"># tensor of ecg_id values</span>
     labels  = batch[<span class="string">"labels"</span>]      <span class="comment"># list of per-record dicts</span>
-    <span class="keyword">break</span>
-    </div>
+    <span class="keyword">break</span></pre>
   </div>
 
   <div class="usage-card">
     <h3>Choose leads, units and a sample window</h3>
-    <div class="code-block">
+    <pre class="code-block">
 <span class="comment"># Leads by NAME, not index: the order differs between datasets, so</span>
 <span class="comment"># signal[4] is aVL in PTB-XL and aVF in MIMIC-IV-ECG.</span>
 ds = <span class="func">ECGDataset</span>(
@@ -662,13 +661,12 @@ ds = <span class="func">ECGDataset</span>(
 ds = <span class="func">ECGDataset</span>(
     <span class="string">"ptbxl"</span>, split=<span class="string">"train"</span>, data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
     sampling_rate=<span class="number">500</span>, window=(<span class="number">0</span>, <span class="number">2500</span>),
-)
-    </div>
+)</pre>
   </div>
 
   <div class="usage-card">
     <h3>Subsample folds, or roll your own cross-validation</h3>
-    <div class="code-block">
+    <pre class="code-block">
 <span class="comment"># One fold instead of the whole split — useful on the large datasets.</span>
 fold1 = <span class="func">ECGDataset</span>(
     <span class="string">"ptbxl"</span>, split=<span class="string">"train"</span>, data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>, fold_numbers=[<span class="number">1</span>],
@@ -678,8 +676,7 @@ fold1 = <span class="func">ECGDataset</span>(
 <span class="comment"># boundaries, which is the only way to express a custom rotation.</span>
 held_out = <span class="func">ECGDataset</span>(
     <span class="string">"ptbxl"</span>, split=<span class="keyword">None</span>, fold_numbers=[<span class="number">10</span>], data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
-)
-    </div>
+)</pre>
   </div>
 </section>
 
