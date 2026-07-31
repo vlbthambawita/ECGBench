@@ -1,0 +1,160 @@
+# ECGBench Config: St Petersburg INCART 12-lead Arrhythmia Database
+# =================================================================
+# https://physionet.org/content/incartdb/1.0.0/
+#
+# 75 half-hour Holter extracts from 32 patients, with 175,907 manually corrected
+# beat annotations. Three things set it apart in this catalogue, all verified
+# against the files:
+#
+#   - it is LONG: 1800 s per record, ~44 MB per record in memory, so batching
+#     needs a cropping transform;
+#   - the ADC gain VARIES BETWEEN RECORDS (240 to 1063 adu/mV), uniform within
+#     each. wfdb applies the per-record gain, so nothing downstream needs to care;
+#   - it is the only dataset here whose primary product is reference BEAT
+#     annotations rather than record-level diagnoses.
+#
+# The same 74 of these 75 records are also inside `challenge2021` (as I0001-I0075,
+# with I36 absent). This is the better copy: the challenge re-quantised them to a
+# gain of 1000, which cannot represent this amplitude range, so its version carries
+# 467k NaN samples that are not in the original. Do not mix the two.
+
+name: "St Petersburg INCART 12-lead Arrhythmia Database"
+slug: "incartdb"
+version: "1.0.0"
+url: "https://physionet.org/content/incartdb/1.0.0/"
+download_url: null  # PhysioNet serves this project from a credentialed path
+license: "ODC-By-1.0"  # from the PhysioNet landing page; the mirror has no LICENSE file
+description: >
+  75 annotated recordings extracted from 32 Holter records, collected at the St
+  Petersburg Institute of Cardiological Technics from patients undergoing tests
+  for coronary artery disease. Each record is 30 minutes of 12 standard leads at
+  257 Hz. Preference was given to subjects whose ECGs were consistent with
+  ischaemia, coronary artery disease, conduction abnormalities and arrhythmias;
+  none had pacemakers and most had ventricular ectopic beats. The reference
+  annotation files carry 175,907 beat labels across ten beat types, produced by an
+  automatic algorithm and then corrected manually. Per-record ECG findings and
+  per-patient diagnoses are stored in the WFDB header comments.
+citation: >
+  Tihonenko, V., Khaustov, A., Ivanov, S., Rivin, A., Yakushenko, E. St
+  Petersburg INCART 12-lead Arrhythmia Database. PhysioNet (2008).
+doi: "10.13026/C2V88N"
+
+creators:
+  - type: Organization
+    name: "St Petersburg Institute of Cardiological Technics (Incart)"
+    url: "https://www.incart.ru/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Gains run from 240 to 1063 adu/mV and differ BETWEEN records (uniform across the
+# 12 leads within a record). wfdb divides by the header gain, so p_signal is
+# already millivolts and no extra scaling applies. Verified by reading all 75.
+signal_unit_scale: 1.0
+leads: 12
+# Uppercase AVR/AVL/AVF — the PTB-XL spelling, not Chapman's aVR. Identical in all
+# 75 records; checked, not assumed. Matching is case-insensitive, so
+# ECGDataset(leads=["aVL"]) works anyway.
+lead_names: ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+duration_seconds: 1800  # exactly, for all 75 records
+sampling_rates: [257]
+default_sampling_rate: 257
+
+# --- File Structure ---
+# No metadata file ships in a machine-readable form. INCARTDBSplitter builds one
+# from the header comments and the .atr annotations on first run, via
+# ecgbench.labels.incartdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# 32 patients over 75 records — only 2 patients contributed a single record, 18
+# contributed 2, 11 contributed 3 and one contributed 4. Grouping is mandatory:
+# a record-level split leaks the same patient into train and test.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  257: "signal_path"  # bare record stem, e.g. "I01" — the tree is flat
+
+# --- Labels ---
+label_column: "diagnosis"  # patient-level, from the <diagnoses> header field
+label_format: "single"
+
+stratification:
+  # INCARTDBSplitter takes stratify_class from the label loader: the patient-level
+  # diagnosis, pooled so every class holds at least 10 patients. Necessarily
+  # coarse — 32 patients over 10 folds — and patient grouping, not stratification,
+  # is the property that matters for this dataset.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Length is genuinely uniform here (all 75 records are exactly 462,600 samples),
+  # so unlike ptbdb and challenge2021 the truncation check can be switched on.
+  expected_samples:
+    257: 462600
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Set from measurement, not from the usual +/-10 default, which would exclude 29
+  # of 75 records (39%) for amplitudes that are ordinary in 30-minute ambulatory
+  # Holter data. At +/-30 this check does what it is here to do: it catches the four
+  # records with a lead pinned at the 16-bit rail for most of the recording —
+  # I02 (V6), I03 (V3), I57 (V4), I58 (V4) — which `missing_leads` cannot see
+  # because those leads are railed, not zero. I69 (peak 43 mV, no railed lead) is
+  # also excluded; no single threshold separates it from the railed four, since it
+  # sits above their +/-31.5 mV rail.
+  amplitude_range_mv: [-30.0, 30.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/incartdb.py parses the three header comment lines
+# and summarises the .atr reference annotations into per-record beat counts. There
+# is no source CSV to point at — the headers and annotations are the source.
+# `files-patients-diagnoses.txt` and `record-descriptions.txt` hold the same
+# content and were verified to agree with the headers on every record, so the
+# loader reads the headers only.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "arrhythmia"
+    - "Holter"
+    - "beat annotations"
+    - "12-lead"
+    - "ventricular ectopy"
+    - "PhysioNet"
+  rai_data_collection: >
+    Extracted from 32 Holter recordings of patients undergoing tests for coronary
+    artery disease at the St Petersburg Institute of Cardiological Technics,
+    Russia. Records were selected deliberately rather than sampled: preference was
+    given to ECGs consistent with ischaemia, coronary artery disease, conduction
+    abnormalities and arrhythmias. Diagnoses were confirmed by enzyme check,
+    coronary angiography, electrophysiological study and pressure monitoring where
+    necessary. Beat annotations were produced by an automatic algorithm and then
+    corrected manually following PhysioBank beat definitions.
+  rai_data_biases: >
+    A deliberately enriched selection, not a population sample — most patients have
+    ventricular ectopic beats and none has a pacemaker, so prevalence here reflects
+    the selection criteria rather than any clinical population. Only 32 patients
+    contribute 75 records, so between-patient variation is very limited and
+    per-record results are not independent. Beat classes are extremely imbalanced
+    (150,410 normal beats against 1 bundle-branch-block beat and 6 unclassifiable
+    ones). Beat annotation positions were not manually corrected and may be
+    occasionally misaligned, per the dataset README. 14 of the 32 patients carry no
+    recorded diagnosis at all.
+  rai_personal_sensitive_info: >
+    De-identified. Age, sex and a patient number are retained in the WFDB header
+    comments; the patient number is what makes patient-grouped folds possible. No
+    other identifiers are present.

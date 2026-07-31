@@ -190,3 +190,31 @@ def test_load_challenge2021_config():
     assert config.validation.expected_samples == {}
     assert config.validation.amplitude_range_mv == (-10.0, 10.0)
     assert config.has_predefined_splits is False
+
+
+def test_load_incartdb_config():
+    """INCART: 30-minute Holter records, per-record gains, mandatory patient grouping."""
+    config = load_config("incartdb")
+    assert config.slug == "incartdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Gains vary between records (240-1063); wfdb applies each header's own gain,
+    # so no extra scaling reaches ECGBench.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Uppercase AVR/AVL/AVF, as PTB-XL spells them — not Chapman's aVR.
+    assert config.lead_names == ["I", "II", "III", "AVR", "AVL", "AVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [257]
+    assert config.duration_seconds == 1800
+    assert config.signal_path_columns == {257: "signal_path"}
+    # No metadata ships: INCARTDBSplitter generates this from headers + .atr files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 30 of 32 patients contributed more than one record — grouping is mandatory.
+    assert config.patient_id_column == "patient_id"
+    # Unlike ptbdb/challenge2021, length is uniform here, so truncation is checked.
+    assert config.validation.expected_samples == {257: 462600}
+    # Widened from the usual +/-10 deliberately: at +/-10 this check would drop 29
+    # of 75 records for amplitudes that are ordinary in 30-minute Holter data.
+    assert config.validation.amplitude_range_mv == (-30.0, 30.0)

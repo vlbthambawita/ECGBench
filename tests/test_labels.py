@@ -303,3 +303,124 @@ class TestChallenge2021Labels:
 
         assert forward.loc[0, "stratify_dx"] == "164889003"
         assert reversed_.loc[0, "stratify_dx"] == "164889003"
+
+
+class TestINCARTDBLabels:
+    """Three comment lines per header, one of which is optional in half the records."""
+
+    HEADER_WITH_DX = (
+        "I01 12 257 462600\n"
+        "I01.dat 16 306 16 0 1161 -11409 0 I\n"
+        "#<age>: 65 <sex>: F <diagnoses> Coronary artery disease, arterial hypertension\n"
+        "# patient 1\n"
+        "# PVCs, noise\n"
+    )
+    # 34 of the 75 real records look like this: the <diagnoses> TOKEN is absent,
+    # not merely empty. Note the trailing space, which the real files also have.
+    HEADER_NO_DX = (
+        "I08 12 257 462600\n"
+        "I08.dat 16 612 16 0 0 0 0 I\n"
+        "#<age>: 51 <sex>: F \n"
+        "# patient 4\n"
+        "# ventricular bigeminy, ventricular couplets\n"
+    )
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("incartdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # headers + .atr files are the source
+        assert spec.join_column == "record_name"
+
+    def test_parses_all_three_comment_lines(self, tmp_path):
+        from ecgbench.labels.incartdb import parse_header_comments
+
+        (tmp_path / "I01.hea").write_text(self.HEADER_WITH_DX, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "I01.hea")
+
+        assert fields["age"] == "65"
+        assert fields["sex"] == "F"
+        assert fields["diagnosis"] == "Coronary artery disease, arterial hypertension"
+        # Zero-padded so patient2 and patient20 sort and group predictably.
+        assert fields["patient_id"] == "patient01"
+        assert fields["record_features"] == "PVCs, noise"
+
+    def test_absent_diagnoses_token_is_not_a_parse_failure(self, tmp_path):
+        """34 of 75 records omit <diagnoses> entirely; age/sex/patient must survive."""
+        from ecgbench.labels.incartdb import parse_header_comments
+
+        (tmp_path / "I08.hea").write_text(self.HEADER_NO_DX, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "I08.hea")
+
+        assert fields["age"] == "51"
+        assert fields["sex"] == "F"
+        assert fields["diagnosis"] == ""  # empty, not None, so the column stays str
+        assert fields["patient_id"] == "patient04"
+        assert fields["record_features"] == "ventricular bigeminy, ventricular couplets"
+
+    def test_trailing_comma_is_stripped_from_features(self, tmp_path):
+        """Several real records end their findings line with ', ' (e.g. I17)."""
+        from ecgbench.labels.incartdb import parse_header_comments
+
+        header = self.HEADER_WITH_DX.replace("# PVCs, noise", "# bradycardia, PVCs,  ")
+        (tmp_path / "I17.hea").write_text(header, encoding="utf-8")
+
+        assert parse_header_comments(tmp_path / "I17.hea")["record_features"] == (
+            "bradycardia, PVCs"
+        )
+
+    def test_beat_counts_separate_rhythm_markers_from_beats(self, tmp_path):
+        """'+' is a rhythm change, not a beat, and must not inflate n_beats."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.incartdb import count_beats
+
+        wfdb.wrann(
+            "I01", "atr",
+            sample=np.array([100, 200, 300, 400, 500]),
+            symbol=["N", "N", "V", "+", "R"],
+            write_dir=str(tmp_path),
+        )
+        counts = count_beats(tmp_path / "I01")
+
+        assert counts["beat_N"] == 2
+        assert counts["beat_V"] == 1
+        assert counts["beat_R"] == 1
+        assert counts["n_beats"] == 4          # not 5
+        assert counts["n_rhythm_changes"] == 1
+
+    def test_missing_annotation_file_does_not_kill_the_scan(self, tmp_path):
+        """A record with no .atr yields zero counts rather than raising."""
+        pytest.importorskip("wfdb")
+
+        from ecgbench.labels.incartdb import count_beats
+
+        counts = count_beats(tmp_path / "I99")
+
+        assert counts["n_beats"] == 0
+        assert counts["beat_N"] == 0
+
+    def test_rare_classes_pool_on_patient_count_not_record_count(self):
+        """Folds are grouped by patient, so a class needs enough PATIENTS."""
+        import pandas as pd
+
+        from ecgbench.labels.incartdb import OTHER, UNKNOWN, attach_stratify_class
+
+        # 'Rare dx' has 12 records but only 2 patients — it cannot be spread over
+        # 10 grouped folds, so it must pool even though 12 >= 10 records.
+        df = pd.DataFrame({
+            "diagnosis": ["Rare dx"] * 12 + ["Common dx"] * 10 + [""] * 10,
+            "patient_id": (
+                ["patient01"] * 6 + ["patient02"] * 6
+                + [f"patient{i:02d}" for i in range(3, 13)]
+                + [f"patient{i:02d}" for i in range(13, 23)]
+            ),
+        })
+        out = attach_stratify_class(df)
+        counts = out["stratify_class"].value_counts().to_dict()
+
+        assert counts[OTHER] == 12          # Rare dx pooled: 2 patients
+        assert counts["Common dx"] == 10    # 10 patients, kept
+        assert counts[UNKNOWN] == 10        # empty diagnosis is its own class

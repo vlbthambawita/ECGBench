@@ -702,3 +702,124 @@ class TestChallenge2021Splitter:
             get_splitter("challenge2021").load_metadata(
                 tmp_path, self._config(sample_config)
             )
+
+
+class TestINCARTDBSplitter:
+    """INCART's binding constraint is patient grouping: 75 records, 32 patients."""
+
+    def _header(self, rec, patient, dx, features, gain=306):
+        dx_part = f" <diagnoses> {dx}" if dx else " "
+        return (
+            f"{rec} 12 257 462600\n"
+            + "".join(
+                f"{rec}.dat 16 {gain} 16 0 0 0 0 {lead}\n"
+                for lead in ("I", "II", "III", "AVR", "AVL", "AVF",
+                             "V1", "V2", "V3", "V4", "V5", "V6")
+            )
+            + f"#<age>: 65 <sex>: F{dx_part}\n"
+            f"# patient {patient}\n"
+            f"# {features}\n"
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: [(rec, patient, dx)] -> flat I??.hea files, plus .atr each."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, patient, dx in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, patient, dx, "PVCs, noise"), encoding="utf-8"
+            )
+            wfdb.wrann(
+                rec, "atr",
+                sample=np.array([100, 200, 300]),
+                symbol=["N", "N", "V"],
+                write_dir=str(tmp_path),
+            )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="incartdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={257: "signal_path"}, default_sampling_rate=257,
+            label_column="diagnosis", leads=12,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.incartdb import INCARTDBSplitter
+
+        assert isinstance(get_splitter("incartdb"), INCARTDBSplitter)
+
+    def test_builds_patient_id_signal_path_and_beat_counts(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("I01", 1, "Acute MI"), ("I02", 1, "Acute MI")])
+        df = get_splitter("incartdb").load_metadata(tree, config)
+
+        # Both records belong to one patient — that is what grouping depends on.
+        assert set(df["patient_id"]) == {"patient01"}
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["I01", "I02"]
+        assert df["n_beats"].tolist() == [3, 3]
+        assert df["beat_V"].tolist() == [1, 1]
+        assert df["pvc_fraction"].round(4).tolist() == [0.3333, 0.3333]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_records_without_a_diagnosis_are_labelled_unknown(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.incartdb import UNKNOWN
+
+        config = self._config(sample_config)
+        # 10 patients with no diagnosis, so UNKNOWN clears MIN_CLASS_PATIENTS and
+        # survives pooling — as it does in the real dataset, where 14 patients
+        # have none. With fewer patients it would pool into OTHER like any other
+        # small class; UNKNOWN is not privileged.
+        records = [(f"I{i:02d}", i, "") for i in range(1, 11)]
+        df = get_splitter("incartdb").load_metadata(self._tree(tmp_path, records), config)
+
+        assert set(df["diagnosis"]) == {""}
+        labels = get_splitter("incartdb").get_stratification_labels(df, config)
+        assert set(labels) == {UNKNOWN}
+
+    def test_no_patient_spans_a_fold(self, sample_config, tmp_path):
+        """The property that makes this dataset usable at all."""
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        # 12 patients, 2-3 records each, two diagnosis classes.
+        records = []
+        rec = 1
+        for patient in range(1, 13):
+            dx = "Acute MI" if patient % 2 else ""
+            for _ in range(2 if patient % 3 else 3):
+                records.append((f"I{rec:02d}", patient, dx))
+                rec += 1
+        splitter = get_splitter("incartdb")
+        df = splitter.load_metadata(self._tree(tmp_path, records), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=4)
+
+        assigned = pd.concat(
+            [f.assign(fold=n) for n, f in result.folds.items()], ignore_index=True
+        )
+        spanning = assigned.groupby("patient_id")["fold"].nunique()
+        assert (spanning == 1).all(), f"patients split across folds: {spanning[spanning > 1]}"
+        assert result.group_column == "patient_id"
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("incartdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["I01"]}), self._config(sample_config)
+            )
+
+    def test_missing_records_raise(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="I..\\.hea|headers"):
+            get_splitter("incartdb").load_metadata(tmp_path, self._config(sample_config))

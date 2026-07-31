@@ -177,6 +177,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ludb` | i, ii, iii, avr, avl, avf, v1-v6 (**lowercase**) |
 | `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
 | `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
+| `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 
 `signal[4]` is aVL in most of them and aVF in MIMIC, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -188,6 +189,14 @@ conventional twelve plus the three Frank vectorcardiography leads. `leads=` is h
 you take the standard twelve out of it. Its records are also **variable length**
 (32 s to 120 s), so batching needs a cropping `transform` — see
 `examples/load_ptbdb.py`.
+
+`incartdb` is the one dataset whose primary labels are **reference beat
+annotations** rather than record-level diagnoses: 175,907 manually corrected beats
+over ten types, exposed as per-record counts (`beat_N`, `beat_V`, …, `pvc_fraction`)
+alongside the patient diagnosis and free-text per-record findings. Its records are
+1800 s (~44 MB each), so batching needs a cropping `transform`. It is also the
+clearest case for **patient-grouped folds** — 3,166 of its 3,174 RBBB beats come
+from a single patient — see `examples/load_incartdb.py`.
 
 `challenge2021` is the one dataset where **sampling rate varies per record**
 (257/500/1000 Hz), because it concatenates eight source cohorts. Rate is therefore
