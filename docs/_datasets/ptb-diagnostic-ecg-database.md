@@ -118,8 +118,9 @@ sections:
     body: |
       from ecgbench import ECGDataset
 
-      # Variable-length records: crop to a fixed window to allow batching, and
-      # take the standard twelve leads by name out of the fifteen stored.
+      # Variable-length records: take a fixed window to allow batching, and the
+      # standard twelve leads by name out of the fifteen stored. window= is read
+      # at load time, so the other 22-110 s are never decoded.
       STANDARD_12 = ["i", "ii", "iii", "avr", "avl", "avf",
                      "v1", "v2", "v3", "v4", "v5", "v6"]
 
@@ -128,7 +129,7 @@ sections:
           split="train",
           data_path="/path/to/ptbdb/1.0.0/",
           leads=STANDARD_12,
-          transform=lambda x: x[:, :10_000],   # first 10 s at 1000 Hz
+          window=(0, 10_000),                  # first 10 s at 1000 Hz
           labels=True,
       )
 

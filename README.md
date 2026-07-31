@@ -94,35 +94,31 @@ loader = DataLoader(train_ds, batch_size=32, collate_fn=ecg_collate_fn)
 
 ### Selecting specific folds
 
-`fold_numbers` picks individual folds out of a split:
+`fold_numbers` picks individual folds out of a split. Folds are 1-indexed.
 
 ```python
 ECGDataset("ptbxl", split="train", fold_numbers=[3], data_path="...")       # one fold
 ECGDataset("ptbxl", split="train", fold_numbers=[1, 2, 5], data_path="...") # several
 ```
 
-**A fold only exists in the split it was exported to** — folds 1-8 under `train/`,
-9 under `val/`, 10 under `test/`. Asking for fold 9 with `split="train"` is a 404,
-so a rotation has to look each fold up in its own split:
+**Each fold belongs to exactly one split** — 1-8 under `train/`, 9 under `val/`,
+10 under `test/` — so `split="train", fold_numbers=[9]` is an error. To select
+folds regardless of that layout, for custom cross-validation, pass `split=None`:
 
 ```python
-from torch.utils.data import ConcatDataset
-
-SPLIT_OF_FOLD = {**{n: "train" for n in range(1, 9)}, 9: "val", 10: "test"}
-
-def folds(slug, numbers, **kw):
-    parts = [ECGDataset(slug, split=SPLIT_OF_FOLD[n], fold_numbers=[n], **kw)
-             for n in numbers]
-    return ConcatDataset(parts) if len(parts) > 1 else parts[0]
-
-# fold 7 as test, fold 10 as val, the other eight as train
-test  = folds("ptbxl", [7],  data_path="...")
-val   = folds("ptbxl", [10], data_path="...")
-train = folds("ptbxl", [n for n in range(1, 11) if n not in (7, 10)], data_path="...")
+# Hold out fold 7 as test and fold 10 as val, train on the other eight.
+test  = ECGDataset("ptbxl", split=None, fold_numbers=[7],  data_path="...")
+val   = ECGDataset("ptbxl", split=None, fold_numbers=[10], data_path="...")
+train = ECGDataset("ptbxl", split=None,
+                  fold_numbers=[n for n in range(1, 11) if n not in (7, 10)],
+                  data_path="...")
 ```
 
-`ConcatDataset` yields the same sample dicts, so `ecg_collate_fn` still works — but
-it has no `.metadata_df` or `.labels_df`, so combine those yourself if you need them.
+`split=None` requires `fold_numbers`, and each returned sample's `["split"]`
+reports the record's own default split rather than one name for the whole set.
+Unlike stitching per-split datasets together with `ConcatDataset`, this returns a
+single `ECGDataset`, so `.metadata_df` and `.labels_df` still describe the whole
+selection.
 
 ### Labels
 
@@ -187,21 +183,20 @@ a duplicate is rejected.
 PTBDB is the one dataset that is not 12-lead: it stores 15 signals, the
 conventional twelve plus the three Frank vectorcardiography leads. `leads=` is how
 you take the standard twelve out of it. Its records are also **variable length**
-(32 s to 120 s), so batching needs a cropping `transform` — see
-`examples/load_ptbdb.py`.
+(32 s to 120 s), so batching needs a fixed `window=` — see `examples/load_ptbdb.py`.
 
 `incartdb` is the one dataset whose primary labels are **reference beat
 annotations** rather than record-level diagnoses: 175,907 manually corrected beats
 over ten types, exposed as per-record counts (`beat_N`, `beat_V`, …, `pvc_fraction`)
 alongside the patient diagnosis and free-text per-record findings. Its records are
-1800 s (~44 MB each), so batching needs a cropping `transform`. It is also the
+1800 s (~44 MB each), so batching needs a `window=`. It is also the
 clearest case for **patient-grouped folds** — 3,166 of its 3,174 RBBB beats come
 from a single patient — see `examples/load_incartdb.py`.
 
 `challenge2021` is the one dataset where **sampling rate varies per record**
 (257/500/1000 Hz), because it concatenates eight source cohorts. Rate is therefore
 a label to filter on, not a `sampling_rate=` argument, and record length spans 5 s
-to 1800 s so batching needs a cropping `transform` too. It also **contains** PTB-XL,
+to 1800 s so batching needs a `window=` too. It also **contains** PTB-XL,
 PTBDB, INCART, CPSC-2018, Chapman-Shaoxing and Ningbo — its `source` label says
 which cohort each record came from, and evaluating on any of those after training
 on it is testing on training data. See `examples/load_challenge2021.py`.
@@ -215,16 +210,46 @@ excluded even if you never load V6.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `dataset` | `str \| DatasetConfig` | *required* | Dataset slug or config object |
-| `split` | `str` | `"train"` | `"train"`, `"val"`, or `"test"` |
+| `split` | `str \| None` | `"train"` | `"train"`, `"val"`, `"test"`, or `None` to select purely by fold |
 | `version` | `str` | `"clean"` | `"clean"` or `"original"` |
 | `data_path` | `Path \| str \| None` | `None` | Path to signal files; auto-downloads if None |
 | `sampling_rate` | `int \| None` | `None` | Sampling rate (default: dataset's default) |
-| `fold_numbers` | `list[int] \| None` | `None` | Specific folds to load; None = all |
-| `transform` | `Callable \| None` | `None` | Transform applied to signal tensor |
+| `fold_numbers` | `list[int] \| None` | `None` | Specific folds to load; None = all folds of the split |
+| `window` | `tuple[int, int \| None] \| None` | `None` | `(start, length)` in samples, e.g. `(0, 2500)`; read at load time |
+| `transform` | `Callable \| None` | `None` | Transform applied to signal tensor, after `window`/`leads`/`units` |
 | `metadata_source` | `str` | `"hf"` | `"hf"` (HuggingFace) or `"local"` |
 | `labels` | `bool` | `False` | Attach per-record labels as `sample["labels"]`; needs local source data |
 | `leads` | `list[str] \| None` | `None` | Select and reorder leads by name, e.g. `["I", "II", "V5"]` |
 | `units` | `str` | `"mV"` | `"mV"` or `"uV"` — applied before `transform` |
+
+### Sample windows
+
+`window=(start, length)` returns a fixed slice of each record, in samples:
+
+```python
+first  = ECGDataset("ptbxl", split="train", data_path="...", window=(0, 2500))
+second = ECGDataset("ptbxl", split="train", data_path="...", window=(2500, 2500))
+first[0]["signal"].shape    # (12, 2500) -- samples 0-2499
+second[0]["signal"].shape   # (12, 2500) -- samples 2500-4999
+```
+
+`length=None` reads to the end of the record. Prefer `window=` over a cropping
+`transform` for two reasons:
+
+- **It is pushed down into the reader**, so only those samples are decoded. On
+  long records that is a large difference — `incartdb` goes from ~106 ms to ~8 ms
+  per record; on 10-second records it changes nothing.
+- **It is picklable.** `transform=lambda x: x[:, :2500]` fails in a
+  `DataLoader(num_workers>0)` under the `spawn` start method, the default on
+  macOS and Windows. `window=` works under both `fork` and `spawn`.
+
+A window that does not fit raises `WindowOutOfRangeError`, naming the record and
+its true length. Record length is not constant in every dataset — `cpsc_2018`
+runs 6-144 s and `ptbdb` 32-120 s — so a fixed window can fit most records and
+not all.
+
+`window` combines freely with `fold_numbers`, `leads` and `units`; it is applied
+first, then lead selection, then units, then `transform`.
 
 ### Output format
 

@@ -378,3 +378,99 @@ def tmp_ptbxl_label_data(tmp_path) -> Path:
         "diagnostic_subclass": ["NORM", "IMI", "STTC", "LVH", None, None],
     }).set_index("index").to_csv(tmp_path / "scp_statements.csv")
     return tmp_path
+
+
+def _write_fold_tree(root: Path, signal_paths: list[str], record_ids: list[str]) -> None:
+    """Write a {clean,original}/{train,val,test}/fold_N.csv tree plus folds.csv.
+
+    Folds 1-3 are train, 4 is val, 5 is test — the same layout as
+    ``tmp_splits_dir``. Records are dealt round-robin across the five folds so
+    every fold holds at least one.
+    """
+    folds = {1: "train", 2: "train", 3: "train", 4: "val", 5: "test"}
+    assignment = [(1 + i % 5) for i in range(len(record_ids))]
+
+    for version in ("clean", "original"):
+        for fold_num, split_name in folds.items():
+            rows = [
+                {
+                    "record_id": rid,
+                    "filename": path,
+                    "fold": fold_num,
+                    "default_split": split_name,
+                }
+                for rid, path, f in zip(record_ids, signal_paths, assignment)
+                if f == fold_num
+            ]
+            split_dir = root / version / split_name
+            split_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(rows).to_csv(split_dir / f"fold_{fold_num}.csv", index=False)
+
+        master = pd.concat(
+            [pd.read_csv(f) for f in sorted((root / version).rglob("fold_*.csv"))],
+            ignore_index=True,
+        )
+        master.to_csv(root / version / "folds.csv", index=False)
+
+
+@pytest.fixture
+def tmp_csv_signal_dataset(tmp_path) -> Path:
+    """A loadable csv-format dataset: 5 records of 12 x 5000, plus a fold tree.
+
+    Sample i of lead j holds the value ``j * 100000 + i``, so a window's contents
+    identify exactly which samples were read — a shifted or truncated read cannot
+    pass by accident.
+    """
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    for r in range(5):
+        rid = f"rec_{r}"
+        # rows = samples, columns = leads, with a header naming the leads.
+        data = np.empty((5000, 12), dtype=np.int64)
+        for lead in range(12):
+            data[:, lead] = lead * 100_000 + np.arange(5000)
+        path = records / f"{rid}.csv"
+        header = ",".join(f"L{i}" for i in range(12))
+        np.savetxt(path, data, delimiter=",", header=header, comments="", fmt="%d")
+        record_ids.append(rid)
+        paths.append(f"records/{rid}.csv")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path
+
+
+@pytest.fixture
+def tmp_wfdb_signal_dataset(tmp_path) -> Path:
+    """A loadable wfdb-format dataset: 5 records of 12 x 5000, plus a fold tree.
+
+    This is the only on-disk WFDB fixture in the suite; without it nothing
+    exercises the real ``wfdb.rdrecord`` path, including windowed reads.
+    Values are ``lead + sample/10000`` mV so a window is identifiable.
+    """
+    wfdb = pytest.importorskip("wfdb")
+
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    for r in range(5):
+        rid = f"rec_{r}"
+        signal = np.empty((5000, 12), dtype=np.float64)
+        for lead in range(12):
+            signal[:, lead] = lead + np.arange(5000) / 10_000.0
+        wfdb.wrsamp(
+            rid,
+            fs=500,
+            units=["mV"] * 12,
+            sig_name=[f"L{i}" for i in range(12)],
+            p_signal=signal,
+            fmt=["16"] * 12,
+            adc_gain=[1000.0] * 12,
+            baseline=[0] * 12,
+            write_dir=str(records),
+        )
+        record_ids.append(rid)
+        paths.append(f"records/{rid}")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path

@@ -23,6 +23,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     # PyTorch
     "ECGDataset": ".dataset",
     "ecg_collate_fn": ".dataset",
+    "WindowOutOfRangeError": ".dataset",
     # Validation
     "validate_dataset": ".validation",
     "ValidationResult": ".validation",
@@ -69,6 +70,7 @@ __all__ = [
     # Dataset
     "ECGDataset",
     "ecg_collate_fn",
+    "WindowOutOfRangeError",
     # Validation
     "validate_dataset",
     "ValidationResult",

@@ -9,8 +9,9 @@ reference beat annotations. Three things to demonstrate:
    one record, and some findings live almost entirely in one patient — 3,166 of
    the 3,174 RBBB beats belong to `patient08`. Folds are grouped so no patient
    spans one; this script checks that rather than asserting it.
-2. **Records are 1800 s (~44 MB each).** They cannot be batched as they are, so a
-   cropping `transform` is mandatory.
+2. **Records are 1800 s (~44 MB each).** They cannot be batched as they are, so
+   `window=(start, length)` is mandatory — and because it is pushed into the
+   reader, it also cuts per-record load time from ~106 ms to ~8 ms.
 3. **Labels are three-layered**: a patient-level diagnosis (absent for 14 of 32
    patients), free-text per-record ECG findings, and per-record beat counts derived
    from the `.atr` files. None of the three alone is the whole label.
@@ -36,8 +37,10 @@ from ecgbench import ECGDataset, ecg_collate_fn, load_config
 from ecgbench.labels import LabelSourceMissingError
 from ecgbench.labels.incartdb import BEAT_NAMES, BEAT_SYMBOLS
 
-#: 10 s at 257 Hz. Records are 1800 s, so some crop is required to batch at all.
-CROP_SAMPLES = 2570
+#: 10 s at 257 Hz. Records are 1800 s, so a window is required to batch at all —
+#: and because window= pushes down into the reader, it also avoids decoding the
+#: other 1790 s: ~106 ms/record becomes ~8 ms.
+WINDOW = (0, 2570)
 
 
 def main():
@@ -64,7 +67,7 @@ def main():
             data_path=args.data_path,
             metadata_source=args.metadata_source,
             labels=True,
-            transform=lambda x: x[:, :CROP_SAMPLES],
+            window=WINDOW,
         )
     except LabelSourceMissingError as e:
         print(f"Labels unavailable: {e}")
@@ -75,7 +78,7 @@ def main():
     sample = dataset[0]
     labels = sample["labels"]
     print(f"\nSample keys:   {sorted(sample.keys())}")
-    print(f"Signal shape:  {tuple(sample['signal'].shape)}  (cropped from 462600)")
+    print(f"Signal shape:  {tuple(sample['signal'].shape)}  (window {WINDOW} of 462600)")
     print(f"  record          {sample['record_id']}")
     print(f"  patient_id      {labels['patient_id']}   <- folds are grouped by this")
     print(f"  age / sex       {labels['age']} / {labels['sex']}")
@@ -129,8 +132,8 @@ def main():
     )
     batch = next(iter(loader))
     print(f"\nOne batch: signal {tuple(batch['signal'].shape)}")
-    print("  Without the transform= crop each record is 12 x 462600 (~44 MB), so a")
-    print(f"  batch of {args.batch_size} would be ~{44 * args.batch_size} MB of float32.")
+    print("  Without window= each record is 12 x 462600 (~44 MB), so a batch of")
+    print(f"  {args.batch_size} would be ~{44 * args.batch_size} MB, every byte decoded.")
 
 
 if __name__ == "__main__":

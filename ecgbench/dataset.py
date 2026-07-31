@@ -41,21 +41,88 @@ def _require_wfdb():
         )
 
 
-def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) -> np.ndarray:
-    """Load ECG signal from file. Returns shape (leads, samples) in millivolts."""
+class WindowOutOfRangeError(ValueError):
+    """The requested sample window does not fit inside the record."""
+
+
+def _window_error(
+    record_path: str, start: int, length: int | None, available: int | None
+) -> WindowOutOfRangeError:
+    """Build one message for both formats, naming the record and its true length.
+
+    wfdb's own error ("sampto must be shorter than the signal length") names
+    neither the record nor how long it actually is, and the csv reader does not
+    complain at all — it just returns fewer samples.
+    """
+    wanted = "to the end" if length is None else f"{length} samples"
+    have = "unknown" if available is None else f"{available} samples"
+    return WindowOutOfRangeError(
+        f"window start={start} ({wanted}) does not fit record {record_path!r}, "
+        f"which has {have}. Reduce the window, or drop records shorter than it — "
+        "record length varies within several ECGBench datasets."
+    )
+
+
+def _record_length(record_path: str, signal_format: str) -> int | None:
+    """Best-effort record length, used only to build a good error message."""
+    if signal_format == "wfdb":
+        try:
+            import wfdb
+
+            return int(wfdb.rdheader(record_path).sig_len)
+        except Exception:
+            return None
+    return None
+
+
+def _load_signal(
+    record_path: str,
+    signal_format: str,
+    unit_scale: float = 1.0,
+    window: tuple[int, int | None] | None = None,
+) -> np.ndarray:
+    """Load ECG signal from file. Returns shape (leads, samples) in millivolts.
+
+    ``window`` is ``(start, length)`` in samples, with ``length=None`` meaning
+    "to the end of the record". It is pushed down into the reader rather than
+    applied as a slice afterwards, so only the requested samples are decoded —
+    worth 13x on 30-minute records and nothing on 10-second ones.
+    """
+    start, length = window if window is not None else (0, None)
+    sampto = None if length is None else start + length
+
     if signal_format == "wfdb":
         import wfdb
 
-        record = wfdb.rdrecord(record_path)
+        try:
+            record = wfdb.rdrecord(record_path, sampfrom=start, sampto=sampto)
+        except ValueError as e:
+            if window is None:
+                raise
+            raise _window_error(
+                record_path, start, length, _record_length(record_path, signal_format)
+            ) from e
         if record.p_signal is None:
             raise ValueError(f"Signal is None for record: {record_path}")
         signal = record.p_signal.T.astype(np.float32)
     elif signal_format == "csv":
         # One column per lead, one row per sample, with a header row naming the
-        # leads — transposed relative to what ECGBench returns.
+        # leads — transposed relative to what ECGBench returns. Rows are samples,
+        # so the window pushes down to skiprows/max_rows.
         signal = np.loadtxt(
-            record_path, delimiter=",", skiprows=1, dtype=np.float32, ndmin=2
+            record_path,
+            delimiter=",",
+            skiprows=1 + start,
+            max_rows=length,
+            dtype=np.float32,
+            ndmin=2,
         ).T
+        # Unlike wfdb, loadtxt returns a short array instead of raising.
+        if window is not None and (
+            signal.size == 0 or (length is not None and signal.shape[1] != length)
+        ):
+            available = start + (0 if signal.size == 0 else signal.shape[1])
+            raise _window_error(record_path, start, length, available)
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
@@ -89,6 +156,36 @@ def _resolve_units(units: str) -> float:
             f"units must be one of 'mV', 'uV' (or '\u00b5V'), got {units!r}"
         )
     return factor
+
+
+def _resolve_window(window: Any) -> tuple[int, int | None] | None:
+    """Validate a ``(start, length)`` sample window.
+
+    ``length=None`` means "to the end of the record". Validated once here rather
+    than per ``__getitem__``, so a typo fails at construction instead of on the
+    first batch.
+    """
+    if window is None:
+        return None
+    if isinstance(window, int):
+        raise TypeError(
+            f"window must be a (start, length) tuple, got a bare int {window!r}. "
+            f"Use (0, {window}) for the first {window} samples."
+        )
+    try:
+        start, length = window
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"window must be a (start, length) tuple of 2 items, got {window!r}"
+        ) from None
+    start = int(start)
+    if start < 0:
+        raise ValueError(f"window start must be >= 0, got {start}")
+    if length is not None:
+        length = int(length)
+        if length <= 0:
+            raise ValueError(f"window length must be > 0 or None, got {length}")
+    return start, length
 
 
 def _resolve_leads(
@@ -135,13 +232,26 @@ class ECGDataset(_TorchDataset):
 
     Args:
         dataset: Dataset slug (e.g., "ptbxl") or a DatasetConfig object
-        split: "train", "val", or "test"
+        split: "train", "val", "test", or None. None selects records purely by
+               ``fold_numbers``, ignoring the default split boundaries — use it
+               for custom cross-validation. It requires ``fold_numbers``.
         version: "clean" (default) or "original"
         data_path: Path to the dataset's signal files on disk.
                    If None, attempts auto-download from config.download_url.
         sampling_rate: Which sampling rate to load (default: config.default_sampling_rate)
         fold_numbers: Specific fold(s) to load. None = all folds for the split.
-        transform: Optional callable applied to the signal tensor
+                      With a named ``split`` the folds must belong to it (folds
+                      1-8 are train, 9 val, 10 test); pass ``split=None`` to cross
+                      that boundary.
+        window: ``(start, length)`` in samples, e.g. ``(0, 2500)`` for the first
+                2500 and ``(2500, 2500)`` for the next. ``length=None`` reads to
+                the end. Pushed down into the reader, so only these samples are
+                decoded — much faster than cropping afterwards on long records,
+                and unlike a lambda ``transform`` it survives a DataLoader with
+                ``num_workers>0`` under the "spawn" start method. Raises
+                ``WindowOutOfRangeError`` if the window does not fit.
+        transform: Optional callable applied to the signal tensor, after
+                   ``window``, ``leads`` and ``units``
         metadata_source: "hf" (download fold CSVs from HuggingFace) or "local".
         leads: select and reorder leads by name, e.g. ``["I", "II", "V5"]``.
                Case-insensitive; needs ``lead_names`` in the dataset's config.
@@ -164,7 +274,7 @@ class ECGDataset(_TorchDataset):
     def __init__(
         self,
         dataset: str | Any,  # str or DatasetConfig
-        split: str = "train",
+        split: str | None = "train",
         version: str = "clean",
         data_path: Path | str | None = None,
         sampling_rate: int | None = None,
@@ -174,6 +284,7 @@ class ECGDataset(_TorchDataset):
         labels: bool = False,
         leads: list[str] | None = None,
         units: str = "mV",
+        window: tuple[int, int | None] | None = None,
     ):
         super().__init__()
 
@@ -186,14 +297,24 @@ class ECGDataset(_TorchDataset):
         else:
             raise TypeError(f"dataset must be str or DatasetConfig, got {type(dataset)}")
 
-        self.split = split.lower()
+        self.split = split.lower() if isinstance(split, str) else None
         self.version = version
         self.sampling_rate = sampling_rate or self.config.default_sampling_rate
         self.transform = transform
         self.metadata_source = metadata_source
+        self.window = _resolve_window(window)
 
-        if self.split not in ("train", "val", "test"):
-            raise ValueError(f"split must be 'train', 'val', or 'test', got '{split}'")
+        if self.split is not None and self.split not in ("train", "val", "test"):
+            raise ValueError(f"split must be 'train', 'val', 'test', or None, got '{split}'")
+        # split=None selects purely by fold number, across the default split
+        # boundaries — the only way to express custom cross-validation, since
+        # fold_numbers alone is scoped to one split's directory.
+        if self.split is None and not fold_numbers:
+            raise ValueError(
+                "split=None selects records by fold number across all splits, so "
+                "fold_numbers is required with it. For example "
+                "ECGDataset(..., split=None, fold_numbers=[1, 2, 3])."
+            )
         if self.version not in ("clean", "original"):
             raise ValueError(f"version must be 'clean' or 'original', got '{version}'")
 
@@ -254,23 +375,19 @@ class ECGDataset(_TorchDataset):
 
         repo_id = "vlbthambawita/ECGBench"
 
-        if fold_numbers is not None:
-            files_to_load = [
-                f"{self.config.slug}/{self.version}/{self.split}/fold_{n}.csv"
-                for n in fold_numbers
-            ]
-        else:
-            # Download the master folds.csv and filter by split
+        # split=None means "by fold, ignoring the default split", which only the
+        # master folds.csv can answer.
+        if fold_numbers is None or self.split is None:
             master_path = hf_hub_download(
                 repo_id=repo_id,
                 filename=f"{self.config.slug}/{self.version}/folds.csv",
                 repo_type="dataset",
             )
-            master_df = pd.read_csv(master_path)
-            if fold_numbers is None:
-                return master_df[master_df["default_split"] == self.split].reset_index(
-                    drop=True
-                )
+            return self._filter_master(pd.read_csv(master_path), fold_numbers)
+
+        files_to_load = [
+            f"{self.config.slug}/{self.version}/{self.split}/fold_{n}.csv" for n in fold_numbers
+        ]
 
         dfs = []
         for file_path in files_to_load:
@@ -283,30 +400,49 @@ class ECGDataset(_TorchDataset):
 
         return pd.concat(dfs, ignore_index=True)
 
+    def _filter_master(self, df: pd.DataFrame, fold_numbers: list[int] | None) -> pd.DataFrame:
+        """Filter the master folds.csv by split and/or fold.
+
+        Shared by the HF and local paths so the two cannot drift. With
+        ``split=None`` the ``default_split`` filter is skipped, which is what
+        makes cross-split fold selection possible.
+        """
+        if self.split is not None:
+            df = df[df["default_split"] == self.split]
+        if fold_numbers is not None:
+            known = {int(n) for n in df["fold"].unique()}
+            unknown = [n for n in fold_numbers if int(n) not in known]
+            if unknown:
+                raise ValueError(
+                    f"Fold(s) {unknown} hold no records"
+                    + (f" in split '{self.split}'" if self.split else "")
+                    + f". Available: {sorted(known)}."
+                )
+            df = df[df["fold"].isin(fold_numbers)]
+        return df.reset_index(drop=True)
+
     def _load_from_local(self, fold_numbers: list[int] | None) -> pd.DataFrame:
         """Load fold CSVs from local disk."""
         # Look for fold CSVs in the data_path following standard structure
         splits_base = self.data_path
 
-        # Try a few common locations
-        for candidate in [
-            splits_base / self.version / self.split,
-            splits_base / self.split,
-        ]:
-            if candidate.exists():
-                return self._read_fold_csvs(candidate, fold_numbers)
+        # Per-split fold files are the fast path, but they cannot answer
+        # split=None — fold N lives in exactly one split's directory.
+        if self.split is not None:
+            for candidate in [
+                splits_base / self.version / self.split,
+                splits_base / self.split,
+            ]:
+                if candidate.exists():
+                    return self._read_fold_csvs(candidate, fold_numbers)
 
-        # Fallback: try master folds.csv
+        # Fallback: the master folds.csv, which also serves split=None
         for candidate in [
             splits_base / self.version / "folds.csv",
             splits_base / "folds.csv",
         ]:
             if candidate.exists():
-                df = pd.read_csv(candidate)
-                result = df[df["default_split"] == self.split]
-                if fold_numbers is not None:
-                    result = result[result["fold"].isin(fold_numbers)]
-                return result.reset_index(drop=True)
+                return self._filter_master(pd.read_csv(candidate), fold_numbers)
 
         raise FileNotFoundError(
             f"Could not find fold CSVs for split '{self.split}' "
@@ -321,7 +457,13 @@ class ECGDataset(_TorchDataset):
             files = [split_dir / f"fold_{n}.csv" for n in fold_numbers]
             missing = [f for f in files if not f.exists()]
             if missing:
-                raise FileNotFoundError(f"Fold files not found: {missing}")
+                present = sorted(int(p.stem.split("_")[1]) for p in split_dir.glob("fold_*.csv"))
+                raise FileNotFoundError(
+                    f"Fold(s) {[int(f.stem.split('_')[1]) for f in missing]} are not in "
+                    f"split '{self.split}' (it holds folds {present}). Each fold belongs "
+                    "to exactly one split, so to take folds across split boundaries — "
+                    "for custom cross-validation — pass split=None with fold_numbers."
+                )
         else:
             files = sorted(split_dir.glob("fold_*.csv"))
             if not files:
@@ -391,7 +533,10 @@ class ECGDataset(_TorchDataset):
         full_path = str(self.data_path / signal_path)
 
         signal = _load_signal(
-            full_path, self.config.signal_format, self.config.signal_unit_scale
+            full_path,
+            self.config.signal_format,
+            self.config.signal_unit_scale,
+            self.window,
         )
 
         if self._lead_index is not None:
@@ -414,7 +559,9 @@ class ECGDataset(_TorchDataset):
         result: dict[str, Any] = {
             "signal": signal_tensor,
             "record_id": row.get(self.config.record_id_column),
-            "split": self.split,
+            # With split=None the rows come from several splits, so reporting a
+            # single split name would be a lie — give the record's own instead.
+            "split": self.split if self.split is not None else row.get("default_split"),
         }
 
         # Add fold if available

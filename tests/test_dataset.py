@@ -111,6 +111,7 @@ class TestECGDatasetLabels:
         ds._unit_factor = 1.0
         ds.units = "mV"
         ds.lead_names = None
+        ds.window = None
         return ds
 
     def _config(self, sample_config, **kwargs):
@@ -214,6 +215,7 @@ class TestLeadSelectionAndUnits:
         ds.units = "mV"
         ds.lead_names = tuple(self.STORED)
         ds._lead_index = None
+        ds.window = None
         for key, value in kwargs.items():
             setattr(ds, key, value)
         return ds
@@ -342,3 +344,249 @@ class TestShippedLeadNames:
         assert config.leads == 15
         assert config.lead_names[-3:] == ["vx", "vy", "vz"]
         assert config.validation.expected_leads == 15
+
+
+class TestResolveWindow:
+    """window= is validated once at construction, not per __getitem__."""
+
+    def test_valid_windows(self):
+        from ecgbench.dataset import _resolve_window
+
+        assert _resolve_window(None) is None
+        assert _resolve_window((0, 2500)) == (0, 2500)
+        assert _resolve_window((2500, 2500)) == (2500, 2500)
+        assert _resolve_window([100, 200]) == (100, 200)  # list is fine too
+        assert _resolve_window((2500, None)) == (2500, None)  # to the end
+
+    def test_bare_int_is_rejected_with_the_fix(self):
+        """window=5000 is the obvious mistake; the message must say what to write."""
+        from ecgbench.dataset import _resolve_window
+
+        with pytest.raises(TypeError, match=r"\(0, 5000\)"):
+            _resolve_window(5000)
+
+    @pytest.mark.parametrize("bad", [(0,), (0, 1, 2), (-1, 100), (0, 0), (0, -5)])
+    def test_invalid_windows(self, bad):
+        from ecgbench.dataset import _resolve_window
+
+        with pytest.raises((ValueError, TypeError)):
+            _resolve_window(bad)
+
+
+class TestWindowedLoading:
+    """window= is pushed into the reader, so it must return the right samples."""
+
+    def _ds(self, root, config, **kwargs):
+        from dataclasses import replace
+
+        from ecgbench.dataset import ECGDataset
+
+        return ECGDataset(
+            replace(config, **kwargs.pop("config_overrides", {})),
+            split="train",
+            version="clean",
+            data_path=root,
+            metadata_source="local",
+            **kwargs,
+        )
+
+    # --- csv format ---
+
+    def test_csv_window_reads_the_requested_samples(self, tmp_csv_signal_dataset, sample_config):
+        config_overrides = {"signal_format": "csv"}
+        full = self._ds(tmp_csv_signal_dataset, sample_config, config_overrides=config_overrides)[
+            0
+        ]["signal"]
+        assert tuple(full.shape) == (12, 5000)
+
+        first = self._ds(
+            tmp_csv_signal_dataset,
+            sample_config,
+            config_overrides=config_overrides,
+            window=(0, 2500),
+        )[0]["signal"]
+        second = self._ds(
+            tmp_csv_signal_dataset,
+            sample_config,
+            config_overrides=config_overrides,
+            window=(2500, 2500),
+        )[0]["signal"]
+
+        assert tuple(first.shape) == (12, 2500)
+        assert tuple(second.shape) == (12, 2500)
+        # Lead j sample i holds j*100000 + i, so the offset is checkable exactly.
+        assert first[0, 0].item() == 0
+        assert second[0, 0].item() == 2500
+        assert second[3, 0].item() == 3 * 100_000 + 2500
+        assert torch.equal(first, full[:, :2500])
+        assert torch.equal(second, full[:, 2500:5000])
+
+    def test_csv_window_to_the_end(self, tmp_csv_signal_dataset, sample_config):
+        ds = self._ds(
+            tmp_csv_signal_dataset,
+            sample_config,
+            config_overrides={"signal_format": "csv"},
+            window=(4000, None),
+        )
+        assert tuple(ds[0]["signal"].shape) == (12, 1000)
+
+    def test_csv_window_past_the_end_raises(self, tmp_csv_signal_dataset, sample_config):
+        """loadtxt silently returns a short array, so the loader must check."""
+        from ecgbench.dataset import WindowOutOfRangeError
+
+        ds = self._ds(
+            tmp_csv_signal_dataset,
+            sample_config,
+            config_overrides={"signal_format": "csv"},
+            window=(4000, 2000),
+        )
+        with pytest.raises(WindowOutOfRangeError, match="5000 samples"):
+            ds[0]
+
+    # --- wfdb format ---
+
+    def test_wfdb_window_reads_the_requested_samples(self, tmp_wfdb_signal_dataset, sample_config):
+        full = self._ds(tmp_wfdb_signal_dataset, sample_config)[0]["signal"]
+        assert tuple(full.shape) == (12, 5000)
+
+        second = self._ds(tmp_wfdb_signal_dataset, sample_config, window=(2500, 2500))[0]["signal"]
+
+        assert tuple(second.shape) == (12, 2500)
+        assert torch.allclose(second, full[:, 2500:5000], atol=1e-3)
+        # Values are lead + sample/10000, so sample 2500 of lead 0 is 0.25 mV.
+        assert second[0, 0].item() == pytest.approx(0.25, abs=1e-3)
+
+    def test_wfdb_window_past_the_end_raises_a_useful_error(
+        self, tmp_wfdb_signal_dataset, sample_config
+    ):
+        """wfdb's own message names neither the record nor its length."""
+        from ecgbench.dataset import WindowOutOfRangeError
+
+        ds = self._ds(tmp_wfdb_signal_dataset, sample_config, window=(0, 999_999))
+        with pytest.raises(WindowOutOfRangeError) as excinfo:
+            ds[0]
+        message = str(excinfo.value)
+        assert "rec_" in message  # names the record
+        assert "5000 samples" in message  # and its real length
+
+    # --- composition and picklability ---
+
+    def test_window_composes_with_leads_and_units(self, tmp_wfdb_signal_dataset, sample_config):
+        from dataclasses import replace
+
+        config = replace(sample_config, lead_names=[f"L{i}" for i in range(12)])
+        ds = self._ds(
+            tmp_wfdb_signal_dataset,
+            config,
+            window=(1000, 500),
+            leads=["L2", "L5"],
+            units="uV",
+        )
+        signal = ds[0]["signal"]
+
+        assert tuple(signal.shape) == (2, 500)
+        # L2 sample 1000 is 2.1 mV -> 2100 uV.
+        assert signal[0, 0].item() == pytest.approx(2100.0, abs=1.0)
+
+    def test_window_is_picklable_where_a_lambda_transform_is_not(
+        self, tmp_wfdb_signal_dataset, sample_config
+    ):
+        """This is why window= exists rather than just documenting transform=.
+
+        DataLoader(num_workers>0) pickles the dataset under the 'spawn' start
+        method, the default on macOS and Windows.
+        """
+        import pickle
+
+        windowed = self._ds(tmp_wfdb_signal_dataset, sample_config, window=(0, 2500))
+        assert pickle.loads(pickle.dumps(windowed)).window == (0, 2500)
+
+        lambda_cropped = self._ds(
+            tmp_wfdb_signal_dataset,
+            sample_config,
+            transform=lambda x: x[:, :2500],
+        )
+        with pytest.raises((AttributeError, pickle.PicklingError)):
+            pickle.dumps(lambda_cropped)
+
+    def test_no_window_still_loads_whole_records(self, tmp_wfdb_signal_dataset, sample_config):
+        """The default path must be untouched by the window plumbing."""
+        ds = self._ds(tmp_wfdb_signal_dataset, sample_config)
+        assert ds.window is None
+        assert tuple(ds[0]["signal"].shape) == (12, 5000)
+
+
+class TestFoldSelection:
+    """fold_numbers scopes to a split; split=None crosses the boundary."""
+
+    def _ds(self, root, config, **kwargs):
+        from ecgbench.dataset import ECGDataset
+
+        return ECGDataset(
+            config, version="clean", data_path=root, metadata_source="local", **kwargs
+        )
+
+    def test_subsample_a_single_fold(self, tmp_wfdb_signal_dataset, sample_config):
+        whole = self._ds(tmp_wfdb_signal_dataset, sample_config, split="train")
+        one = self._ds(tmp_wfdb_signal_dataset, sample_config, split="train", fold_numbers=[1])
+
+        assert len(one) < len(whole)
+        assert set(one.metadata_df["fold"]) == {1}
+
+    def test_fold_outside_the_split_names_the_fix(self, tmp_wfdb_signal_dataset, sample_config):
+        """Fold 4 is the val fold, so asking for it as train cannot work."""
+        with pytest.raises(FileNotFoundError) as excinfo:
+            self._ds(tmp_wfdb_signal_dataset, sample_config, split="train", fold_numbers=[4])
+        assert "split=None" in str(excinfo.value)
+
+    def test_split_none_selects_across_splits(self, tmp_wfdb_signal_dataset, sample_config):
+        """Custom CV: hold out fold 1, train on the rest, ignoring default splits."""
+        held_out = self._ds(tmp_wfdb_signal_dataset, sample_config, split=None, fold_numbers=[1])
+        rest = self._ds(
+            tmp_wfdb_signal_dataset,
+            sample_config,
+            split=None,
+            fold_numbers=[2, 3, 4, 5],
+        )
+
+        assert set(held_out.metadata_df["fold"]) == {1}
+        assert set(rest.metadata_df["fold"]) == {2, 3, 4, 5}
+        # rest spans what would normally be train, val and test.
+        assert set(rest.metadata_df["default_split"]) == {"train", "val", "test"}
+        # The two partitions are disjoint and together cover everything.
+        ids_a = set(held_out.metadata_df["record_id"])
+        ids_b = set(rest.metadata_df["record_id"])
+        assert not (ids_a & ids_b)
+        assert len(ids_a | ids_b) == 5
+
+    def test_split_none_reports_each_record_s_own_split(
+        self, tmp_wfdb_signal_dataset, sample_config
+    ):
+        """A single split name would be a lie when rows span several."""
+        ds = self._ds(tmp_wfdb_signal_dataset, sample_config, split=None, fold_numbers=[4, 5])
+        assert ds.split is None
+        assert {ds[i]["split"] for i in range(len(ds))} == {"val", "test"}
+
+    def test_split_none_requires_fold_numbers(self, tmp_wfdb_signal_dataset, sample_config):
+        with pytest.raises(ValueError, match="fold_numbers is required"):
+            self._ds(tmp_wfdb_signal_dataset, sample_config, split=None)
+
+    def test_unknown_fold_lists_what_exists(self, tmp_wfdb_signal_dataset, sample_config):
+        with pytest.raises(ValueError, match=r"Available: \[1, 2, 3, 4, 5\]"):
+            self._ds(tmp_wfdb_signal_dataset, sample_config, split=None, fold_numbers=[99])
+
+    def test_invalid_split_name_still_rejected(self, tmp_wfdb_signal_dataset, sample_config):
+        with pytest.raises(ValueError, match="split must be"):
+            self._ds(tmp_wfdb_signal_dataset, sample_config, split="training")
+
+    def test_folds_and_window_combine(self, tmp_wfdb_signal_dataset, sample_config):
+        """The two features are independent: subsample folds, then window samples."""
+        ds = self._ds(
+            tmp_wfdb_signal_dataset,
+            sample_config,
+            split=None,
+            fold_numbers=[2],
+            window=(2500, 2500),
+        )
+        assert set(ds.metadata_df["fold"]) == {2}
+        assert tuple(ds[0]["signal"].shape) == (12, 2500)

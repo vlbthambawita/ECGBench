@@ -37,9 +37,10 @@ from ecgbench import ECGDataset, ecg_collate_fn, load_config
 from ecgbench.labels import LabelSourceMissingError
 from ecgbench.labels.challenge2021 import load_dx_mapping
 
-#: Records are variable length, so every signal is cropped to this many samples.
-#: 2500 is 5 s at the nominal 500 Hz — the shortest record in the dataset.
-CROP_SAMPLES = 2500
+#: Records are variable length, so every signal is windowed to this many samples.
+#: 2500 is 5 s at the nominal 500 Hz — and the length of the shortest record in
+#: the dataset, so this window fits all 88,253.
+WINDOW = (0, 2500)
 
 
 def main():
@@ -67,7 +68,10 @@ def main():
             data_path=args.data_path,
             metadata_source=args.metadata_source,
             labels=True,
-            transform=lambda x: x[:, :CROP_SAMPLES],
+            # window=(start, length) is read at load time rather than cropped
+            # afterwards, and unlike a lambda transform it survives a DataLoader
+            # with num_workers>0 under the "spawn" start method.
+            window=WINDOW,
         )
     except LabelSourceMissingError as e:
         print(f"Labels unavailable: {e}")
@@ -77,7 +81,7 @@ def main():
 
     sample = dataset[0]
     print(f"\nSample keys:   {sorted(sample.keys())}")
-    print(f"Signal shape:  {tuple(sample['signal'].shape)}  (cropped to {CROP_SAMPLES})")
+    print(f"Signal shape:  {tuple(sample['signal'].shape)}  (window {WINDOW})")
     labels = sample["labels"]
     print(f"  record       {sample['record_id']}")
     print(f"  source       {labels['source']}")
@@ -136,8 +140,8 @@ def main():
     )
     batch = next(iter(loader))
     print(f"\nOne batch: signal {tuple(batch['signal'].shape)}")
-    print("  Without the transform= crop this raises — the split mixes 5 s, 10 s,")
-    print("  120 s and 1800 s records, and torch cannot stack differing widths.")
+    print("  Without window= this raises — the split mixes 5 s, 10 s, 120 s and")
+    print("  1800 s records, and torch cannot stack tensors of differing width.")
 
     print("\nLeakage warning: this dataset CONTAINS PTB-XL, PTBDB, INCART, CPSC-2018,")
     print("Chapman-Shaoxing and Ningbo. To evaluate on one of those, drop its cohort:")

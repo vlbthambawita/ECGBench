@@ -130,7 +130,8 @@ sections:
       1000 Hz for the 516 `ptb` ones and 257 Hz for the 74 `st_petersburg_incart`
       ones; length runs from 5 s to 1800 s, with 1,650 distinct lengths in the
       `cpsc_2018` cohort alone. Both are exposed as label columns. Records cannot
-      be batched as they are — crop with a `transform`, or use `batch_size=1`.
+      be batched as they are — take a fixed `window=(start, length)`, or use
+      `batch_size=1`.
 
       Labels are **multi-label SNOMED-CT codes** from the `#Dx` header field: 133
       distinct codes, 2.06 per record on average and up to 12, with no unlabelled
@@ -264,9 +265,9 @@ sections:
     body: |
       from ecgbench import ECGDataset
 
-      # Records vary in length (5 s to 1800 s) and in sampling rate, so crop to a
+      # Records vary in length (5 s to 1800 s) and in sampling rate, so take a
       # fixed window before batching — a DataLoader raises as soon as one batch
-      # mixes two lengths.
+      # mixes two lengths. 2500 samples is the shortest record, so it always fits.
       #
       # This dataset's fold CSVs are not on the HuggingFace Hub yet, so pass
       # metadata_source="local" after running `ecgbench splits` and copying
@@ -276,7 +277,7 @@ sections:
           split="train",
           data_path="/path/to/challenge-2021/1.0.3/",
           metadata_source="local",
-          transform=lambda x: x[:, :2500],   # first 5 s at the nominal 500 Hz
+          window=(0, 2500),        # first 5 s at the nominal 500 Hz
           labels=True,
       )
 

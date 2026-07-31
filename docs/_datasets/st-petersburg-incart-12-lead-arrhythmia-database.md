@@ -53,7 +53,9 @@ sections:
       no patient spans a fold.
 
       **Records are long — 1800 s, about 44 MB each in memory.** They cannot be
-      batched as they are; crop with a `transform`, or use `batch_size=1`.
+      batched as they are; take a fixed `window=(start, length)`, or use
+      `batch_size=1`. Because `window=` is read at load time rather than cropped
+      afterwards, it also cuts per-record load time from ~106 ms to ~8 ms.
 
       **Gain varies between records** (240 to 1063 adu/mV, uniform across the 12
       leads within a record). wfdb divides by the per-record gain, so signals reach
@@ -190,13 +192,15 @@ sections:
     body: |
       from ecgbench import ECGDataset
 
-      # 1800 s records (~44 MB each): crop to a fixed window to allow batching.
+      # 1800 s records (~44 MB each): a window is needed to batch at all, and
+      # because window= is pushed into the reader it also avoids decoding the
+      # other 1790 s — ~106 ms/record becomes ~8 ms.
       ds = ECGDataset(
           "incartdb",
           split="train",
           data_path="/path/to/incartdb/1.0.0/",
           metadata_source="local",
-          transform=lambda x: x[:, :2570],   # first 10 s at 257 Hz
+          window=(0, 2570),        # first 10 s at 257 Hz
           labels=True,
       )
 

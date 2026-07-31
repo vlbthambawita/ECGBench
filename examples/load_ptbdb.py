@@ -7,8 +7,8 @@ Two things make this dataset different from every other one in ECGBench:
   1. **15 signals**, not 12 — the conventional leads plus the three Frank
      vectorcardiography leads vx, vy, vz. Use leads=[...] to take the standard 12.
   2. **Variable-length records** — 11 distinct lengths between 32 s and 120 s. They
-     cannot be batched as-is: torch cannot stack tensors of different widths. Crop
-     with a transform, or use batch_size=1.
+     cannot be batched as-is: torch cannot stack tensors of different widths. Take
+     a fixed window=(start, length), or use batch_size=1.
 
 Labels live only in the .hea comment blocks: 47 clinical fields per record,
 including a full haemodynamics panel. ecgbench.labels.ptbdb parses them.
@@ -25,11 +25,6 @@ from ecgbench import ECGDataset, ecg_collate_fn, load_config
 
 STANDARD_12 = ["i", "ii", "iii", "avr", "avl", "avf",
                "v1", "v2", "v3", "v4", "v5", "v6"]
-
-
-def crop(n_samples):
-    """Take the first n_samples, so records of differing length can be batched."""
-    return lambda signal: signal[:, :n_samples]
 
 
 def main():
@@ -75,21 +70,22 @@ def main():
             .value_counts().items():
         print(f"  {name:28s} {n:4d}")
 
-    # Batching needs equal widths: crop, and take only the standard 12 leads.
+    # Batching needs equal widths: window, and take only the standard 12 leads.
+    # window= is read at load time, so the other 22-110 s are never decoded.
     n = args.seconds * config.default_sampling_rate
     cropped = ECGDataset("ptbdb", split=args.split, version=args.version,
                          data_path=args.data_path, metadata_source=args.metadata_source,
-                         leads=STANDARD_12, transform=crop(n))
+                         leads=STANDARD_12, window=(0, n))
     loader = DataLoader(cropped, batch_size=args.batch_size, shuffle=False,
                         collate_fn=ecg_collate_fn)
     batch = next(iter(loader))
-    print(f"\nWith leads=STANDARD_12 and a {args.seconds}s crop, batching works:")
+    print(f"\nWith leads=STANDARD_12 and a {args.seconds}s window, batching works:")
     print(f"  signal {tuple(batch['signal'].shape)} {batch['signal'].dtype}")
     print(f"  lead_names {cropped.lead_names}")
 
-    print("\nNote: without a crop, DataLoader raises \"stack expects each tensor to be")
-    print("      equal size\" as soon as a batch mixes two record lengths. leads= is")
-    print("      applied before transform, so the crop sees the 12 selected leads.")
+    print("\nNote: without a window, DataLoader raises \"stack expects each tensor to")
+    print("      be equal size\" as soon as a batch mixes two record lengths. window= is")
+    print("      applied first, so leads= then selects from the windowed signal.")
 
 
 if __name__ == "__main__":
