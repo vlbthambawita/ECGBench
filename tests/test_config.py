@@ -218,3 +218,43 @@ def test_load_incartdb_config():
     # Widened from the usual +/-10 deliberately: at +/-10 this check would drop 29
     # of 75 records for amplitudes that are ordinary in 30-minute Holter data.
     assert config.validation.amplitude_range_mv == (-30.0, 30.0)
+
+
+def test_load_mimic_iv_ecg_config():
+    """MIMIC-IV-ECG: the 800k-record credentialed release, aVF/aVL transposed."""
+    config = load_config("mimic_iv_ecg")
+    assert config.slug == "mimic_iv_ecg"
+    assert config.version == "1.0"
+    assert config.signal_format == "wfdb"
+    # Header gain is 200/mV, so wfdb already yields millivolts.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # aVF BEFORE aVL — the reason leads= takes names rather than indices.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVF", "aVL",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.lead_names.index("aVF") < config.lead_names.index("aVL")
+    assert config.sampling_rates == [500]
+    # record_list.csv ships usable as-is; no generated metadata CSV here.
+    assert config.metadata_csv == "record_list.csv"
+    assert config.record_id_column == "study_id"
+    # 64.5% of subjects have more than one study — grouping is mandatory.
+    assert config.patient_id_column == "subject_id"
+    assert config.signal_path_columns == {500: "path"}
+    # Uniform 10 s at 500 Hz, so the truncation check is enabled.
+    assert config.validation.expected_samples == {500: 5000}
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # Credentialed: no anonymous download URL.
+    assert config.download_url is None
+
+
+def test_mimic_iv_ecg_and_demo_are_distinct_configs():
+    """The demo has no labels; the full release does. Easy configs to confuse."""
+    full = load_config("mimic_iv_ecg")
+    demo = load_config("mimic_iv_ecg_demo")
+
+    assert full.slug != demo.slug
+    assert full.lead_names == demo.lead_names  # same non-standard order
+    # The distinguishing fact: only the full release ships machine_measurements.
+    assert full.labels.available is True
+    assert full.labels.source_csv == "machine_measurements.csv"
+    assert demo.labels.available is False

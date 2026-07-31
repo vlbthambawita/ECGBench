@@ -424,3 +424,152 @@ class TestINCARTDBLabels:
         assert counts[OTHER] == 12          # Rare dx pooled: 2 patients
         assert counts["Common dx"] == 10    # 10 patients, kept
         assert counts[UNKNOWN] == 10        # empty diagnosis is its own class
+
+
+class TestMimicIVECGLabels:
+    """18 report columns and integer 'not measurable' sentinels."""
+
+    MEASUREMENTS = {
+        "study_id": [1, 2, 3],
+        "cart_id": [10, 10, 11],
+        "ecg_time": ["2180-07-23 08:44:00"] * 3,
+        "report_0": ["Sinus rhythm.", "Atrial fibrillation", "  Sinus   Rhythm  "],
+        # A populated line AFTER a blank one — the data dictionary warns about this.
+        "report_1": [None, "Abnormal ECG", None],
+        "report_2": ["Borderline ECG", None, "Otherwise normal ECG"],
+        "rr_interval": [800, 65535, 900],
+        "p_onset": [40, 29999, 42],
+        "p_end": [150, 29999, 152],
+        "qrs_onset": [200, 210, 205],
+        "qrs_end": [290, 300, 299],
+        "t_end": [610, 620, 615],
+        "p_axis": [50, 32767, 55],
+        "qrs_axis": [13, 20, -32768],
+        "t_axis": [42, 40, 45],
+        "bandwidth": ["0.5-40"] * 3,
+        "filtering": ["60Hz"] * 3,
+    }
+
+    def _write(self, tmp_path, **overrides):
+        data = dict(self.MEASUREMENTS)
+        data.update(overrides)
+        df = pd.DataFrame(data)
+        # The real file has all 18 report columns; add the absent ones as empty.
+        for i in range(18):
+            if f"report_{i}" not in df.columns:
+                df[f"report_{i}"] = None
+        df.to_csv(tmp_path / "machine_measurements.csv", index=False)
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config, slug="mimic_iv_ecg", record_id_column="study_id",
+            labels=LabelConfig(source_csv="machine_measurements.csv",
+                               join_column="study_id"),
+        )
+
+    def test_shipped_config_points_at_the_measurements_file(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("mimic_iv_ecg").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "machine_measurements.csv"
+        assert spec.join_column == "study_id"
+
+    def test_report_lines_join_across_a_blank_line(self, sample_config, tmp_path):
+        """report_1 empty but report_2 populated must not truncate the report."""
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        df = load_labels(self._write(tmp_path), self._config(sample_config))
+
+        assert df.loc[1, "report_text"] == "Sinus rhythm. | Borderline ECG"
+        assert df.loc[2, "report_text"] == "Atrial fibrillation | Abnormal ECG"
+
+    def test_primary_report_is_normalised(self, sample_config, tmp_path):
+        """Trailing periods and irregular spacing split one class into several."""
+        from ecgbench.labels.mimic_iv_ecg import load_labels, normalise_report_line
+
+        df = load_labels(self._write(tmp_path), self._config(sample_config))
+
+        # 'Sinus rhythm.' and '  Sinus   Rhythm  ' are the same statement.
+        assert df.loc[1, "primary_report"] == "sinus rhythm"
+        assert df.loc[3, "primary_report"] == "sinus rhythm"
+        assert normalise_report_line("  ST changes.  ") == "st changes"
+        assert normalise_report_line(None) == ""
+
+    def test_integer_sentinels_become_nan(self, sample_config, tmp_path):
+        """29999 / 32767 / -32768 / 65535 mean 'not measurable', not a value."""
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        df = load_labels(self._write(tmp_path), self._config(sample_config))
+
+        assert pd.isna(df.loc[2, "rr_interval"])   # 65535
+        assert pd.isna(df.loc[2, "p_onset"])       # 29999
+        assert pd.isna(df.loc[2, "p_end"])         # 29999
+        assert pd.isna(df.loc[2, "p_axis"])        # 32767
+        assert pd.isna(df.loc[3, "qrs_axis"])      # -32768
+        # Real values survive untouched.
+        assert df.loc[1, "rr_interval"] == 800
+        assert df.loc[1, "p_axis"] == 50
+
+    def test_implausible_values_are_also_dropped(self, sample_config, tmp_path):
+        """An axis of 4000 degrees is not a measurement even if it is not a sentinel."""
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        tree = self._write(tmp_path, qrs_axis=[13, 4000, -900])
+        df = load_labels(tree, self._config(sample_config))
+
+        assert df.loc[1, "qrs_axis"] == 13
+        assert pd.isna(df.loc[2, "qrs_axis"])
+        assert pd.isna(df.loc[3, "qrs_axis"])
+
+    def test_qrs_duration_is_derived_and_propagates_nan(self, sample_config, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        tree = self._write(tmp_path, qrs_onset=[200, 29999, 205])
+        df = load_labels(tree, self._config(sample_config))
+
+        assert df.loc[1, "qrs_duration"] == 90     # 290 - 200
+        assert pd.isna(df.loc[2, "qrs_duration"])  # onset was a sentinel
+
+    def test_raw_report_columns_are_preserved(self, sample_config, tmp_path):
+        """report_text is a convenience; the raw lines must still be reachable."""
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        df = load_labels(self._write(tmp_path), self._config(sample_config))
+
+        assert df.loc[1, "report_0"] == "Sinus rhythm."
+        assert all(f"report_{i}" in df.columns for i in range(18))
+
+    def test_rare_classes_pool_into_other(self, sample_config, tmp_path):
+        import pandas as _pd
+
+        from ecgbench.labels.mimic_iv_ecg import (
+            MIN_CLASS_SIZE,
+            OTHER,
+            attach_stratify_class,
+        )
+
+        frame = _pd.DataFrame({
+            "primary_report": ["sinus rhythm"] * MIN_CLASS_SIZE + ["rare finding"] * 3
+        })
+        out = attach_stratify_class(frame)
+        counts = out["stratify_class"].value_counts().to_dict()
+
+        assert counts["sinus rhythm"] == MIN_CLASS_SIZE
+        assert counts[OTHER] == 3
+
+    def test_missing_measurements_file_names_it_and_the_licence_reason(
+        self, sample_config, tmp_path
+    ):
+        from ecgbench.labels.mimic_iv_ecg import load_labels
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            load_labels(tmp_path, self._config(sample_config))
+        message = str(excinfo.value)
+        assert "machine_measurements.csv" in message
+        assert "credentialed" in message

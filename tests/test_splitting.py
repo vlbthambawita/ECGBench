@@ -823,3 +823,162 @@ class TestINCARTDBSplitter:
 
         with pytest.raises(LabelSourceMissingError, match="I..\\.hea|headers"):
             get_splitter("incartdb").load_metadata(tmp_path, self._config(sample_config))
+
+
+class TestMimicIVECGSplitter:
+    """The full MIMIC-IV-ECG release: report-stratified, subject-grouped."""
+
+    def _tree(self, tmp_path, records, measurements=True):
+        """records: [(study_id, subject_id, report_0)] -> record_list.csv (+ measurements)."""
+        pd.DataFrame({
+            "subject_id": [r[1] for r in records],
+            "study_id": [r[0] for r in records],
+            "file_name": [str(r[0]) for r in records],
+            "ecg_time": ["2180-07-23 08:44:00"] * len(records),
+            "path": [f"files/p1000/p{r[1]}/s{r[0]}/{r[0]}" for r in records],
+        }).to_csv(tmp_path / "record_list.csv", index=False)
+
+        if measurements:
+            mm = pd.DataFrame({
+                "subject_id": [r[1] for r in records],
+                "study_id": [r[0] for r in records],
+                "cart_id": [1] * len(records),
+                "ecg_time": ["2180-07-23 08:44:00"] * len(records),
+                "report_0": [r[2] for r in records],
+                "rr_interval": [800] * len(records),
+                "p_onset": [40] * len(records),
+                "p_end": [150] * len(records),
+                "qrs_onset": [200] * len(records),
+                "qrs_end": [290] * len(records),
+                "t_end": [610] * len(records),
+                "p_axis": [50] * len(records),
+                "qrs_axis": [13] * len(records),
+                "t_axis": [42] * len(records),
+                "bandwidth": ["0.5-40"] * len(records),
+                "filtering": ["60Hz"] * len(records),
+            })
+            for i in range(1, 18):
+                mm[f"report_{i}"] = None
+            mm.to_csv(tmp_path / "machine_measurements.csv", index=False)
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config, slug="mimic_iv_ecg", metadata_csv="record_list.csv",
+            record_id_column="study_id", patient_id_column="subject_id",
+            signal_path_columns={500: "path"}, default_sampling_rate=500,
+            label_column="stratify_class", leads=12,
+            labels=LabelConfig(source_csv="machine_measurements.csv",
+                               join_column="study_id"),
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.mimic_iv_ecg import MimicIVECGSplitter
+
+        assert isinstance(get_splitter("mimic_iv_ecg"), MimicIVECGSplitter)
+
+    def test_reads_record_list_and_joins_the_report_class(self, sample_config, tmp_path):
+        """The class must come from the label loader, normalised and pooled by it."""
+        from ecgbench.labels.mimic_iv_ecg import MIN_CLASS_SIZE, OTHER
+
+        config = self._config(sample_config)
+        # Two classes big enough to survive pooling, plus one genuinely rare
+        # report. 'Sinus rhythm.' and '  Sinus   Rhythm ' must normalise together,
+        # otherwise neither reaches MIN_CLASS_SIZE.
+        records, study = [], 1
+        for i in range(MIN_CLASS_SIZE):
+            records.append((study, 100 + i, "Sinus rhythm." if i % 2 else "  Sinus   Rhythm "))
+            study += 1
+        for i in range(MIN_CLASS_SIZE):
+            records.append((study, 9000 + i, "Atrial fibrillation"))
+            study += 1
+        records.append((study, 99999, "Some very rare finding"))
+        rare_study = study
+
+        df = get_splitter("mimic_iv_ecg").load_metadata(self._tree(tmp_path, records), config)
+        classes = df.set_index("study_id")["stratify_class"]
+
+        assert len(df) == 2 * MIN_CLASS_SIZE + 1
+        # Paths are used verbatim — record_list.csv needs no fix-up.
+        assert df.loc[0, "path"] == "files/p1000/p100/s1/1"
+        assert classes.loc[1] == "sinus rhythm"
+        assert classes.loc[MIN_CLASS_SIZE + 1] == "atrial fibrillation"
+        assert (classes == "sinus rhythm").sum() == MIN_CLASS_SIZE
+        # The singleton pools rather than becoming its own fold-breaking class.
+        assert classes.loc[rare_study] == OTHER
+
+    def test_absent_measurements_file_degrades_to_grouping_only(
+        self, sample_config, tmp_path, caplog
+    ):
+        """A partial copy must still produce a reproducible patient-grouped split."""
+        from ecgbench.labels.mimic_iv_ecg import UNKNOWN
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 100, "Sinus rhythm")], measurements=False)
+
+        with caplog.at_level("WARNING"):
+            df = get_splitter("mimic_iv_ecg").load_metadata(tree, config)
+
+        assert set(df["stratify_class"]) == {UNKNOWN}
+        assert "purely patient-grouped" in caplog.text
+
+    def test_partial_measurements_coverage_warns(self, sample_config, tmp_path, caplog):
+        """A filtered local machine_measurements.csv is the trap this catches."""
+        from ecgbench.labels.mimic_iv_ecg import UNKNOWN
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 100, "Sinus rhythm"), (2, 100, "Sinus rhythm")])
+        # Drop study 2 from the measurements file only, as a filtered copy would.
+        mm = pd.read_csv(tree / "machine_measurements.csv")
+        mm[mm.study_id != 2].to_csv(tree / "machine_measurements.csv", index=False)
+
+        with caplog.at_level("WARNING"):
+            df = get_splitter("mimic_iv_ecg").load_metadata(tree, config)
+
+        assert df.set_index("study_id").loc[2, "stratify_class"] == UNKNOWN
+        assert "SHA256SUMS" in caplog.text
+
+    def test_missing_record_list_names_the_expected_layout(self, sample_config, tmp_path):
+        with pytest.raises(FileNotFoundError, match="record_list.csv"):
+            get_splitter("mimic_iv_ecg").load_metadata(tmp_path, self._config(sample_config))
+
+    def test_missing_columns_are_reported(self, sample_config, tmp_path):
+        pd.DataFrame({"study_id": [1], "nope": ["x"]}).to_csv(
+            tmp_path / "record_list.csv", index=False
+        )
+        with pytest.raises(ValueError, match="missing expected columns"):
+            get_splitter("mimic_iv_ecg").load_metadata(tmp_path, self._config(sample_config))
+
+    def test_no_subject_spans_a_fold(self, sample_config, tmp_path):
+        """64.5% of real subjects have several studies, so this is the binding property."""
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        records, study = [], 1
+        for subject in range(100, 130):
+            report = "Sinus rhythm" if subject % 2 else "Atrial fibrillation"
+            for _ in range(2 if subject % 3 else 4):
+                records.append((study, subject, report))
+                study += 1
+        splitter = get_splitter("mimic_iv_ecg")
+        df = splitter.load_metadata(self._tree(tmp_path, records), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assigned = pd.concat(
+            [f.assign(fold=n) for n, f in result.folds.items()], ignore_index=True
+        )
+        spanning = assigned.groupby("subject_id")["fold"].nunique()
+        assert (spanning == 1).all(), f"subjects split across folds: {spanning[spanning > 1]}"
+        assert result.group_column == "subject_id"
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("mimic_iv_ecg").get_stratification_labels(
+                pd.DataFrame({"study_id": [1]}), self._config(sample_config)
+            )

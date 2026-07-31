@@ -1,0 +1,155 @@
+# ECGBench Config: MIMIC-IV-ECG (Diagnostic Electrocardiogram Matched Subset)
+# ===========================================================================
+# https://physionet.org/content/mimic-iv-ecg/1.0/
+#
+# The full credentialed release: 800,035 records from 161,352 subjects, ~96.5 GB.
+# This is the largest dataset in ECGBench by two orders of magnitude, and the one
+# where patient grouping matters most — 64.5% of subjects contributed more than
+# one study and one contributed 260.
+#
+# NOT the same as the `mimic_iv_ecg_demo` config, which is the open 659-record
+# demo. The demo ships identifiers only; this release adds
+# machine_measurements.csv, so it is the version that actually has labels.
+#
+# Access is credentialed (PhysioNet DUA), so `download_url` is null and label
+# text is never redistributed — see the labels block.
+
+name: "MIMIC-IV-ECG"
+slug: "mimic_iv_ecg"
+version: "1.0"
+url: "https://physionet.org/content/mimic-iv-ecg/1.0/"
+download_url: null  # credentialed: PhysioNet DUA, no anonymous download
+license: "PhysioNet Credentialed Health Data License 1.5.0"
+description: >
+  The MIMIC-IV-ECG Diagnostic Electrocardiogram Matched Subset: 800,035 twelve-lead
+  diagnostic ECGs from 161,352 patients at Beth Israel Deaconess Medical Center,
+  each 10 seconds at 500 Hz in WFDB format, matched to MIMIC-IV by subject_id.
+  Every study carries the ECG cart's own report — up to 18 free-text lines — plus
+  nine numeric measurements (RR interval, P/QRS/T onsets and ends, and the three
+  electrical axes). Note two quirks, both verified against the files: the stored
+  lead order transposes aVF and aVL relative to the usual convention, and the
+  numeric measurements encode "not measurable" as integer sentinels (29999, 32767,
+  65535) rather than as missing values.
+citation: >
+  Gow, B., Pollard, T., Greenbaum, N., Moody, B., Waks, J.W., Eslami, P.,
+  Carbonati, T., Chaudhari, A., Herbst, E., Moukheiber, D., Berkowitz, S.,
+  Mark, R., Horng, S. MIMIC-IV-ECG: Diagnostic Electrocardiogram Matched Subset
+  (version 1.0). PhysioNet (2023).
+doi: "10.13026/4nqg-sb35"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Deaconess Medical Center"
+    url: "https://www.bidmc.org/"
+  - type: Organization
+    name: "MIT Laboratory for Computational Physiology"
+    url: "https://lcp.mit.edu/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+signal_unit_scale: 1.0  # every header declares a gain of 200/mV, so wfdb yields mV
+leads: 12
+# NB: aVF and aVL are TRANSPOSED relative to the usual convention. Identical in
+# all 3,000 sampled headers. This is why ECGDataset(leads=...) takes names, not
+# indices: signal[4] is aVF here and aVL in every other 12-lead dataset here.
+lead_names: ["I", "II", "III", "aVR", "aVF", "aVL", "V1", "V2", "V3", "V4", "V5", "V6"]
+duration_seconds: 10
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# record_list.csv ships usable as-is: `path` is already relative to the dataset
+# root and extension-free, which is exactly what wfdb.rdrecord wants. No path
+# fix-up, so the validation engine reads the shipped CSV directly.
+metadata_csv: "record_list.csv"
+metadata_csv_separator: ","
+record_id_column: "study_id"
+# 800,035 records from 161,352 subjects — 64.5% of subjects have more than one
+# study, up to 260. A record-level split leaks the same patient into train and
+# test on a majority of patients.
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  500: "path"  # e.g. files/p1000/p10000032/s40689238/40689238
+
+# --- Labels ---
+label_column: "stratify_class"  # attached by the label loader, see below
+label_format: "single"
+
+stratification:
+  # MimicIVECGSplitter takes stratify_class from the label loader: the normalised
+  # first line of the machine report, pooling values with fewer than 1,000
+  # records. That line is usually the rhythm but not always, which is why it is
+  # not called one.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Uniform in every sampled header, so the truncation check is switched on.
+  expected_samples:
+    500: 5000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The standard range, kept deliberately. In a 600-record sample nothing exceeded
+  # +/-10 mV (the 16-bit rail is +/-163.8 mV at this gain), while ~1.5% of records
+  # carry NaN samples or an all-zero lead — so nan_values and missing_leads, not
+  # amplitude_outlier, are what exclude records here.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/mimic_iv_ecg.py joins machine_measurements.csv on
+# study_id, concatenates the 18 report_ columns into report_text, and replaces the
+# integer "not measurable" sentinels with NaN.
+#
+# WARNING on local copies: the official machine_measurements.csv has SHA-256
+# 56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6 and 800,035
+# rows, one per study. Verify yours against the release's SHA256SUMS.txt — a
+# filtered copy under the same name silently yields records with no labels.
+labels:
+  source_csv: "machine_measurements.csv"
+  join_column: "study_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "MIMIC-IV"
+    - "12-lead"
+    - "critical care"
+    - "machine report"
+    - "PhysioNet"
+  rai_data_collection: >
+    Routine clinical 12-lead ECGs recorded at Beth Israel Deaconess Medical
+    Center, Boston, between the MIMIC-IV study years, matched to MIMIC-IV
+    admissions by subject_id. Reports and numeric measurements are the ECG cart's
+    own automated output, not an adjudicated cardiologist reading, and were
+    produced by several cart models over the collection period.
+  rai_data_biases: >
+    A single US academic medical centre, so case mix reflects that institution's
+    referral and admission patterns rather than any general population. Sampling
+    is by clinical need: patients are imaged because a clinician ordered an ECG,
+    and studies per patient range from 1 to 260 with a mean of 5, so frequently
+    imaged patients dominate the record count while contributing a small share of
+    the patients. Labels are automated machine interpretations, which carry the
+    cart algorithm's own error and vocabulary rather than ground truth — 7,079
+    records lead with a data-quality warning and 4,980 with a note that age was
+    not entered, both of which affect the interpretation the machine produced.
+    Class balance is extreme: sinus rhythm alone is 381,884 of the 800,035 first
+    report lines.
+  rai_personal_sensitive_info: >
+    De-identified under HIPAA Safe Harbor. Timestamps are date-shifted into the
+    future, which is why ecg_time spans 2097 to 2211 and why no real acquisition
+    date can be recovered. No age or sex ships in this module; both can be joined
+    from MIMIC-IV on subject_id, which also means re-identification risk is
+    governed by the MIMIC-IV DUA. Access is credentialed and the report text must
+    not be redistributed, so ECGBench publishes fold CSVs of identifiers only.

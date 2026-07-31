@@ -145,9 +145,11 @@ labels["Rhythm"].value_counts()
 
 Each dataset exposes its own fields — SCP codes plus diagnostic super/subclasses
 for PTB-XL, SNOMED-CT codes for `ecg_arrhythmia`, rhythm/beat annotations and
-eleven automated measurements for `chapman_shaoxing`. A dataset that genuinely has
-none (`mimic_iv_ecg_demo`) raises `LabelsUnavailableError` naming where labels
-could come from, rather than returning empty columns.
+eleven automated measurements for `chapman_shaoxing`, free-text machine reports
+plus nine interval/axis measurements for `mimic_iv_ecg`, reference beat counts for
+`incartdb`. A dataset that genuinely has none (`mimic_iv_ecg_demo`) raises
+`LabelsUnavailableError` naming where labels could come from, rather than
+returning empty columns.
 
 ### Leads and units
 
@@ -169,13 +171,14 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ptbxl` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `ecg_arrhythmia` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `chapman_shaoxing` | I, II, III, aVR, aVL, aVF, V1-V6 |
+| `mimic_iv_ecg` | I, II, III, aVR, **aVF, aVL**, V1-V6 (transposed) |
 | `mimic_iv_ecg_demo` | I, II, III, aVR, **aVF, aVL**, V1-V6 (transposed) |
 | `ludb` | i, ii, iii, avr, avl, avf, v1-v6 (**lowercase**) |
 | `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
 | `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
 | `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 
-`signal[4]` is aVL in most of them and aVF in MIMIC, so slicing by index across
+`signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
 works on the lowercase datasets too — an unknown lead lists what is available, and
 a duplicate is rejected.
@@ -192,6 +195,17 @@ alongside the patient diagnosis and free-text per-record findings. Its records a
 1800 s (~44 MB each), so batching needs a `window=`. It is also the
 clearest case for **patient-grouped folds** — 3,166 of its 3,174 RBBB beats come
 from a single patient — see `examples/load_incartdb.py`.
+
+`mimic_iv_ecg` is the largest dataset here — 800,035 records from 161,352
+patients (~96.5 GB) — and the one where `fold_numbers=` matters most: a single fold
+is a tenth of it. Two facts to know before using its labels. They are **free-text
+machine reports** (up to 18 lines per study, joined into `report_text`), not codes,
+and `primary_report` is only the first line, which is sometimes a data-quality
+warning rather than a rhythm. And its numeric measurements encode "not measurable"
+as **integer sentinels** — `29999`, `32767`, `65535` — which ECGBench converts to
+NaN; read the CSV yourself and a mean P-wave axis comes out meaningless. See
+`examples/load_mimic_iv_ecg.py`. Its 659-record open demo is a separate config,
+`mimic_iv_ecg_demo`, which has no labels at all.
 
 `challenge2021` is the one dataset where **sampling rate varies per record**
 (257/500/1000 Hz), because it concatenates eight source cohorts. Rate is therefore

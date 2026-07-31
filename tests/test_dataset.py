@@ -323,6 +323,9 @@ class TestShippedLeadNames:
             # Uppercase limb leads, like ptbxl — identical in all 75 records.
             ("incartdb", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # aVF before aVL, like the demo it is the full release of.
+            ("mimic_iv_ecg", ["I", "II", "III", "aVR", "aVF", "aVL"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):
