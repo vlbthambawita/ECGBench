@@ -288,7 +288,7 @@ sections:
       ds[0]["labels"]["dx_abbreviations"]        # 'AF'
       ds[0]["labels"]["source"]                  # 'cpsc_2018' — which cohort it came from
       ds[0]["labels"]["sampling_rate"]           # 500 — per record, not dataset-wide
-      ds[0]["labels"]["n_samples"]               # 8000 — i.e. 16 s before the crop
+      ds[0]["labels"]["n_samples"]               # 8000 — i.e. 16 s before windowing
 
       # Lead order is the standard one, so leads= selects by name directly.
       ds.config.lead_names   # ['I','II','III','aVR','aVL','aVF','V1',...,'V6']

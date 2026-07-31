@@ -65,8 +65,8 @@ sections:
     language: python
     body: |
       from ecgbench import ECGDataset
-      ds = ECGDataset("ptbxl", split="train", fold=1)
-      x, y = ds[0]
+      ds = ECGDataset("ptbxl", split="train", fold_numbers=[1])
+      sample = ds[0]   # dict: signal, record_id, split, fold, ...
     # or: file: snippets/ptbxl/load.py
 
   - type: links

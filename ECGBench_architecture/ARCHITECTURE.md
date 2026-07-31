@@ -437,21 +437,36 @@ The consumer side. `ECGDataset` reads fold CSVs (from HuggingFace Hub by default
 or local disk) to know *which* records belong to a split, then lazily loads each
 signal file on `__getitem__`. `ecg_collate_fn` batches heterogeneous samples.
 
+Two selection axes, independent of each other:
+
+- **Which records.** `fold_numbers` narrows a split to specific folds. Because each
+  fold was exported under exactly one split, `split=None` + `fold_numbers` is the
+  only way to select folds across split boundaries (custom cross-validation); it
+  routes through `folds.csv` and `_filter_master()` rather than the per-split files.
+- **Which samples.** `window=(start, length)` is pushed into the reader —
+  `sampfrom`/`sampto` for wfdb, `skiprows`/`max_rows` for csv — so the discarded
+  samples are never decoded. Together with `leads=`, `units=` and `transform=` these
+  are read-time adapters: they shape the returned tensor and never affect the source
+  files, the fold CSVs, or validation. Note `validation/engine.py` keeps its own
+  window-less copy of `_load_signal`, because validation must always see whole
+  records.
+
 ```mermaid
 flowchart TD
-    init["ECGDataset(dataset, split, version,<br/>data_path, fold_numbers, metadata_source)"] --> cfg["load_config() if slug<br/>→ self.config"]
+    init["ECGDataset(dataset, split, version, data_path,<br/>fold_numbers, window, leads, units, metadata_source)"] --> cfg["load_config() if slug<br/>→ self.config"]
     cfg --> rdp["resolve_data_path()<br/>→ self.data_path (signals)"]
     rdp --> lmeta["_load_metadata(fold_numbers)"]
 
     lmeta --> src{metadata_source}
     src -- "hf (default)" --> hf["_load_from_hf()<br/>((hf_hub_download)) fold CSVs<br/>from vlbthambawita/ECGBench"]
     src -- local --> loc["_load_from_local()<br/>_read_fold_csvs() from disk"]
-    hf --> mdf["self.metadata_df"]
-    loc --> mdf
+    hf --> fil["_filter_master()<br/>by default_split and/or fold<br/>(split=None ⇒ fold only)"]
+    loc --> fil
+    fil --> mdf["self.metadata_df"]
 
     mdf --> getitem["__getitem__(idx)"]
-    getitem --> sig["_load_signal()<br/>((wfdb.rdrecord)) → (leads, samples)"]
-    sig --> t["torch tensor + optional transform"]
+    getitem --> sig["_load_signal(path, format, scale, window)<br/>((wfdb.rdrecord sampfrom/sampto))<br/>→ (leads, window)"]
+    sig --> t["torch tensor<br/>→ leads → units → transform"]
     t --> dict["sample dict:<br/>signal, record_id, split, fold,<br/>+ other metadata (_parse_dict_string)"]
 
     dict --> collate["ecg_collate_fn(batch)<br/>stack tensors, keep dicts/str as lists"]
@@ -471,8 +486,8 @@ sequenceDiagram
     Note over DS: __init__ already loaded metadata_df<br/>(HF Hub or local fold CSVs)
     loop batch_size times
         DL->>DS: __getitem__(idx)
-        DS->>W: rdrecord(signal_path)
-        W-->>DS: p_signal (leads × samples)
+        DS->>W: rdrecord(signal_path, sampfrom, sampto)<br/>(window=None ⇒ whole record)
+        W-->>DS: p_signal (leads × window)
         DS-->>DL: {signal, record_id, split, fold, ...}
     end
     DL->>CF: ecg_collate_fn(samples)
@@ -522,7 +537,7 @@ flowchart LR
     end
 
     subgraph lazy["Lazy via __getattr__ (heavy deps)"]
-        ds["dataset: ECGDataset, ecg_collate_fn"]
+        ds["dataset: ECGDataset, ecg_collate_fn,<br/>WindowOutOfRangeError"]
         val["validation: validate_dataset, ValidationResult"]
         spl["splitting: split_dataset, SplitResult,<br/>get_splitter, export_splits"]
         crs["croissant: generate/save/validate_croissant"]
@@ -568,6 +583,6 @@ flowchart LR
 | Splitting | `strategies/` | `PTBXLSplitter`, `ChapmanSplitter`, `GenericSplitter`, `_get_superclass`, `_parse_scp_codes` |
 | Splitting | `splitting/export.py` | `export_splits`, `_minimal_columns`, `_select_columns`, `_build_split_column`, `_write_split_csvs` |
 | Croissant | `croissant.py` | `generate_croissant`, `save_croissant`, `validate_croissant`, `_build_manual_jsonld`, `_discover_csv_files`, `_sha256`, `_infer_field_type` |
-| Dataset | `dataset.py` | `ECGDataset` (`_load_metadata`, `_load_from_hf`, `_load_from_local`, `_read_fold_csvs`, `__getitem__`), `ecg_collate_fn`, `_load_signal`, `_parse_dict_string` |
+| Dataset | `dataset.py` | `ECGDataset` (`_load_metadata`, `_load_from_hf`, `_load_from_local`, `_read_fold_csvs`, `_filter_master`, `__getitem__`), `ecg_collate_fn`, `_load_signal`, `_resolve_window`, `_resolve_leads`, `_resolve_units`, `WindowOutOfRangeError`, `_parse_dict_string` |
 | Pipelines / CLI | `cli/` | `run_splits`, `run_croissant`, `run_upload`, `main`, `_build_parser` |
 | Public API | `__init__.py` | eager catalogue+config; lazy `__getattr__` for everything else |

@@ -457,6 +457,7 @@ Requires the `hf` extra (`pip install ecgbench[hf]`).
 ### Dataset
 - `ECGDataset(dataset, split, ...)` -- unified PyTorch Dataset
 - `ecg_collate_fn(batch)` -- custom collate for DataLoader
+- `WindowOutOfRangeError` -- raised when a `window=` does not fit a record
 
 ### Validation
 - `validate_dataset(data_path, config)` -- run quality checks

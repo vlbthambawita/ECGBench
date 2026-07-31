@@ -513,11 +513,20 @@ class ECGDataset(_TorchDataset):
 
         Returns:
             dict with:
-              - "signal": torch.Tensor of shape (leads, samples), float32
+              - "signal": torch.Tensor, float32, shape (leads, samples). ``leads``
+                is ``len(self.lead_names)`` after any ``leads=`` selection, and
+                ``samples`` is the ``window=`` length when one is set.
               - "record_id": record identifier
-              - "split": str
+              - "split": the dataset's split, or — when constructed with
+                ``split=None`` — this record's own ``default_split``
               - "fold": int (if available)
+              - "labels": dict of label fields (only with ``labels=True``)
               - All other metadata columns
+
+        Raises:
+            WindowOutOfRangeError: ``window=`` does not fit this record. Record
+                length is not constant in every dataset, so a window can fit most
+                records and not all.
         """
         if idx < 0 or idx >= len(self.metadata_df):
             raise IndexError(

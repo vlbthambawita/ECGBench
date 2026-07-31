@@ -650,6 +650,19 @@ subset = <span class="func">ECGDataset</span>(
     <span class="string">"ptbxl"</span>, split=<span class="string">"train"</span>, data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
     leads=[<span class="string">"I"</span>, <span class="string">"II"</span>, <span class="string">"V5"</span>], units=<span class="string">"uV"</span>,
 )
+
+<span class="comment"># Take a window of each record, and one fold instead of the whole split.</span>
+<span class="comment"># window= is read at load time, so the rest is never decoded.</span>
+window = <span class="func">ECGDataset</span>(
+    <span class="string">"ptbxl"</span>, split=<span class="string">"train"</span>, data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
+    fold_numbers=[1], window=(0, 2500),   <span class="comment"># first 5 s at 500 Hz</span>
+)
+
+<span class="comment"># Custom cross-validation: select by fold across the default splits.</span>
+held_out = <span class="func">ECGDataset</span>(
+    <span class="string">"ptbxl"</span>, split=<span class="keyword">None</span>, fold_numbers=[10],
+    data_path=<span class="string">"/path/to/ptb-xl/1.0.3/"</span>,
+)
     </div>
   </div>
 </section>

@@ -47,7 +47,8 @@ sections:
 
       **Records are variable length** — 11 distinct lengths between 32 s and
       120 s, at 1000 Hz. They cannot be batched as they are: torch cannot stack
-      tensors of differing width. Crop with a `transform`, or use `batch_size=1`.
+      tensors of differing width. Take a fixed `window=(start, length)`, or use
+      `batch_size=1`.
       For the same reason `expected_samples` is deliberately empty in the config,
       which disables the truncation check rather than failing every short record.
 
@@ -138,7 +139,7 @@ sections:
       ds[0]["labels"]["age"]                # 77.0
 
       # Without leads= you get all 15 signals including vx, vy, vz; without the
-      # crop, a DataLoader raises as soon as a batch mixes two record lengths.
+      # window, a DataLoader raises as soon as a batch mixes two record lengths.
 
   - type: links
     title: "References"
