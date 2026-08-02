@@ -1,0 +1,144 @@
+# ECGBench Config: Brugada-HUCA
+# =============================
+# Brugada-HUCA: 12-Lead ECG Recordings for the Study of Brugada Syndrome
+# https://physionet.org/content/brugada-huca/1.0.0/
+#
+# 363 twelve-lead resting ECGs, one per individual, from patients investigated
+# for Brugada syndrome at Hospital Universitario Central de Asturias. Small,
+# uniform and unusually clean: every record is 12 leads x 1200 samples at
+# 100 Hz, no record contains a NaN sample or an all-zero lead, and no sample
+# exceeds +/-4 mV.
+#
+# It is the first dataset in ECGBench sampled at 100 Hz only (PTB-XL offers
+# 100 Hz as an alternative to 500 Hz; here it is the native and only rate).
+
+name: "Brugada-HUCA"
+slug: "brugada_huca"
+version: "1.0.0"
+url: "https://physionet.org/content/brugada-huca/1.0.0/"
+download_url: null  # PhysioNet serves this project from a protected path
+license: "CC BY-SA 4.0"  # verified against the shipped LICENSE.txt
+description: >
+  363 twelve-lead electrocardiograms, one per individual, from people
+  investigated for Brugada syndrome at Hospital Universitario Central de
+  Asturias, Oviedo, Spain. Each record is 12 seconds at 100 Hz. Brugada syndrome
+  is characterised by coved-type ST-segment elevation in the right precordial
+  leads V1-V3, often with a right bundle branch block pattern, and carries a
+  risk of sudden cardiac death. Every subject carries three binary or ternary
+  clinical labels: the Brugada diagnosis itself (healthy, confirmed, or
+  other/atypical), whether the baseline ECG pattern is pathological, and whether
+  the subject experienced sudden death.
+citation: >
+  Costa Cortez, N., Garcia Iglesias, D. Brugada-HUCA: 12-Lead ECG Recordings for
+  the Study of Brugada Syndrome (version 1.0.0). PhysioNet (2026).
+doi: "10.13026/0m2w-dy83"
+
+creators:
+  - type: Organization
+    name: "Hospital Universitario Central de Asturias (HUCA)"
+    url: "https://www.hca.es/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+signal_unit_scale: 1.0  # every channel declares a gain of 1000/mV, so wfdb yields mV
+leads: 12
+# Standard order and standard spelling, identical in all 363 headers — checked,
+# not assumed. Unlike MIMIC-IV-ECG (aVF before aVL) or PTB-XL (uppercase AVR).
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+duration_seconds: 12
+sampling_rates: [100]
+default_sampling_rate: 100
+
+# --- File Structure ---
+# The shipped metadata.csv carries the labels but NO signal-path column, and the
+# signals live in a per-subject directory. BrugadaHUCASplitter therefore derives
+# `files/<patient_id>/<patient_id>` and writes this normalised CSV on first run.
+# Writing it to disk is load-bearing: validate_dataset re-reads the metadata CSV
+# and rebuilds paths from it, so an in-memory fix-up would fail every record.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "patient_id"
+# One record per individual (363 records, 363 distinct patient_id values), so the
+# record identifier IS the subject identifier and grouping would be a no-op.
+patient_id_column: null
+
+signal_path_columns:
+  100: "signal_path"  # e.g. files/188981/188981
+
+# --- Labels ---
+# 0 = healthy, 1 = confirmed Brugada syndrome, 2 = other/atypical.
+label_column: "brugada"
+label_format: "single"
+
+stratification:
+  # Used verbatim — there is no derivation and therefore nothing that can drift.
+  # Note class 2 holds only 7 records, so it cannot appear in all 10 folds;
+  # pooling it would be wrong, since "other/atypical" is neither healthy nor
+  # confirmed. See the dataset page.
+  method: "direct"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Uniform across all 363 records (12.0 s x 100 Hz), so truncation is checked.
+  expected_samples:
+    100: 1200
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The standard range. Measured peak across all 363 records is -3.73..3.81 mV,
+  # so nothing comes close; the check is retained as a regression guard rather
+  # than because this release needs it.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Declarative, and deliberately pointed at the SHIPPED metadata.csv rather than
+# the generated ecgbench_metadata.csv: labels then work without the split
+# pipeline having been run first (contrast ecg_arrhythmia, whose labels only
+# exist after `ecgbench splits`). patient_id is both the record and subject key.
+labels:
+  source_csv: "metadata.csv"
+  join_column: "patient_id"
+  columns:
+    - brugada        # 0 healthy / 1 confirmed / 2 other-atypical
+    - basal_pattern  # 1 = pathological baseline ECG, independent of the diagnosis
+    - sudden_death   # 1 = subject experienced sudden death
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "Brugada syndrome"
+    - "sudden cardiac death"
+    - "12-lead"
+    - "PhysioNet"
+  rai_data_collection: >
+    Twelve-lead resting ECGs recorded at Hospital Universitario Central de
+    Asturias, Oviedo, Spain, from individuals investigated for suspected Brugada
+    syndrome. Diagnosis is clinical, based on the characteristic coved-type
+    ST-segment elevation in V1-V3 occurring spontaneously or provoked by sodium
+    channel blockers, together with criteria such as syncope, documented
+    ventricular arrhythmia or a family history of sudden cardiac death.
+  rai_data_biases: >
+    A referral cohort from a single Spanish tertiary hospital: every subject was
+    investigated for suspected Brugada syndrome, so the "healthy" label means
+    "investigated and not diagnosed" rather than a general-population control.
+    Prevalence here therefore reflects referral practice, not population
+    prevalence. Classes are highly imbalanced — 287 of 363 subjects are
+    undiagnosed, 69 confirmed and only 7 atypical, and just 11 subjects
+    experienced sudden death — so the rarest outcomes are represented by single
+    figures. No age, sex or ancestry is published, which prevents any check for
+    demographic imbalance.
+  rai_personal_sensitive_info: >
+    De-identified. The release carries only an opaque subject number and three
+    clinical flags; no age, sex, date or free-text note is included. Because a
+    subject number is the only identifier and each subject contributes exactly
+    one record, no linkage across records is possible within this dataset.
