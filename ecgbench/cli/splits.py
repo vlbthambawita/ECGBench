@@ -87,6 +87,8 @@ def run_splits(
     logger.info("Exporting to %s", resolved_output)
     stats = export_splits(split_result, val_result, resolved_output, config)
 
+    manifest = _write_manifest(config, resolved_data_path, resolved_output, split_result, n_folds)
+
     if not skip_croissant:
         try:
             from ecgbench.croissant import save_croissant
@@ -107,8 +109,46 @@ def run_splits(
         "dataset": config.slug,
         "dataset_name": config.name,
         "output_dir": resolved_output,
+        "manifest": manifest,
         **stats,
     }
+
+
+def _write_manifest(config, data_path, output_dir, split_result, n_folds: int) -> dict:
+    """Write manifest.json describing how this split was produced.
+
+    Emitted for every dataset, not only the unpublishable ones: the fold digest
+    is the cheapest way for anyone to confirm two runs produced the same
+    partition, and the input checksums say what "the same" was computed from.
+    """
+    import json
+
+    import pandas as pd
+
+    from ecgbench.manifest import build_manifest
+
+    # Read back what export_splits actually wrote rather than recomputing the
+    # is_valid merge, which lives inside it. The digest then describes the
+    # published artefact, not an approximation of it.
+    original = pd.read_csv(Path(output_dir) / "original" / "folds.csv")
+    clean = pd.read_csv(Path(output_dir) / "clean" / "folds.csv")
+
+    manifest = build_manifest(
+        config=config,
+        data_path=Path(data_path),
+        original_df=original,
+        clean_df=clean,
+        n_folds=n_folds,
+        random_state=split_result.split_metadata.get("random_state"),
+    )
+    path = Path(output_dir) / "manifest.json"
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    logger.info(
+        "Wrote %s (fold digest clean=%s)",
+        path,
+        manifest["fold_digest"]["clean"][:16] + "...",
+    )
+    return manifest
 
 
 def _print_summary(result: dict) -> None:

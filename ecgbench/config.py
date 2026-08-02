@@ -134,6 +134,19 @@ class DatasetConfig:
     # Labels
     labels: LabelConfig | None = None
 
+    # Distribution
+    #: Whether ECGBench may publish this dataset's fold CSVs to the public
+    #: HuggingFace Hub repo. Fold CSVs are identifiers only, but for a
+    #: credentialed or restricted source those identifiers are still derived
+    #: from data under a use agreement, and the Hub repo is public and ungated.
+    #: Set False for such datasets: users then regenerate the identical split
+    #: locally from their own copy, and `ecgbench splits` writes a manifest
+    #: (seed, input checksums, fold digest) that proves the result matches.
+    publish_fold_csvs: bool = True
+    #: Required when publish_fold_csvs is False — quoted back to the user by
+    #: ECGDataset and by the uploader, so the refusal is self-explaining.
+    no_publish_reason: str = ""
+
     # Croissant
     croissant: CroissantConfig = field(default_factory=CroissantConfig)
 
@@ -277,6 +290,8 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         predefined_splits=_parse_predefined_splits(raw.get("predefined_splits")),
         validation=_parse_validation(raw.get("validation")),
         labels=_parse_labels(raw.get("labels")),
+        publish_fold_csvs=bool(raw.get("publish_fold_csvs", True)),
+        no_publish_reason=raw.get("no_publish_reason", ""),
         croissant=_parse_croissant(raw.get("croissant")),
     )
 

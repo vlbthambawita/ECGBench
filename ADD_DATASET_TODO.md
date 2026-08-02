@@ -3,7 +3,10 @@
 Reusable plan for adding a new dataset end-to-end (config → splits → upload).
 Copy this file (or duplicate the relevant sections) when starting on a new
 dataset, and tick items off as you go. The phases are roughly sequential, but
-phase 1 (catalogue) is independent and can happen at any time.
+phase 1 (catalogue) is independent and can happen at any time. **Phase 7, the
+HuggingFace upload, is required and always runs last** — a dataset that is not
+on the Hub 404s for every user, because `ECGDataset` defaults to fetching fold
+CSVs from there.
 
 **There are two slug namespaces — do not use one where the other belongs.**
 
@@ -12,7 +15,7 @@ phase 1 (catalogue) is independent and can happen at any time.
 | `<config-slug>` | lowercase, **underscores** | `ptbxl`, `chapman_shaoxing`, `mimic_iv_ecg` | the YAML filename, the `slug:` field inside it, and the `@register("...")` argument |
 | `<catalogue-slug>` | lowercase, **dashes** | `ptb-xl`, `chapman-shaoxing`, `mimic-iv-ecg` | the `docs/_datasets/<catalogue-slug>.md` filename and the `slug:` field in its front matter |
 
-Phases 2–6 use `<config-slug>`. Phase 1 (catalogue) uses `<catalogue-slug>`.
+Phases 2–7 use `<config-slug>`. Phase 1 (catalogue) uses `<catalogue-slug>`.
 The two are unrelated strings — nothing maps one to the other mechanically, so
 pick both up front and keep them straight.
 
@@ -39,6 +42,7 @@ pick both up front and keep them straight.
 - [ ] Check for a **changelog** in the dataset root (`*changelog*`, `CHANGES`, release notes on the landing page). It is the authoritative explanation when the shipped version disagrees with the paper.
 - [ ] Check whether the metadata is really a **CSV**. `.xlsx` needs converting — `validate_dataset` re-reads `metadata_csv` from disk with `pandas.read_csv`, so an in-memory conversion is not enough. Convert in the acquisition script, and have the splitter generate a normalised CSV (see `chapman.py`).
 - [ ] If the source is **several files** rather than one archive, `download_url` cannot express it — write an acquisition script under `examples/download_<name>.py` that md5-verifies each file (see `download_chapman_figshare.py`).
+- [ ] **Decide the distribution policy now, from the licence** — it changes Phase 2 and Phase 7. Open licences (CC-BY, CC BY-SA, ODC-By, public domain) → fold CSVs get published. **Credentialed or restricted** → they do not; see "Restricted and credentialed datasets" below before writing the config.
 - [ ] Note any quirks for the PR description (credentialed access, weird encodings, missing leads in some records, etc.).
 
 ## Phase 1 — Catalogue entry (optional but recommended)
@@ -126,6 +130,7 @@ recomputed v1.0.3 counts, and the 38 dropped duplicates that explain the gap.
 - [ ] Fill in **predefined_splits** if applicable — **and set `has_predefined_splits: true`**. `engine.py` gates on `config.has_predefined_splits and config.predefined_splits`, so a fully-filled `predefined_splits` block with the flag left at `false` is silently ignored and folds get generated instead.
 - [ ] Fill in **validation**: `expected_leads`, `expected_samples` (one key per declared sampling rate), the `checks` list, and `amplitude_range_mv`. If record length genuinely varies, leave `expected_samples` **empty** rather than guessing a value — see the gotcha below — and say so in a comment, as `ptbdb.yaml` and `challenge2021.yaml` do.
 - [ ] Fill in **croissant** block (`keywords`, `rai_data_collection`, `rai_data_biases`, `rai_personal_sensitive_info`).
+- [ ] For a **credentialed or restricted** source, set `publish_fold_csvs: false` and a `no_publish_reason` that names the agreement and gives the regeneration command. Both are enforced: `ecgbench upload` refuses the dataset, and `ECGDataset` raises `SplitsNotPublishedError` quoting the reason instead of a bare 404. Leave both unset for an openly licensed source — the default publishes.
 - [ ] Smoke-test the config loads: `python -c "from ecgbench import load_config; print(load_config('<config-slug>'))"`.
 
 ## Phase 2b — Labels
@@ -180,7 +185,8 @@ Decide which path applies and do **one**:
 - [ ] Inspect `output/<config-slug>/` — the tree `export.py` and `cli/splits.py` actually produce:
   ```
   output/<config-slug>/
-    validation_report.json            # only top-level artefact
+    validation_report.json            # top-level artefacts
+    manifest.json                     # seed, input checksums, fold digest
     {original,clean}/
       folds.csv                       # every record + fold + default_split
       croissant.json                  # one PER VERSION, not top-level
@@ -193,6 +199,7 @@ Decide which path applies and do **one**:
 
   Anything beyond that list is real metadata leakage — full metadata stays in the source CSV. Fix the exporter, not the config.
 - [ ] Confirm fold membership is identical between `original/` and `clean/` (`clean/` is a row subset, not a re-split), that fold counts roughly match the `n_folds=10` distribution, and that **patients do not span folds** (if `patient_id_column` is set).
+- [ ] Check `manifest.json`: the `inputs` checksums should match the provider's own (`SHA256SUMS.txt`), `split.random_state` should be recorded, and the two `fold_digest` values should differ only because `clean/` is a row subset. This file is what lets anyone confirm they reproduced your partition.
 - [ ] Spot-check `validation_report.json` for unexpected check failures — high `truncated_signal` counts usually mean `expected_samples` is wrong; high `corrupt_header` counts usually mean `signal_format` or path prefix is wrong.
 - [ ] (Optional) Standalone Croissant regeneration — `--splits-dir` points at the **version** directory, and the file lands inside it:
   ```bash
@@ -224,16 +231,53 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - [ ] If the source is not in millivolts, show `units="uV"` returning the original scale, so the `signal_unit_scale` conversion is visible rather than implicit (see `load_chapman_shaoxing.py`).
 - [ ] If records are **long or variable-length**, batch them with `window=(start, length)` rather than a cropping `transform`. It is read at load time, so only those samples are decoded (~106 ms to ~8 ms per record on `incartdb`), and it survives `DataLoader(num_workers>0)` under the `spawn` start method, where a lambda `transform` raises `PicklingError`. See `load_incartdb.py`, `load_ptbdb.py`, `load_challenge2021.py`.
 
-## Phase 6 — HuggingFace Hub upload (optional)
+## Phase 6 — Wrap up
 
-- [ ] Ensure `HF_TOKEN` is set (env var or `.env`).
-- [ ] Dry-run first to see the file list without pushing: add `--dry-run`.
+- [ ] Cross-check the catalogue entry's `records`/`patients` against the pipeline's own output (`original.total` in the `ecgbench splits` summary). If they disagree, one of them is wrong — usually the config filters or drops rows you did not expect.
+- [ ] Update `README.md` if the dataset adds a capability the docs do not yet mention — a new `signal_format`, a units quirk, an unusual label shape. The parameter table and the "Leads and units" table both list per-dataset facts that go stale.
+- [ ] Add the dataset's lead order to the table in the README's **Leads and units** section.
+- [ ] Update the "Loading with ECGBench" `code` section in the catalogue entry to show `labels=True`, and `leads=`/`units=`/`window=` where the dataset has a quirk worth demonstrating (`window=` whenever records are long or variable-length). Leave the final **run-and-paste** until after Phase 7, because the upload changes how the snippet loads — see the note there.
+- [ ] Flip `status:` to `completed` in `docs/_datasets/<catalogue-slug>.md` (created back in Phase 1 — don't create a second entry here).
+- [ ] Commit (after Phase 7): config YAML, optional splitter + its `strategies/__init__.py` import, catalogue Markdown entry, tests, any docs. Keep generated output (`output/`) out of the commit.
+- [ ] Remember `docs/**` changes trigger the Pages and HF Space deploys on `main`, while Python-only changes deploy nothing until a `v*` tag is pushed.
+- [ ] Open a PR with: source URL, license, record count, validation pass rate, and whether a custom splitter was needed and why.
+
+## Phase 7 — HuggingFace Hub upload (REQUIRED, and do it last)
+
+**This is the final step of the task, not an optional extra.** A dataset whose splits
+are not on the Hub fails for every user, because `ECGDataset` defaults to
+`metadata_source="hf"` — the symptom is a bare `RemoteEntryNotFoundError: 404 ...
+<slug>/clean/folds.csv`. Do not leave this for someone else to run.
+
+**Branch on the licence first.**
+
+- **Openly licensed** (CC-BY, CC BY-SA, ODC-By, public domain) → upload, following the
+  checklist below.
+- **Credentialed or restricted** → do NOT upload. The dataset should already carry
+  `publish_fold_csvs: false` from Phase 2, which makes `ecgbench upload` refuse it.
+  Follow "Restricted and credentialed datasets" below instead, then return here only
+  for the last item (confirm no page claims the splits are downloadable).
+
+Publication is effectively irreversible — caches and mirrors persist after deletion —
+so when in doubt do not push, and ask the dataset owner.
+
+- [ ] Ensure `HF_TOKEN` is set (env var or a `.env` in the working directory).
+- [ ] Dry-run first to see the file list without pushing: add `--dry-run`. Expect 25
+  files per dataset (2 versions x (folds.csv + 10 fold CSVs + croissant.json), plus
+  `validation_report.json`).
 - [ ] Upload:
   ```bash
   ecgbench upload --data-dir output/ --datasets <config-slug>
   ```
-- [ ] Verify on the Hub that the tree is prefixed by the dataset slug — `<config-slug>/<version>/folds.csv` and `<config-slug>/<version>/<split>/fold_<N>.csv`. This prefix is what `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`; a missing or wrong prefix fails only at load time.
-- [ ] Verify an **anonymous** user can load it. `ECGDataset` defaults to `metadata_source="hf"`, so this exercises the real download path — but only if no token is picked up. Unset the token and use a scratch cache so a warm cache can't mask a missing upload:
+- [ ] Verify on the Hub that the tree is prefixed by the dataset slug —
+  `<config-slug>/<version>/folds.csv` and
+  `<config-slug>/<version>/<split>/fold_<N>.csv`. This prefix is what
+  `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`; a missing or
+  wrong prefix fails only at load time.
+- [ ] Verify an **anonymous** user can load it, both versions. `ECGDataset` defaults to
+  `metadata_source="hf"`, so this exercises the real download path — but only if no
+  token is picked up. Unset the token and use a scratch cache so a warm cache cannot
+  mask a missing upload:
   ```bash
   env -u HF_TOKEN -u HUGGINGFACE_HUB_TOKEN HF_HOME="$(mktemp -d)" python - <<'PY'
   from ecgbench import ECGDataset
@@ -244,17 +288,69 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
   PY
   ```
   `data_path` points at the local **signal** files; the fold CSVs come from the Hub.
+- [ ] **Now finalise the catalogue snippet** (the Phase 6 item you deferred): drop any
+  `metadata_source="local"`, run the snippet exactly as it now reads, and paste the
+  values that run produced. **`ds[0]` is not the same record under `hf` and `local`** —
+  HF mode filters `folds.csv` while local mode concatenates the per-split fold files,
+  so the row order differs and every quoted sample value changes. This has bitten
+  twice; re-run, do not translate.
+- [ ] Confirm no dataset page still says the splits are "not on the Hub yet":
+  `grep -rn 'metadata_source="local"\|not on the Hub' docs/_datasets/`.
 
-## Phase 7 — Wrap up
 
-- [ ] Cross-check the catalogue entry's `records`/`patients` against the pipeline's own output (`original.total` in the `ecgbench splits` summary). If they disagree, one of them is wrong — usually the config filters or drops rows you did not expect.
-- [ ] Update `README.md` if the dataset adds a capability the docs do not yet mention — a new `signal_format`, a units quirk, an unusual label shape. The parameter table and the "Leads and units" table both list per-dataset facts that go stale.
-- [ ] Add the dataset's lead order to the table in the README's **Leads and units** section.
-- [ ] Update the "Loading with ECGBench" `code` section in the catalogue entry to show `labels=True`, and `leads=`/`units=`/`window=` where the dataset has a quirk worth demonstrating (`window=` whenever records are long or variable-length). **Run the snippet before pasting it** — a stale example on a dataset page is how the broken PTB-XL one survived.
-- [ ] Flip `status:` to `completed` in `docs/_datasets/<catalogue-slug>.md` (created back in Phase 1 — don't create a second entry here).
-- [ ] Commit: config YAML, optional splitter + its `strategies/__init__.py` import, catalogue Markdown entry, tests, any docs. Keep generated output (`output/`) out of the commit.
-- [ ] Remember `docs/**` changes trigger the Pages and HF Space deploys on `main`, while Python-only changes deploy nothing until a `v*` tag is pushed.
-- [ ] Open a PR with: source URL, license, record count, validation pass rate, and whether a custom splitter was needed and why.
+### Restricted and credentialed datasets
+
+Worked example: `mimic_iv_ecg`. Publishing its fold CSVs would have put 800,035
+`study_id`s and 161,352 `subject_id`s, derived from a source under the PhysioNet
+Credentialed Health Data Use Agreement, onto a public ungated repo. Instead the split
+is distributed as a **recipe** and regenerated by each user, so no identifiers leave
+the credentialed environment at all.
+
+Everything through Phase 6 is unchanged. The differences are:
+
+- [ ] **Config (Phase 2).** Set `publish_fold_csvs: false` and a `no_publish_reason`
+  naming the agreement and containing the exact regeneration command. That string is
+  what `ECGDataset` and `ecgbench upload` quote back, so write it for a stranger.
+- [ ] **Do not upload.** The guard in `cli/upload.py` raises `PermissionError` before
+  any network call, so this is enforced rather than remembered. Do not work around it.
+- [ ] **Ship a reference manifest.** Copy the `manifest.json` that `ecgbench splits`
+  wrote into `ecgbench/data/manifests/<config-slug>.json`. It is a few hundred bytes of
+  checksums and counts — no identifiers — and it is what lets a user prove their local
+  regeneration is the canonical partition rather than merely a plausible one.
+- [ ] **Check the manifest before shipping it.** Its `inputs` checksums must match the
+  provider's own published values, so a user with a clean download matches and a user
+  with a filtered copy does not. If they disagree, you generated the split from a
+  non-canonical input and must regenerate.
+- [ ] **Verify the round trip** on your own run:
+  ```python
+  from ecgbench import verify_splits
+  verify_splits("<config-slug>", "output/<config-slug>")   # raises on mismatch
+  ```
+- [ ] **Dataset page (Phase 6).** Add a section saying the splits are generated rather
+  than downloaded and why; give the three-step generate → verify → copy recipe; and use
+  `metadata_source="local"` in the loading snippet, since the default `"hf"` now raises
+  `SplitsNotPublishedError`.
+- [ ] Never put labels, report text or clinical columns in a manifest or a fold CSV.
+  The rule that fold CSVs are identifier-only is what makes the open datasets
+  redistributable at all; a manifest is checksums and counts only.
+
+**What is safe to publish, in decreasing order of caution.** None of this is legal
+advice — the agreement governs, and some prohibit publishing derived data at all:
+
+| Artefact | Contains | Publishable for a credentialed source? |
+|---|---|---|
+| Waveforms | the data | never |
+| Labels / report text | clinical content | never |
+| Fold CSVs | record + patient identifiers | no — this is the case that motivated the policy |
+| Manifest | seed, checksums, counts, one digest | yes: no identifiers, and the digest is not invertible |
+| Config | column names, rates, thresholds | yes |
+
+A plain hash of the identifiers is **not** a safe middle ground: identifier spaces are
+small and enumerable (100,000 sequential IDs is seconds of brute force), so a published
+hash is reversible and republishes the identifiers in effect. Pseudonymous fold tables
+would need a keyed HMAC whose key never reaches the public repo — and the signal-path
+column would have to be dropped too, because paths like
+`files/p1376/p13767422/s40000162/40000162` embed the identifiers directly.
 
 ---
 
@@ -285,5 +381,6 @@ API drift — a stale example is how the broken PTB-XL snippet survived.
 - **Prefer `window=(start, length)` over a cropping `transform`, and never a lambda.** Both give the same tensor, but `window=` is pushed into the reader (`sampfrom`/`sampto` for wfdb, `skiprows`/`max_rows` for csv), so on long records it is the difference between decoding 44 MB and 0.25 MB — `incartdb` drops from ~106 ms to ~8 ms per record. A lambda `transform` additionally breaks `DataLoader(num_workers>0)` under the `spawn` start method (macOS and Windows default) with `PicklingError`; `window=` is plain data and pickles fine. Order is `window` → `leads` → `units` → `transform`.
 - **A fixed window does not fit a variable-length dataset.** `window=` raises `WindowOutOfRangeError` for any record shorter than `start + length`, naming the record and its true length. `cpsc_2018` runs 6-144 s and `ptbdb` 32-120 s, so quote a window sized to the **shortest** record in examples and on dataset pages, and note the minimum length in Phase 0.
 - **A metadata column that is 100% populated is not necessarily complete.** Machine-generated measurements often encode "not measurable" as an integer rail rather than a blank, so `notna().mean()` reports 1.0 and every summary statistic is silently wrong. MIMIC-IV-ECG uses `29999` for unmeasurable wave timings (230,323 records for `p_end` alone), `32767`/`-32768` for axes and `65535` for RR interval. Check the min/max of every numeric column against a physiologic range, not just its null count. Convert sentinels to NaN in the label loader — that is lossless when the source has no genuine blanks — and document which values you treated as sentinels, because a reader cannot otherwise tell a converted value from a missing one.
+- **`ds[0]` is not the same record under `metadata_source="hf"` and `"local"`.** HF mode downloads `folds.csv` and filters it by split; local mode concatenates the per-split `fold_<N>.csv` files. The row order differs, so every sample value quoted in a docs snippet changes when you switch modes. Generate the numbers the same way the snippet loads, and re-run rather than translating — this has produced wrong example values on two dataset pages already.
 - **Verify a local copy before quoting any figure from it.** See the Phase 0 checksum item: the label CSV is the file most likely to have been quietly filtered, and it is the one every published count depends on.
 - **Windowing is a read-time adapter, like `leads=` and `units=`.** It never touches the source files, the exported fold CSVs or validation — `validate_dataset` always reads whole records, so a record excluded for a railed lead stays excluded even if your window never reaches that lead. `validation/engine.py` has its own copy of `_load_signal` **without** the window parameter, and that is deliberate; do not "fix" it.

@@ -118,6 +118,23 @@ labels:
   source_csv: "machine_measurements.csv"
   join_column: "study_id"
 
+# --- Distribution ---
+# ECGBench does NOT publish this dataset's fold CSVs. They are identifiers only,
+# but 800,035 study_ids and 161,352 subject_ids are still data derived from a
+# credentialed source, and the ECGBench Hub repo is public and ungated. Users
+# regenerate the identical split locally instead; `ecgbench splits` writes a
+# manifest.json whose fold digest can be checked against the reference shipped
+# at ecgbench/data/manifests/mimic_iv_ecg.json — see ecgbench.manifest.
+publish_fold_csvs: false
+no_publish_reason: >
+  MIMIC-IV-ECG is credentialed under the PhysioNet Credentialed Health Data Use
+  Agreement, so ECGBench does not republish its identifiers — not even the
+  study_id and subject_id columns of a fold table. Regenerate the identical
+  split from your own copy with:
+  ecgbench splits --dataset mimic_iv_ecg --data-path /path/to/mimic-iv-ecg/1.0/
+  then confirm it is the canonical partition with
+  ecgbench.manifest.verify_splits("mimic_iv_ecg", "output/mimic_iv_ecg").
+
 # --- Croissant Metadata ---
 croissant:
   keywords:

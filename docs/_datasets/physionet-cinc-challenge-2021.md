@@ -269,26 +269,24 @@ sections:
       # fixed window before batching — a DataLoader raises as soon as one batch
       # mixes two lengths. 2500 samples is the shortest record, so it always fits.
       #
-      # This dataset's fold CSVs are not on the HuggingFace Hub yet, so pass
-      # metadata_source="local" after running `ecgbench splits` and copying
-      # output/challenge2021/{clean,original}/ into the dataset root.
+      # Fold CSVs come from the HuggingFace Hub by default; only the waveforms
+      # need to be local.
       ds = ECGDataset(
           "challenge2021",
           split="train",
           data_path="/path/to/challenge-2021/1.0.3/",
-          metadata_source="local",
           window=(0, 2500),        # first 5 s at the nominal 500 Hz
           labels=True,
       )
 
       len(ds)                                    # 68573
       ds[0]["signal"].shape                      # (12, 2500)
-      ds[0]["record_id"]                         # 'A0009'
-      ds[0]["labels"]["dx"]                      # '164889003' — SNOMED-CT, multi-label
-      ds[0]["labels"]["dx_abbreviations"]        # 'AF'
+      ds[0]["record_id"]                         # 'A0001'
+      ds[0]["labels"]["dx"]                      # '59118001' — SNOMED-CT, multi-label
+      ds[0]["labels"]["dx_abbreviations"]        # 'RBBB'
       ds[0]["labels"]["source"]                  # 'cpsc_2018' — which cohort it came from
       ds[0]["labels"]["sampling_rate"]           # 500 — per record, not dataset-wide
-      ds[0]["labels"]["n_samples"]               # 8000 — i.e. 16 s before windowing
+      ds[0]["labels"]["n_samples"]               # 7500 — i.e. 15 s before windowing
 
       # Lead order is the standard one, so leads= selects by name directly.
       ds.config.lead_names   # ['I','II','III','aVR','aVL','aVF','V1',...,'V6']

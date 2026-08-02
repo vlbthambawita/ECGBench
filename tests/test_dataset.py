@@ -326,6 +326,9 @@ class TestShippedLeadNames:
             # aVF before aVL, like the demo it is the full release of.
             ("mimic_iv_ecg", ["I", "II", "III", "aVR", "aVF", "aVL"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Standard order and spelling, identical in all 363 headers.
+            ("brugada_huca", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

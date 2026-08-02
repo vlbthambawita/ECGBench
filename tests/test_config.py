@@ -258,3 +258,35 @@ def test_mimic_iv_ecg_and_demo_are_distinct_configs():
     assert full.labels.available is True
     assert full.labels.source_csv == "machine_measurements.csv"
     assert demo.labels.available is False
+
+
+def test_load_brugada_huca_config():
+    """Brugada-HUCA: the only 100 Hz-only dataset, one record per subject."""
+    config = load_config("brugada_huca")
+    assert config.slug == "brugada_huca"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every channel declares a gain of 1000/mV, so wfdb already yields mV.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Standard order and standard spelling, identical in all 363 headers.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    # The lowest rate in the catalogue, and this dataset's only one.
+    assert config.sampling_rates == [100]
+    assert config.default_sampling_rate == 100
+    assert config.duration_seconds == 12
+    # metadata.csv has no path column, so the splitter generates this one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "patient_id"
+    # One record per subject, so grouping would be a no-op.
+    assert config.patient_id_column is None
+    assert config.signal_path_columns == {100: "signal_path"}
+    # 12.0 s x 100 Hz, uniform, so truncation is checked.
+    assert config.validation.expected_samples == {100: 1200}
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # Labels come from the SHIPPED csv, not the generated one, so they do not
+    # depend on the split pipeline having run.
+    assert config.labels.source_csv == "metadata.csv"
+    assert config.labels.join_column == "patient_id"
+    assert config.label_column == "brugada"

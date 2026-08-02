@@ -24,6 +24,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "ECGDataset": ".dataset",
     "ecg_collate_fn": ".dataset",
     "WindowOutOfRangeError": ".dataset",
+    "SplitsNotPublishedError": ".dataset",
     # Validation
     "validate_dataset": ".validation",
     "ValidationResult": ".validation",
@@ -36,6 +37,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "generate_croissant": ".croissant",
     "save_croissant": ".croissant",
     "validate_croissant": ".croissant",
+    # Manifests
+    "verify_splits": ".manifest",
     # Labels
     "load_labels": ".labels",
     # Download
@@ -71,6 +74,7 @@ __all__ = [
     "ECGDataset",
     "ecg_collate_fn",
     "WindowOutOfRangeError",
+    "SplitsNotPublishedError",
     # Validation
     "validate_dataset",
     "ValidationResult",
@@ -83,6 +87,8 @@ __all__ = [
     "generate_croissant",
     "save_croissant",
     "validate_croissant",
+    # Manifests
+    "verify_splits",
     # Labels
     "load_labels",
     # Download

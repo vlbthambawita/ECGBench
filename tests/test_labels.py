@@ -573,3 +573,54 @@ class TestMimicIVECGLabels:
         message = str(excinfo.value)
         assert "machine_measurements.csv" in message
         assert "credentialed" in message
+
+
+class TestBrugadaHUCALabels:
+    """Declarative labels off the shipped metadata.csv — no pipeline dependency."""
+
+    def test_shipped_config_points_at_the_shipped_csv(self):
+        """Deliberately metadata.csv, not the generated ecgbench_metadata.csv.
+
+        Labels must work before `ecgbench splits` has ever run, unlike
+        ecg_arrhythmia whose labels only exist afterwards.
+        """
+        from ecgbench.config import load_config
+
+        spec = load_config("brugada_huca").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "metadata.csv"
+        assert spec.join_column == "patient_id"
+        assert set(spec.columns) == {"brugada", "basal_pattern", "sudden_death"}
+
+    def test_loads_the_three_clinical_columns(self, sample_config, tmp_path):
+        from dataclasses import replace
+
+        from ecgbench.config import LabelConfig
+
+        pd.DataFrame({
+            "patient_id": [188981, 251972, 265715],
+            "basal_pattern": [1, 0, 0],
+            "sudden_death": [0, 0, 1],
+            "brugada": [1, 0, 2],
+        }).to_csv(tmp_path / "metadata.csv", index=False)
+
+        config = replace(
+            sample_config, slug="brugada_huca", record_id_column="patient_id",
+            labels=LabelConfig(source_csv="metadata.csv", join_column="patient_id",
+                               columns=["brugada", "basal_pattern", "sudden_death"]),
+        )
+        df = load_labels(config, data_path=tmp_path)
+
+        assert df.index.name == "patient_id"
+        assert list(df.columns) == ["brugada", "basal_pattern", "sudden_death"]
+        assert df.loc[188981, "brugada"] == 1
+        assert df.loc[265715, "brugada"] == 2
+        assert df.loc[265715, "sudden_death"] == 1
+
+    def test_brugada_codes_have_documented_meanings(self):
+        """The CSV ships bare 0/1/2; the meanings must live somewhere importable."""
+        from ecgbench.splitting.strategies.brugada_huca import BRUGADA_CLASSES
+
+        assert BRUGADA_CLASSES[0] == "healthy"
+        assert BRUGADA_CLASSES[1] == "confirmed Brugada syndrome"
+        assert BRUGADA_CLASSES[2] == "other/atypical"

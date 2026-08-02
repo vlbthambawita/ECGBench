@@ -45,6 +45,15 @@ class WindowOutOfRangeError(ValueError):
     """The requested sample window does not fit inside the record."""
 
 
+class SplitsNotPublishedError(RuntimeError):
+    """The dataset's splits are deliberately not on the Hub.
+
+    Raised instead of a bare 404 for credentialed or restricted sources, whose
+    identifiers ECGBench will not republish. The message carries the command
+    that regenerates the identical split locally.
+    """
+
+
 def _window_error(
     record_path: str, start: int, length: int | None, available: int | None
 ) -> WindowOutOfRangeError:
@@ -374,6 +383,14 @@ class ECGDataset(_TorchDataset):
             )
 
         repo_id = "vlbthambawita/ECGBench"
+
+        if not self.config.publish_fold_csvs:
+            raise SplitsNotPublishedError(
+                f"ECGBench does not publish fold CSVs for '{self.config.slug}'.\n"
+                f"{self.config.no_publish_reason.strip()}\n"
+                f"Then load with metadata_source=\"local\", pointing data_path at the "
+                "directory holding the generated original/ and clean/ trees."
+            )
 
         # split=None means "by fold, ignoring the default split", which only the
         # master folds.csv can answer.

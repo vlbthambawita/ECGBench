@@ -177,6 +177,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
 | `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
 | `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
+| `brugada_huca` | I, II, III, aVR, aVL, aVF, V1-V6 |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -195,6 +196,14 @@ alongside the patient diagnosis and free-text per-record findings. Its records a
 1800 s (~44 MB each), so batching needs a `window=`. It is also the
 clearest case for **patient-grouped folds** — 3,166 of its 3,174 RBBB beats come
 from a single patient — see `examples/load_incartdb.py`.
+
+`brugada_huca` is the smallest and cleanest dataset here — 363 records, one per
+subject, all 363 passing validation — and the only one sampled at **100 Hz alone**
+(PTB-XL offers 100 Hz as an alternative to 500). Its labels are bare integers with
+no string form in the CSV: `brugada` is 0 healthy / 1 confirmed / 2 other-atypical,
+and `ecgbench.splitting.strategies.brugada_huca.BRUGADA_CLASSES` carries the
+meanings. Treat it as a **screening cohort**: class 0 means "investigated and not
+diagnosed", not a general-population control. See `examples/load_brugada_huca.py`.
 
 `mimic_iv_ecg` is the largest dataset here — 800,035 records from 161,352
 patients (~96.5 GB) — and the one where `fold_numbers=` matters most: a single fold
@@ -264,6 +273,66 @@ not all.
 
 `window` combines freely with `fold_numbers`, `leads` and `units`; it is applied
 first, then lead selection, then units, then `transform`.
+
+### Restricted and credentialed datasets
+
+Most datasets' fold CSVs are published to the [HuggingFace
+Hub](https://huggingface.co/datasets/vlbthambawita/ECGBench) and download
+automatically. **Some are deliberately not**, and those you generate yourself.
+
+Fold CSVs carry identifiers only — record ID, patient ID, signal path, fold,
+split. For an openly licensed source that is uncontroversial. For a
+**credentialed or restricted** source those identifiers are still data derived
+under a use agreement, and the ECGBench Hub repository is public and ungated, so
+ECGBench does not publish them. `mimic_iv_ecg` is the current example: 800,035
+`study_id`s and 161,352 `subject_id`s stay with the people who signed the
+PhysioNet DUA.
+
+Such a dataset declares this in its config, and the tooling enforces it in both
+directions — `ecgbench upload` refuses to publish it, and `ECGDataset` raises
+`SplitsNotPublishedError` (carrying the command below) instead of a 404:
+
+```yaml
+publish_fold_csvs: false
+no_publish_reason: >
+  MIMIC-IV-ECG is credentialed under the PhysioNet Credentialed Health Data
+  Use Agreement, so ECGBench does not republish its identifiers ...
+```
+
+The split is distributed as a **recipe** instead. Because fold assignment is a
+deterministic function of the input table and a fixed seed, regenerating locally
+reproduces the canonical partition exactly:
+
+```bash
+# 1. Generate — writes output/<slug>/ plus a manifest.json
+ecgbench splits --dataset mimic_iv_ecg --data-path /path/to/mimic-iv-ecg/1.0/
+
+# 2. Verify it is the canonical partition, not merely a plausible one
+python -c "from ecgbench import verify_splits; \
+           print(verify_splits('mimic_iv_ecg', 'output/mimic_iv_ecg')['ok'])"
+
+# 3. Point the loader at your generated folds
+cp -r output/mimic_iv_ecg/{clean,original} /path/to/mimic-iv-ecg/1.0/
+```
+
+```python
+ds = ECGDataset("mimic_iv_ecg", split="train", metadata_source="local",
+                data_path="/path/to/mimic-iv-ecg/1.0/", labels=True)
+```
+
+**`manifest.json` is what makes "regenerate it yourself" trustworthy.**
+`ecgbench splits` writes one for *every* dataset, recording the seed, fold count,
+grouping column, a SHA-256 of each input file, the record counts, and a **fold
+digest** — a hash over the entire record-to-fold mapping in canonical order. Two
+runs agree on that digest if and only if they produced the same partition.
+`verify_splits()` compares yours against a reference manifest shipped in the
+package and, on mismatch, names the input file that differs.
+
+That last part is the common failure. A split only reproduces if the input is
+byte-identical, and local copies get filtered: we found a
+`machine_measurements.csv` cut to 789,481 of 800,035 rows, which silently
+changes the stratification and hence the folds. Verify your download against the
+provider's own checksums before generating.
 
 ### Output format
 

@@ -199,7 +199,6 @@ sections:
           "incartdb",
           split="train",
           data_path="/path/to/incartdb/1.0.0/",
-          metadata_source="local",
           window=(0, 2570),        # first 10 s at 257 Hz
           labels=True,
       )

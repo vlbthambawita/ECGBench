@@ -1,0 +1,37 @@
+{
+  "dataset": "mimic_iv_ecg",
+  "dataset_version": "1.0",
+  "ecgbench_version": "0.20.0",
+  "digest_version": 1,
+  "publish_fold_csvs": false,
+  "split": {
+    "n_folds": 10,
+    "random_state": 42,
+    "record_id_column": "study_id",
+    "patient_id_column": "subject_id",
+    "grouped_by_patient": true
+  },
+  "inputs": {
+    "record_list.csv": {
+      "present": true,
+      "sha256": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b",
+      "bytes": 70403124,
+      "rows": 800035
+    },
+    "machine_measurements.csv": {
+      "present": true,
+      "sha256": "56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6",
+      "bytes": 182674683,
+      "rows": 800035
+    }
+  },
+  "records": {
+    "original": 800035,
+    "clean": 786699
+  },
+  "fold_digest": {
+    "original": "81d4d96e035bdef2fdb375a252d040ea3be801f6ad62487c7bb3ff6a77087979",
+    "clean": "2e2621b27332e623548ae7afb134c300ff088f2330900c82fa7154b88d372e64"
+  },
+  "command": "ecgbench splits --dataset mimic_iv_ecg --data-path /path/to/mimic_iv_ecg/"
+}

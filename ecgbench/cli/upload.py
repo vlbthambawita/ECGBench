@@ -56,6 +56,24 @@ def run_upload(
     uploaded: dict[str, int] = {}
 
     for dataset_slug in datasets:
+        # Refuse before touching the network. Fold CSVs are identifiers only, but
+        # for a credentialed or restricted source those identifiers are still
+        # derived from data under a use agreement, and this repo is public and
+        # ungated. Publication is effectively irreversible, so the config's
+        # policy is enforced here rather than left to the operator to remember.
+        try:
+            from ecgbench.config import load_config
+
+            dataset_config = load_config(dataset_slug)
+        except Exception:  # unknown slug: fall through to the directory check
+            dataset_config = None
+        if dataset_config is not None and not dataset_config.publish_fold_csvs:
+            raise PermissionError(
+                f"Refusing to upload '{dataset_slug}': its config sets "
+                f"publish_fold_csvs: false.\n{dataset_config.no_publish_reason.strip()}\n"
+                "If this is genuinely intended, change the config and say why there."
+            )
+
         dataset_dir = data_root / dataset_slug
         if not dataset_dir.exists():
             logger.warning("Directory not found: %s, skipping", dataset_dir)

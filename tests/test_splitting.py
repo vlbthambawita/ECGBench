@@ -982,3 +982,136 @@ class TestMimicIVECGSplitter:
             get_splitter("mimic_iv_ecg").get_stratification_labels(
                 pd.DataFrame({"study_id": [1]}), self._config(sample_config)
             )
+
+
+class TestBrugadaHUCASplitter:
+    """Brugada-HUCA needs a splitter only because metadata.csv has no path column."""
+
+    def _tree(self, tmp_path, rows, stray_ds_store=True, duplicate_in_records=True):
+        """rows: [(patient_id, brugada, basal_pattern, sudden_death)]."""
+        pd.DataFrame(
+            rows, columns=["patient_id", "brugada", "basal_pattern", "sudden_death"]
+        ).to_csv(tmp_path / "metadata.csv", index=False)
+
+        files = tmp_path / "files"
+        files.mkdir()
+        for pid, *_ in rows:
+            d = files / str(pid)
+            d.mkdir()
+            (d / f"{pid}.hea").write_text(f"{pid} 12 100 1200\n", encoding="utf-8")
+            (d / f"{pid}.dat").write_bytes(b"")
+        if stray_ds_store:
+            # The real release ships one of these, and it is even checksummed.
+            (files / ".DS_Store").write_bytes(b"\x00\x01")
+
+        lines = [f"files/{pid}/{pid}" for pid, *_ in rows]
+        if duplicate_in_records and lines:
+            lines.append(lines[0])  # RECORDS really does repeat one entry
+        (tmp_path / "RECORDS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config, slug="brugada_huca", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="patient_id", patient_id_column=None,
+            signal_path_columns={100: "signal_path"}, default_sampling_rate=100,
+            label_column="brugada", leads=12,
+            labels=LabelConfig(source_csv="metadata.csv", join_column="patient_id"),
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.brugada_huca import BrugadaHUCASplitter
+
+        assert isinstance(get_splitter("brugada_huca"), BrugadaHUCASplitter)
+
+    def test_derives_signal_paths_and_caches_the_csv(self, sample_config, tmp_path):
+        """The whole reason this splitter exists: metadata.csv has no path column."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(188981, 1, 1, 0), (251972, 0, 0, 0)])
+        df = get_splitter("brugada_huca").load_metadata(tree, config)
+
+        assert "signal_path" not in pd.read_csv(tree / "metadata.csv").columns
+        paths = dict(zip(df["patient_id"], df["signal_path"]))
+        assert paths == {188981: "files/188981/188981", 251972: "files/251972/251972"}
+        # Written to disk because validate_dataset re-reads it and rebuilds paths.
+        assert (tree / config.metadata_csv).exists()
+        assert "signal_path" in pd.read_csv(tree / config.metadata_csv).columns
+
+    def test_labels_are_carried_through(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 0, 0, 0), (2, 1, 1, 1), (3, 2, 0, 0)])
+        df = get_splitter("brugada_huca").load_metadata(tree, config)
+
+        for col in ("brugada", "basal_pattern", "sudden_death"):
+            assert col in df.columns
+        assert df.set_index("patient_id")["brugada"].to_dict() == {1: 0, 2: 1, 3: 2}
+
+    def test_stray_ds_store_is_not_mistaken_for_a_record(self, sample_config, tmp_path):
+        """The release ships files/.DS_Store; globbing files/* must skip it."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 0, 0, 0), (2, 1, 0, 0)], stray_ds_store=True)
+
+        splitter = get_splitter("brugada_huca")
+        df = splitter.load_metadata(tree, config)
+
+        assert len(df) == 2
+        assert ".DS_Store" not in set(df["patient_id"].astype(str))
+
+    def test_duplicate_line_in_records_does_not_duplicate_a_row(
+        self, sample_config, tmp_path
+    ):
+        """RECORDS lists one record twice; metadata.csv is the source of truth."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 0, 0, 0), (2, 1, 0, 0)],
+                          duplicate_in_records=True)
+        records = (tree / "RECORDS").read_text().split()
+        assert len(records) == 3 and len(set(records)) == 2  # the release's quirk
+
+        df = get_splitter("brugada_huca").load_metadata(tree, config)
+
+        assert len(df) == 2
+        assert df["patient_id"].is_unique
+
+    def test_subject_without_a_header_warns(self, sample_config, tmp_path, caplog):
+        """A partial download should say so rather than fail every record later."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(1, 0, 0, 0), (2, 1, 0, 0)])
+        (tree / "files" / "2" / "2.hea").unlink()
+
+        with caplog.at_level("WARNING"):
+            get_splitter("brugada_huca").load_metadata(tree, config)
+
+        assert "no .hea on disk" in caplog.text
+
+    def test_stratification_uses_brugada_verbatim(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [(i, i % 3, 0, 0) for i in range(1, 31)])
+        splitter = get_splitter("brugada_huca")
+        df = splitter.load_metadata(tree, config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "brugada"
+        # Verbatim: no pooling, no renaming, so nothing can drift from load_labels.
+        assert labels.tolist() == df["brugada"].tolist()
+
+    def test_rare_class_is_warned_about_but_kept(self, sample_config, tmp_path, caplog):
+        """'other/atypical' must not be pooled — it is not interchangeable."""
+        config = self._config(sample_config)
+        rows = [(i, 0, 0, 0) for i in range(1, 21)] + [(99, 2, 0, 0)]
+        splitter = get_splitter("brugada_huca")
+        df = splitter.load_metadata(self._tree(tmp_path, rows), config)
+
+        with caplog.at_level("WARNING"):
+            labels = splitter.get_stratification_labels(df, config)
+
+        assert set(labels) == {0, 2}          # class 2 survives
+        assert "cannot appear in every fold" in caplog.text
+
+    def test_missing_metadata_csv_names_the_expected_layout(self, sample_config, tmp_path):
+        with pytest.raises(FileNotFoundError, match="metadata.csv"):
+            get_splitter("brugada_huca").load_metadata(tmp_path, self._config(sample_config))

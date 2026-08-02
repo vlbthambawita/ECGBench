@@ -131,6 +131,36 @@ HuggingFace dataset repo `vlbthambawita/ECGBench` mirrors that tree with the dat
 
 The repo id is **overridable on upload but hard-coded on download**: `run_upload(hf_repo_id=...)` takes it as a parameter with a `--hf-repo-id` CLI flag, while `ECGDataset._load_from_hf` assigns `repo_id = "vlbthambawita/ECGBench"` inline with no override. Forking to a different Hub repo therefore requires a source edit in `dataset.py`.
 
+## Distribution policy — not every dataset's splits are published
+
+`DatasetConfig.publish_fold_csvs` (default `True`) decides whether a dataset's fold
+CSVs go to the public HuggingFace repo. Fold CSVs are identifiers only, but for a
+**credentialed or restricted** source those identifiers are still data derived under a
+use agreement, and the repo is public and ungated. `mimic_iv_ecg` sets it `False`; it is
+the only such dataset today.
+
+The policy is enforced in both directions, not left to whoever runs the command:
+`cli/upload.py` raises `PermissionError` before any network call, and
+`ECGDataset._load_from_hf` raises `SplitsNotPublishedError` — quoting
+`no_publish_reason`, which must therefore contain the regeneration command — instead of
+letting the user hit a bare 404.
+
+Such datasets are distributed as a **recipe**: `ecgbench splits` reproduces the
+canonical partition locally because fold assignment is a pure function of the input
+table and a fixed seed (`random_state=42`, recorded in `SplitResult.split_metadata`).
+
+`ecgbench/manifest.py` is what makes that trustworthy. `run_splits` writes
+`manifest.json` into the output directory for **every** dataset, holding the seed, fold
+count, a SHA-256 per input file, record counts, and a `fold_digest` — a hash over the
+whole record-to-fold mapping in canonical order, so two runs agree iff they produced the
+same partition. For unpublished datasets a reference copy ships in
+`ecgbench/data/manifests/<slug>.json`, and `verify_splits(slug, output_dir)` compares
+the two, naming the differing input file on mismatch (the usual cause: a filtered local
+copy, exactly the MIMIC `machine_measurements.csv` case).
+
+Adding another restricted dataset: see "Restricted and credentialed datasets" in
+`ADD_DATASET_TODO.md`, which also tabulates what may and may not be published.
+
 ## Testing
 
 Tests never touch real ECG data or the network. `tests/conftest.py` builds `DatasetConfig` objects directly in Python (not from YAML — so config fixtures can drift from the shipped YAML), synthetic numpy signal arrays per failure mode (`synthetic_signal_bad_nan`, `_flat`, `_truncated`, `_amplitude_outlier`, …), mock metadata DataFrames, and `tmp_splits_dir`, a full `{original,clean}/{train,val,test}/fold_N.csv` + `folds.csv` tree in `tmp_path`. The `CHECK_REGISTRY` checks are tested against arrays, not files, so they involve no WFDB I/O. Loader-level tests do: `tmp_wfdb_signal_dataset` and `tmp_csv_signal_dataset` each build five real 12x5000 records plus a fold tree, so `_load_signal`, `window=`, `leads=`, `units=` and fold selection run against actual files.
