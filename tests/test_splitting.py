@@ -1115,3 +1115,167 @@ class TestBrugadaHUCASplitter:
     def test_missing_metadata_csv_names_the_expected_layout(self, sample_config, tmp_path):
         with pytest.raises(FileNotFoundError, match="metadata.csv"):
             get_splitter("brugada_huca").load_metadata(tmp_path, self._config(sample_config))
+
+
+class TestLeipzigHeartCenterSplitter:
+    """Leipzig's binding constraint is class count: 7 diagnoses over 39 records."""
+
+    LAYOUTS = {
+        "child": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4",
+                  "V5", "V6", "ABL12", "RVA12", "CS12"],
+        # The adult layout in the real x100 puts RVA12 last, after the CS channels.
+        "adult": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4",
+                  "V5", "V6", "ABL12", "CS12", "RVA12"],
+    }
+
+    def _tree(self, tmp_path, children, adults):
+        """children/adults: [(subject_id, record, diagnosis)] -> a loadable tree."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        pd.DataFrame({
+            "subject_id": [s for s, _, _ in children],
+            "file_name": [r for _, r, _ in children],
+            "gender": ["M"] * len(children),
+            "age": ["10.0"] * len(children),
+            "diagnosis": [d for _, _, d in children],
+            "ap_loacation": [""] * len(children),
+            "ecg_duration": ["0:00:02.0"] * len(children),
+        }).to_csv(tmp_path / "children-subject-info.csv", index=False)
+        pd.DataFrame({
+            "subject_id": [s for s, _, _ in adults],
+            "file_name": [r for _, r, _ in adults],
+            "gender": ["F"] * len(adults),
+            "age": ["50.0"] * len(adults),
+            "diagnosis": [d for _, _, d in adults],
+            "ecg_duration": ["0:00:02.0"] * len(adults),
+        }).to_csv(tmp_path / "adults-subject-info.csv", index=False)
+
+        for cohort, rows in (("child", children), ("adult", adults)):
+            names = self.LAYOUTS[cohort]
+            n = len(names)
+            for _, record, _ in rows:
+                signal = np.tile(
+                    np.arange(1954, dtype=np.float64)[:, None] / 1000.0, (1, n)
+                )
+                wfdb.wrsamp(record, fs=977, units=["mV"] * n, sig_name=names,
+                            p_signal=signal, fmt=["16"] * n, adc_gain=[2000.0] * n,
+                            baseline=[0] * n, write_dir=str(tmp_path))
+                wfdb.wrann(record, "atr", np.array([100, 200, 300]),
+                           np.array(["N", "X", "+"]),
+                           aux_note=["", "AVRT", "(N"], fs=977,
+                           write_dir=str(tmp_path),
+                           custom_labels=[(42, "X", "Tachycardias")])
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="leipzig_heart_center_ecg",
+            metadata_csv="ecgbench_metadata.csv", record_id_column="record_name",
+            patient_id_column=None, signal_path_columns={977: "signal_path"},
+            default_sampling_rate=977, label_column="stratify_class", leads=12,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.leipzig_heart_center_ecg import (
+            LeipzigHeartCenterSplitter,
+        )
+
+        assert isinstance(
+            get_splitter("leipzig_heart_center_ecg"), LeipzigHeartCenterSplitter
+        )
+
+    def test_joins_the_two_subject_csvs_and_writes_the_metadata(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            children=[("001", "x001", "AVRT-WPW"), ("002", "x002", "AVNRT")],
+            adults=[("100", "x100", "TOF with VT")],
+        )
+        df = get_splitter("leipzig_heart_center_ecg").load_metadata(tree, config)
+
+        # One frame from two CSVs with different columns.
+        assert len(df) == 3
+        assert set(df["cohort"]) == {"child", "adult"}
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["x001", "x002", "x100"]
+        # Written to disk because validate_dataset re-reads it from there.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_cached_metadata_keeps_zero_padded_subject_ids(self, sample_config, tmp_path):
+        """subject_id is '001'/'0010' in the source; an int read would lose the padding."""
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            children=[("001", "x001", "AVRT"), ("0010", "x0010", "AVNRT")],
+            adults=[],
+        )
+        splitter = get_splitter("leipzig_heart_center_ecg")
+
+        first = splitter.load_metadata(tree, config)          # builds and writes
+        second = splitter.load_metadata(tree, config)         # re-reads the cache
+
+        assert sorted(first["subject_id"]) == ["001", "0010"]
+        assert sorted(second["subject_id"]) == ["001", "0010"]
+        assert list(first["record_name"]) == list(second["record_name"])
+
+    def test_stratification_uses_the_family_not_the_full_diagnosis(self, sample_config, tmp_path):
+        """7 diagnoses over 39 records cannot be spread across 10 folds; 3 can."""
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        # 10 of each family, so nothing pools — as in the real dataset.
+        children = (
+            [(f"{i:03d}", f"x{i:03d}", "AVRT-WPW") for i in range(1, 6)]
+            + [(f"{i:03d}", f"x{i:03d}", "AVRT-PJRT") for i in range(6, 11)]
+            + [(f"{i:03d}", f"x{i:03d}", "AVNRT") for i in range(11, 21)]
+        )
+        adults = (
+            [(f"1{i:02d}", f"x1{i:02d}", "TOF with VT") for i in range(0, 9)]
+            + [("109", "x109", "TOF without VT")]
+        )
+        splitter = get_splitter("leipzig_heart_center_ecg")
+        df = splitter.load_metadata(self._tree(tmp_path, children, adults), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        # Five shipped diagnoses collapse to three families, none pooled.
+        assert df["diagnosis"].nunique() == 5
+        assert labels.value_counts().to_dict() == {"AVRT": 10, "AVNRT": 10, "TOF": 10}
+        assert "OTHER" not in set(labels)
+
+    def test_missing_stratify_column_is_refused(self, sample_config):
+        config = self._config(sample_config)
+        splitter = get_splitter("leipzig_heart_center_ecg")
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"record_name": ["x001"], "diagnosis": ["AVRT"]}), config
+            )
+
+    def test_folds_are_stratified_and_no_record_repeats(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        children = (
+            [(f"{i:03d}", f"x{i:03d}", "AVRT") for i in range(1, 11)]
+            + [(f"{i:03d}", f"x{i:03d}", "AVNRT") for i in range(11, 21)]
+        )
+        adults = [(f"1{i:02d}", f"x1{i:02d}", "TOF with VT") for i in range(0, 10)]
+        splitter = get_splitter("leipzig_heart_center_ecg")
+        df = splitter.load_metadata(self._tree(tmp_path, children, adults), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        # One record per subject, so a record-level split is already subject-level.
+        assert config.patient_id_column is None
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique
+        # Every fold carries all three families — the point of stratifying.
+        for fold in result.folds.values():
+            families = set(fold["stratify_class"])
+            assert families == {"AVRT", "AVNRT", "TOF"}, families

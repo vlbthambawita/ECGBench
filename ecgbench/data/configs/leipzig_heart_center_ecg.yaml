@@ -1,0 +1,202 @@
+# ECGBench Config: Leipzig Heart Center ECG Database
+# ==================================================
+# https://physionet.org/content/leipzig-heart-center-ecg/1.0.0/
+#
+# 39 annotated recordings from electrophysiological studies — 29 children with
+# supraventricular tachycardia and 10 adults with repaired Tetralogy of Fallot —
+# each carrying the 12-lead surface ECG *and* intracardiac electrograms from the
+# catheters, at 977 Hz. 18.5 hours of signal in 3.4 GB, with 118,214 annotations
+# placed by a cardiologist.
+#
+# Three things make this dataset unlike the others here, and all three are checked
+# against the files (every one of the 126 files matches the release's own
+# SHA256SUMS.txt, so these are upstream properties, not download damage):
+#
+#   1. Records are NOT all 12-lead. They carry 14, 18, 19 or 20 channels in six
+#      distinct layouts, and only channels 0-11 — the ECG — are the same channel in
+#      the same position in every record. See lead_names below.
+#   2. Length varies by two orders of magnitude, 77.7 s to 2 h 30 m, so
+#      expected_samples is deliberately empty and window= is the way to batch.
+#   3. Signals are clipped at the recording amplifier's rail, which differs per
+#      channel and per record. See amplitude_range_mv.
+
+name: "Leipzig Heart Center ECG Database"
+slug: "leipzig_heart_center_ecg"
+version: "1.0.0"
+url: "https://physionet.org/content/leipzig-heart-center-ecg/1.0.0/"
+# Open (ODC-By), but PhysioNet serves this one only as a per-file tree and a zip
+# behind the project page; there is no stable direct archive URL to auto-download.
+download_url: null
+license: "ODC-By 1.0 (Open Data Commons Attribution License)"
+description: >
+  The Leipzig Heart Center ECG Database: 39 annotated recordings from
+  electrophysiological studies at the Leipzig Heart Center, covering arrhythmias in
+  children and in patients with congenital heart disease. 29 children (x001-x0029)
+  presented with AV reentrant or AV nodal reentrant tachycardia; 10 adults
+  (x100-x109) had repaired Tetralogy of Fallot, 8 of them with ventricular
+  tachycardia. Every record holds the 12-lead surface ECG together with
+  intracardiac electrograms from a coronary sinus catheter, a right-ventricular
+  apex catheter and an ablation catheter, sampled at 977 Hz with a gain of 2000/mV,
+  and a cardiologist's beat, rhythm and signal-quality annotations in a companion
+  .atr. Note that the channel count is not constant — 14, 18, 19 or 20 depending on
+  which catheters were in place — and that only the first 12 channels are the same
+  channel in every record.
+citation: >
+  Klingel, K., Paech, C., Gebauer, R., Markel, F., Bertagnolli, L., Hindricks, G.,
+  Bollmann, A., Hilbert, S., Arnold, M. Leipzig Heart Center ECG-Database:
+  Arrhythmias in Children and Patients with Congenital Heart Disease
+  (version 1.0.0). PhysioNet (2024).
+doi: "10.13026/7a4j-vn37"
+
+creators:
+  - type: Organization
+    name: "Leipzig Heart Center, Heart Center Leipzig"
+    url: "https://www.helios-gesundheit.de/kliniken/leipzig-herzzentrum/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every channel of every record declares 2000.0(0)/mV with format 24, so wfdb's
+# p_signal is already millivolts.
+signal_unit_scale: 1.0
+
+# leads/lead_names describe the 12-lead SURFACE ECG only, and that is deliberate.
+# Records carry 14-20 channels in six distinct layouts:
+#
+#   19  ECG + ABL12 RVA12 CS12 CS34 CS56 CS78 CS90      27 records
+#   14  ECG + ABL12 RVA12                                5 records (adults)
+#   18  ECG + RVA12 CS12..CS90  (no ABL12)               4 records (children)
+#   20  ECG + ABL12 ABL_uni RVA12 CS12..CS90             1 record  (x0023)
+#   20  ECG + ART ABL12 RVA12 CS12..CS90                 1 record  (x0028)
+#   19  ECG + ABL12 CS12..CS90 RVA12  (RVA last)         1 record  (x100)
+#
+# Channel index 12 is therefore ABL12, RVA12 or ART depending on the record, and
+# ABL_uni and ART are documented nowhere in the release. Only indices 0-11 are
+# stable, so ECGDataset(leads=[...]) can resolve the ECG and nothing else. To reach
+# an intracardiac channel, look it up by name in that record's own header —
+# ecgbench.labels.leipzig_heart_center_ecg.channel_index() does exactly that, from
+# the channel_names column the label loader exposes.
+leads: 12
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+
+# Nominal only: the median record. Lengths run 75,873 samples (77.7 s, x0027) to
+# 8,824,019 (2 h 30 m 32 s, x003) and are NOT uniform.
+duration_seconds: 699.3
+sampling_rates: [977]
+default_sampling_rate: 977
+
+# --- File Structure ---
+# Two per-subject CSVs ship rather than one — children-subject-info.csv (29 rows,
+# with an accessory-pathway column) and adults-subject-info.csv (10 rows, without)
+# — and neither carries a signal path. LeipzigHeartCenterSplitter joins them and
+# writes this normalised CSV, which the validation engine then reads from disk.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+patient_id_column: null  # one record per subject: 39 records, 39 subjects
+
+signal_path_columns:
+  977: "signal_path"  # bare record stem, e.g. "x001" — the tree is flat
+
+# --- Labels ---
+label_column: "stratify_class"  # attached by the label loader, see below
+label_format: "single"
+
+stratification:
+  # LeipzigHeartCenterSplitter takes stratify_class from the label loader: the
+  # diagnosis *family*, AVRT (16 records) / AVNRT (13) / TOF (10). The shipped
+  # diagnosis has seven classes over 39 records, three of them singletons
+  # (AVRT-PJRT, TOF without VT, TOF with nsVT), which ten folds cannot hold.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # The 12 surface ECG channels. Records hold 14-20 channels in total; this field
+  # is declared for documentation and is read by no check today.
+  expected_leads: 12
+  # Deliberately EMPTY. Length genuinely varies from 75,873 to 8,824,019 samples,
+  # and check_truncated_signal returns [] when the rate has no entry — the intended
+  # way to disable a check that cannot apply. Adding a 977 key would fail almost
+  # every record.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # NOT a physiologic bound, and not comparable with the other datasets' ranges.
+  # These records mix surface ECG with intracardiac electrograms, and
+  # check_amplitude_outlier applies one range to every channel, so a surface-ECG
+  # range would exclude legitimate intracardiac data: at +/-10 mV, 24 of the 39
+  # records fail. +/-52 is just above the widest amplifier rail measured across all
+  # 39 records (x002's RVA12 reaches -51.175/+51.200 mV), so it excludes nothing
+  # and still catches a record that is broken outright.
+  #
+  # Clipping at the rail IS present and this check will not tell you about it: the
+  # rail is +/-10.24 mV on most channels, and x001, x002, x003, x004, x006 and x109
+  # reach it on the surface ECG itself — x001 on 11 of its 12 ECG channels. Use the
+  # cardiologist's own signal-quality annotations instead: the 228 '~' marks,
+  # exposed as n_quality_marks by the label loader. Those flag all six clipped
+  # records (10 records carry '~' marks in total), which is why they are the better
+  # quality signal here.
+  amplitude_range_mv: [-52.0, 52.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/leipzig_heart_center_ecg.py concatenates the two
+# subject CSVs, joins each record's channel layout from its header, and summarises
+# the .atr into per-beat, per-tachycardia and per-rhythm counts.
+#
+# Two figures worth knowing before you trust a count: the README reports 113,924
+# annotated beats, which is exactly the total of the beat classes it tabulates —
+# the files hold 118,214 annotations once the 1,824 'Q' (unclassifiable), 228 '~'
+# (signal quality) and 2,238 '+' (rhythm marker) annotations are included. And
+# dataset_info.csv's PVC row is wrong: it gives symbol 'PVC' with aux 'V', while
+# the README and the data both use symbol 'V' with no aux string.
+labels:
+  source_csv: "ecgbench_metadata.csv"
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "intracardiac electrogram"
+    - "electrophysiological study"
+    - "arrhythmia"
+    - "congenital heart disease"
+    - "paediatric"
+    - "supraventricular tachycardia"
+    - "Tetralogy of Fallot"
+    - "PhysioNet"
+  rai_data_collection: >
+    Recordings made during clinical electrophysiological studies and catheter
+    ablations at the Leipzig Heart Center, Germany. Surface ECG and intracardiac
+    electrograms were acquired together at 977 Hz; which intracardiac channels a
+    record holds depends on which catheters the operator had in place, so the
+    channel layout varies between records. Beat, rhythm and signal-quality
+    annotations were placed by a cardiologist.
+  rai_data_biases: >
+    A single tertiary referral centre and a deliberately selected cohort, so this
+    is not a population sample of any kind. The 29 children were referred for
+    ablation of AV reentrant or AV nodal reentrant tachycardia, and the 10 adults
+    all have repaired Tetralogy of Fallot with 8 of 10 in ventricular tachycardia —
+    prevalences that reflect the electrophysiology laboratory's caseload, not
+    disease frequency. Because the recordings come from ablation procedures, the
+    arrhythmia is often induced deliberately rather than observed spontaneously,
+    and 13,779 beats are paced. Recording length varies by two orders of magnitude
+    and correlates with case complexity, so a naive per-beat pooling is dominated
+    by a handful of long children's studies: x001, x003, x004 and x006 alone
+    contribute 60,807 of the 118,214 annotations. Amplitude clipping at the
+    amplifier rail affects the surface ECG of six records.
+  rai_personal_sensitive_info: >
+    De-identified: subjects are identified only as x001-x0029 and x100-x109, with
+    sex, age in years and a diagnosis. No dates, no free-text notes and no
+    institutional identifiers ship. Age is a genuine paediatric age — the youngest
+    subject is 5 — which is worth noting because a cohort of 39 children and adults
+    with named congenital lesions and named accessory-pathway locations is more
+    identifying in combination than any single field is on its own.

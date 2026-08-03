@@ -220,6 +220,41 @@ def test_load_incartdb_config():
     assert config.validation.amplitude_range_mv == (-30.0, 30.0)
 
 
+def test_load_leipzig_heart_center_ecg_config():
+    """Leipzig: surface ECG + intracardiac channels, variable length AND variable
+    channel count — the one dataset here where lead_names is a strict subset of the
+    channels a record holds."""
+    config = load_config("leipzig_heart_center_ecg")
+    assert config.slug == "leipzig_heart_center_ecg"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every channel of every record declares 2000.0(0)/mV, so wfdb yields mV.
+    assert config.signal_unit_scale == 1.0
+    # The 12 SURFACE ECG channels only. Records carry 14, 18, 19 or 20 channels in
+    # six layouts, and only indices 0-11 are the same channel in every record —
+    # index 12 is ABL12, RVA12 or ART depending on the record. Declaring an
+    # intracardiac order here would make ECGDataset(leads=...) return the wrong
+    # physical channel.
+    assert config.leads == 12
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [977]
+    assert config.default_sampling_rate == 977
+    assert config.signal_path_columns == {977: "signal_path"}
+    # Two per-subject CSVs ship with different columns; the splitter joins them.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 39 records from 39 subjects, one each: nothing to group by.
+    assert config.patient_id_column is None
+    # Length runs 75,873 to 8,824,019 samples, so truncation cannot be checked.
+    assert config.validation.expected_samples == {}
+    # NOT a physiologic bound: at +/-10 mV, 24 of the 39 records fail because their
+    # intracardiac channels legitimately reach +/-51 mV. See the config comment.
+    assert config.validation.amplitude_range_mv == (-52.0, 52.0)
+    # Open licence, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+
+
 def test_load_mimic_iv_ecg_config():
     """MIMIC-IV-ECG: the 800k-record credentialed release, aVF/aVL transposed."""
     config = load_config("mimic_iv_ecg")

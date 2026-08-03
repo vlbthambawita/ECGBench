@@ -7,6 +7,7 @@ from . import (  # noqa: F401
     ecg_arrhythmia,
     generic,
     incartdb,
+    leipzig_heart_center_ecg,
     ludb,
     mimic_iv_ecg,
     mimic_iv_ecg_demo,

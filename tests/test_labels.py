@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -981,3 +982,202 @@ class TestMimicIVECGExtICDLabels:
         assert "mimic_iv_ecg_ext_icd_labels" not in available
         # _custom_loaders maps *config* slugs to loaders, and there is no config.
         assert "mimic_iv_ecg_ext_icd" not in _custom_loaders()
+
+
+class TestLeipzigHeartCenterLabels:
+    """Leipzig ships two subject CSVs, six channel layouts and a malformed age."""
+
+    def _tree(self, tmp_path):
+        """A two-record stand-in: one child (19 channels), one adult (14)."""
+        wfdb = pytest.importorskip("wfdb")
+
+        pd.DataFrame({
+            "subject_id": ["001", "007"],
+            "file_name": ["x001", "x007"],
+            "gender": ["M", "M"],
+            "age": ["6.6", ".14.3"],          # the second is the shipped malformation
+            "diagnosis": ["AVRT-WPW", "AVRT-PJRT"],
+            "ap_loacation": ["right posteroseptal", ""],   # source misspelling
+            "ecg_duration": ["0:00:02.0", "0:00:02.0"],
+        }).to_csv(tmp_path / "children-subject-info.csv", index=False)
+
+        pd.DataFrame({
+            "subject_id": ["100"],
+            "file_name": ["x100"],
+            "gender": ["F"],
+            "age": ["64.16"],
+            "diagnosis": ["TOF with VT"],     # no ap_loacation column at all
+            "ecg_duration": ["0:00:02.0"],
+        }).to_csv(tmp_path / "adults-subject-info.csv", index=False)
+
+        # Three layouts, mirroring the real ones: the child has ABL12 at index 12,
+        # the adult puts RVA12 last (like x100), and x007 has no ABL12 at all.
+        layouts = {
+            "x001": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4",
+                     "V5", "V6", "ABL12", "RVA12"],
+            "x007": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4",
+                     "V5", "V6", "RVA12"],
+            "x100": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4",
+                     "V5", "V6", "ABL12", "CS12", "RVA12"],
+        }
+        for record, names in layouts.items():
+            n = len(names)
+            signal = np.tile(np.arange(1954, dtype=np.float64)[:, None] / 1000.0, (1, n))
+            wfdb.wrsamp(record, fs=977, units=["mV"] * n, sig_name=names,
+                        p_signal=signal, fmt=["16"] * n, adc_gain=[2000.0] * n,
+                        baseline=[0] * n, write_dir=str(tmp_path))
+            # One of every kind of annotation this module counts. custom_labels
+            # mirrors what the real .atr files declare — X and b are non-standard
+            # WFDB symbols at label stores 42 and 43 — without which wfdb rewrites
+            # them as '"' NOTE annotations and the aux string absorbs the symbol.
+            wfdb.wrann(
+                record, "atr",
+                np.array([10, 20, 30, 40, 50, 60, 70]),
+                np.array(["N", "X", "X", "/", "Q", "~", "+"]),
+                aux_note=["N-Prex", "AVRT", "AFIB", "/V", "", "", "(N"],
+                fs=977, write_dir=str(tmp_path),
+                custom_labels=[(42, "X", "Tachycardias"), (43, "b", "AV-Block")],
+            )
+        return tmp_path
+
+    def test_malformed_age_is_repaired_and_kept_verbatim(self):
+        """x007 ships '.14.3', which no float parser accepts."""
+        from ecgbench.labels.leipzig_heart_center_ecg import parse_age
+
+        assert parse_age("6.6") == 6.6
+        assert parse_age(".14.3") == 14.3      # single leading '.' stripped
+        assert parse_age("") is None
+        assert parse_age("not-a-number") is None
+        # Only the one-stray-dot shape is repaired; anything else is not guessed.
+        assert parse_age("..14.3") is None
+
+    def test_duration_parses_the_h_m_s_form(self):
+        from ecgbench.labels.leipzig_heart_center_ecg import parse_duration
+
+        assert parse_duration("2:25:29.201") == pytest.approx(8729.201)
+        assert parse_duration("0:1:17.659") == pytest.approx(77.659)
+        assert parse_duration("garbage") is None
+
+    def test_diagnosis_family_is_the_leading_token(self):
+        from ecgbench.labels.leipzig_heart_center_ecg import diagnosis_family
+
+        assert diagnosis_family("AVRT-WPW") == "AVRT"
+        assert diagnosis_family("AVRT-PJRT") == "AVRT"
+        assert diagnosis_family("AVNRT") == "AVNRT"
+        assert diagnosis_family("TOF with VT") == "TOF"
+        assert diagnosis_family("TOF without VT") == "TOF"
+        assert diagnosis_family("") == "UNKNOWN"
+
+    def test_channel_index_finds_channels_by_name_not_position(self):
+        """Index 12 is ABL12, RVA12 or ART depending on the record."""
+        from ecgbench.labels.leipzig_heart_center_ecg import channel_index
+
+        child = "I|II|III|aVR|aVL|aVF|V1|V2|V3|V4|V5|V6|ABL12|RVA12|CS12"
+        x100 = "I|II|III|aVR|aVL|aVF|V1|V2|V3|V4|V5|V6|ABL12|CS12|RVA12"
+        x0028 = "I|II|III|aVR|aVL|aVF|V1|V2|V3|V4|V5|V6|ART|ABL12|RVA12"
+
+        # The same channel sits at three different indices across the three layouts.
+        assert channel_index(child, "RVA12") == 13
+        assert channel_index(x100, "RVA12") == 14
+        assert channel_index(x0028, "RVA12") == 14
+        assert channel_index(x0028, "ABL12") == 13
+        assert channel_index(child, "ABL12") == 12
+        # Absent channels are None, not a wrong index.
+        assert channel_index("I|II|III|aVR|aVL|aVF|V1|V2|V3|V4|V5|V6|RVA12", "ABL12") is None
+        # A list works as well as the '|'-joined column.
+        assert channel_index(["I", "II", "ABL12"], "ABL12") == 2
+
+    def test_the_two_subject_csvs_are_joined_with_a_cohort_column(self, tmp_path):
+        from ecgbench.labels.leipzig_heart_center_ecg import scan_records
+
+        df = scan_records(self._tree(tmp_path))
+
+        assert len(df) == 3
+        # Sorted numerically, not lexically: x001, x007, x100.
+        assert list(df["record_name"]) == ["x001", "x007", "x100"]
+        assert df.set_index("record_name")["cohort"].to_dict() == {
+            "x001": "child", "x007": "child", "x100": "adult",
+        }
+        # The children's misspelled column is exposed corrected, and the adults'
+        # row — whose CSV has no such column at all — comes back null.
+        assert "ap_loacation" not in df.columns
+        assert df.set_index("record_name").loc["x001", "ap_location"] == "right posteroseptal"
+        assert pd.isna(df.set_index("record_name").loc["x100", "ap_location"])
+
+    def test_channel_layout_comes_from_each_records_own_header(self, tmp_path):
+        from ecgbench.labels.leipzig_heart_center_ecg import channel_index, scan_records
+
+        df = scan_records(self._tree(tmp_path)).set_index("record_name")
+
+        assert df["n_signals"].to_dict() == {"x001": 14, "x007": 13, "x100": 15}
+        assert df["sampling_rate"].unique().tolist() == [977]
+        # n_iegm_channels is everything past the 12 ECG leads.
+        assert df["n_iegm_channels"].to_dict() == {"x001": 2, "x007": 1, "x100": 3}
+        # RVA12 is at a different index in each, which is the whole point.
+        assert channel_index(df.loc["x001", "channel_names"], "RVA12") == 13
+        assert channel_index(df.loc["x100", "channel_names"], "RVA12") == 14
+        assert channel_index(df.loc["x007", "channel_names"], "ABL12") is None
+
+    def test_beat_total_excludes_unclassifiable_and_non_beat_marks(self, tmp_path):
+        """The release's 113,924 counts only the classes its README tabulates."""
+        from ecgbench.labels.leipzig_heart_center_ecg import scan_records
+
+        df = scan_records(self._tree(tmp_path)).set_index("record_name")
+        row = df.loc["x001"]
+
+        # 7 annotations per record: N, X, X, /, Q, ~, + -> 4 tabulated beats.
+        assert row["n_annotations"] == 7
+        assert row["n_beats"] == 4
+        assert row["n_unclassifiable"] == 1     # Q
+        assert row["n_quality_marks"] == 1      # ~ — not a beat at all
+        assert row["n_rhythm_changes"] == 1     # +
+        assert row["n_beats"] + row["n_unclassifiable"] + row["n_quality_marks"] \
+            + row["n_rhythm_changes"] == row["n_annotations"]
+
+    def test_aux_strings_are_counted_per_category(self, tmp_path):
+        from ecgbench.labels.leipzig_heart_center_ecg import scan_records
+
+        row = scan_records(self._tree(tmp_path)).set_index("record_name").loc["x001"]
+
+        # The two X beats name their mechanism; the totals must match beat_X.
+        assert row["tachy_AVRT"] == 1
+        assert row["tachy_AFIB"] == 1
+        assert row["beat_X"] == 2
+        assert row["tachy_AVRT"] + row["tachy_AFIB"] == row["beat_X"]
+        assert row["aux_preexcited_N"] == 1      # N-Prex qualifies an N beat
+        assert row["aux_paced_ventricular"] == 1  # /V qualifies a / beat
+        assert row["rhythm_sinus"] == 1           # (N on the + marker
+
+    def test_stratify_class_pools_families_below_the_floor(self, tmp_path):
+        from ecgbench.labels.leipzig_heart_center_ecg import (
+            attach_stratify_class,
+            scan_records,
+        )
+
+        df = attach_stratify_class(scan_records(self._tree(tmp_path)))
+
+        # In this 3-record fixture every family is below MIN_CLASS_RECORDS, so all
+        # of them pool — the mechanism the real 39-record dataset never triggers.
+        assert set(df["stratify_class"]) == {"OTHER"}
+        # The un-pooled family survives alongside it, so nothing is lost.
+        assert df.set_index("record_name")["diagnosis_family"].to_dict() == {
+            "x001": "AVRT", "x007": "AVRT", "x100": "TOF",
+        }
+
+    def test_load_labels_is_indexed_by_the_configs_record_id(self, tmp_path, sample_config):
+        from dataclasses import replace
+
+        from ecgbench.labels.leipzig_heart_center_ecg import load_labels
+
+        config = replace(sample_config, record_id_column="record_name")
+        df = load_labels(self._tree(tmp_path), config)
+
+        assert df.index.name == "record_name"
+        assert list(df.index) == ["x001", "x007", "x100"]
+        assert "stratify_class" in df.columns
+
+    def test_missing_subject_csvs_name_the_release(self, tmp_path):
+        from ecgbench.labels.leipzig_heart_center_ecg import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="leipzig-heart-center-ecg"):
+            scan_records(tmp_path)

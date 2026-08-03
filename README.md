@@ -178,6 +178,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
 | `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `brugada_huca` | I, II, III, aVR, aVL, aVF, V1-V6 |
+| `leipzig_heart_center_ecg` | I, II, III, aVR, aVL, aVF, V1-V6, **then 2-8 intracardiac channels in six different orders** |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -188,6 +189,25 @@ PTBDB is the one dataset that is not 12-lead: it stores 15 signals, the
 conventional twelve plus the three Frank vectorcardiography leads. `leads=` is how
 you take the standard twelve out of it. Its records are also **variable length**
 (32 s to 120 s), so batching needs a fixed `window=` — see `examples/load_ptbdb.py`.
+
+`leipzig_heart_center_ecg` goes further: it is the one dataset where the channel
+count is **not constant**. Every record holds the 12-lead surface ECG *plus* the
+intracardiac electrograms from whichever catheters were in place, giving 14, 18, 19
+or 20 channels in six distinct layouts — and only channels 0-11 are the same channel
+in the same position in every record (index 12 is `ABL12`, `RVA12` or `ART`
+depending on the record). Its `lead_names` therefore declares the ECG and nothing
+else, deliberately, so `leads=` resolves to the right physical lead everywhere. To
+reach an intracardiac channel, look it up by name in that record's own header:
+
+```python
+from ecgbench.labels.leipzig_heart_center_ecg import channel_index
+
+channel_index(labels["channel_names"], "RVA12")   # 13 in most records, 18 in x100
+channel_index(labels["channel_names"], "CS12")    # None where that catheter is absent
+```
+
+Pass `leads=` if you want a homogeneous batch; without it a batch mixes 14-, 18-,
+19- and 20-channel tensors. See `examples/load_leipzig_heart_center_ecg.py`.
 
 `incartdb` is the one dataset whose primary labels are **reference beat
 annotations** rather than record-level diagnoses: 175,907 manually corrected beats

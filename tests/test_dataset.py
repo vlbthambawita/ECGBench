@@ -342,6 +342,29 @@ class TestShippedLeadNames:
         # leads is a count of what lead_names lists, not an assumption of 12.
         assert len(names) == config.leads
 
+    def test_leipzig_declares_the_ecg_subset_of_a_variable_channel_layout(self):
+        """Leipzig is the one dataset whose lead_names is a strict SUBSET of the
+        channels a record holds, and that is deliberate.
+
+        Records carry 14, 18, 19 or 20 channels in six layouts, and only indices
+        0-11 — the surface ECG — are the same channel in every record. Index 12 is
+        ABL12, RVA12 or ART depending on the record, so no single list can describe
+        the intracardiac channels. Declaring one would make
+        ECGDataset(leads=["RVA12"]) return a different physical channel per record.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("leipzig_heart_center_ecg")
+        assert config.leads == 12
+        assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                     "V1", "V2", "V3", "V4", "V5", "V6"]
+        # No intracardiac channel is declared, precisely because their order varies.
+        for channel in ("ABL12", "RVA12", "CS12", "ART", "ABL_uni"):
+            assert channel not in config.lead_names
+        # Variable length rules out the truncation check, so it must stay unset.
+        assert config.validation.expected_samples == {}
+
+
     def test_ptbdb_declares_fifteen_leads(self):
         """PTBDB is the one dataset that is not 12-lead: 12 + Frank vx/vy/vz."""
         from ecgbench.config import load_config
