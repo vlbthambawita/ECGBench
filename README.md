@@ -277,8 +277,10 @@ first, then lead selection, then units, then `transform`.
 ### Derived datasets (annotations for another dataset's records)
 
 Some releases contain no recordings of their own — they annotate someone else's.
-**PTB-XL+** is the example: 3 feature tables, 2 statement tables, derived median
-beats and 283,326 fiducial-point files, all keyed by PTB-XL's `ecg_id`.
+There are two: **PTB-XL+** (3 feature tables, 2 statement tables, derived median
+beats and 283,326 fiducial-point files, all keyed by PTB-XL's `ecg_id`) and
+**MIMIC-IV-ECG-Ext-ICD** (ICD-10-CM discharge diagnoses for all 800,035
+MIMIC-IV-ECG studies, keyed by `study_id`).
 
 Those get **no config and no splits**, deliberately. Their records are the host
 dataset's, so generating folds would create a second ECGBench partition of the
@@ -302,6 +304,23 @@ You need both downloads, since PTB-XL+ has no waveforms. Feature columns are
 provider-prefixed because the three providers reuse names. See
 `examples/load_ptbxl_plus.py`, and the dataset page for the release's own defects
 — notably that `12sl_features.csv` ships with no key column.
+
+Ext-ICD works the same way, and adds one wrinkle worth knowing: it ships the
+upstream authors' **own** 20-fold split alongside the labels, which is
+independent of ECGBench's 10 folds. Reproduce published numbers on one or work on
+ECGBench's folds on the other, but never cross them.
+
+```python
+from ecgbench.labels.mimic_iv_ecg_ext_icd import label_set, load_ext_icd, multi_hot
+
+# prefix= because MIMIC-IV-ECG's own label frame also carries ecg_time.
+icd = load_ext_icd("/data/mimic-iv-ecg-ext-icd-labels/1.0.1/", prefix="icd_")
+codes = label_set(icd, prefix="icd_")          # 1076, the published label set
+targets = multi_hot(icd.head(1000), codes, prefix="icd_")
+```
+
+Only 58.5% of its records carry a diagnosis at all, and the empty ones are empty
+*lists* rather than nulls — see `examples/load_mimic_iv_ecg_ext_icd.py`.
 
 ### Restricted and credentialed datasets
 

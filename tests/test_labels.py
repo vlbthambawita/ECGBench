@@ -785,3 +785,199 @@ class TestPTBXLPlusLabels:
 
         assert "ptbxl_plus" not in list_available_configs()
         assert "ptb_xl_plus" not in list_available_configs()
+
+
+class TestMimicIVECGExtICDLabels:
+    """Ext-ICD is an ICD-10 label layer over MIMIC-IV-ECG's records."""
+
+    #: Deliberately not ascending, and one row with no linked diagnosis at all.
+    STUDY_IDS = [40689238, 44458630, 49036311, 45090959, 48446569]
+
+    def _table(self, tmp_path, gender=None):
+        """A five-row stand-in for records_w_diag_icd10.csv."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import SOURCE_CSV
+
+        pd.DataFrame({
+            "study_id": self.STUDY_IDS,
+            "subject_id": [10000032, 10000032, 10000032, 10000117, 10000117],
+            "ecg_time": ["2180-07-23 08:44:00"] * 5,
+            # 'W19XXXA' carries the trailing placeholder Xs; 'I2510' has real
+            # superclasses; the fourth row has no linked diagnosis at all.
+            "ed_diag_ed": [str(["R4182"]), str(["R4182"]), str([]), str([]),
+                           str(["W19XXXA"])],
+            "ed_diag_hosp": [str([])] * 5,
+            "hosp_diag_hosp": [str([])] * 5,
+            "all_diag_hosp": [str(["I2510"]), str(["I2510"]), str(["I2510"]),
+                              str([]), str([])],
+            "all_diag_all": [str(["I2510", "E785"]), str(["I2510"]),
+                             str(["I2510", "W19XXXA"]), str([]), str(["E785"])],
+            "gender": gender or ["F", "F", "F", "M", "missing"],
+            "age": [52.0, 52.0, 52.0, 55.0, 57.0],
+            "anchor_age": [52.0, 52.0, 52.0, 48.0, 48.0],
+            "anchor_year": [2180.0] * 5,
+            "dod": [None] * 5,
+            "ecg_no_within_stay": [0, 1, 0, -1, 0],
+            "ecg_taken_in_ed": [True, True, False, False, True],
+            "ecg_taken_in_hosp": [False, False, True, False, False],
+            "ecg_taken_in_ed_or_hosp": [True, True, True, False, True],
+            "fold": [0, 0, 0, 18, 19],
+            "strat_fold": [3, 3, 3, 18, 19],
+        }).to_csv(tmp_path / SOURCE_CSV, index=False)
+        return tmp_path
+
+    def test_indexed_by_the_host_dataset_key_in_file_order(self, tmp_path):
+        """The index must be MIMIC-IV-ECG's study_id so a reindex onto it works."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        assert df.index.name == "study_id"
+        assert list(df.index) == self.STUDY_IDS
+        assert "study_id" not in df.columns
+        assert df.loc[40689238, "all_diag_all"] == ["I2510", "E785"]
+
+    def test_empty_diagnoses_are_lists_not_nulls(self, tmp_path):
+        """41.5% of the real table has no linked diagnosis; that is a value."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        assert df.loc[45090959, "all_diag_all"] == []
+        assert df["all_diag_all"].notna().all()  # notna() cannot find them
+
+    def test_missing_gender_marker_becomes_nan(self, tmp_path):
+        """gender encodes missing as the string 'missing', not as a null."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        assert pd.isna(df.loc[48446569, "gender"])
+        assert df["gender"].isna().sum() == 1
+        assert "missing" not in set(df["gender"].dropna())
+
+    def test_trailing_placeholder_xs_are_stripped_before_propagation(self):
+        """The step that makes the published 1,076-code set reproducible."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import propagate_superclasses
+
+        # W19XXXA -> W19XX (truncate) -> W19 (strip Xs). Without the strip this
+        # would also yield 'W19X' and 'W19XX', and the label set comes out 1089.
+        assert propagate_superclasses(["W19XXXA"]) == ["W19"]
+        assert propagate_superclasses(["I2510"]) == ["I25", "I251", "I2510"]
+        # Codes with no three-character category contribute nothing.
+        assert propagate_superclasses(["A1"]) == []
+
+    def test_label_set_counts_records_and_applies_the_threshold(self, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import label_set, load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        # I25/I251/I2510 appear in 3 records, E78/E785 in 2, W19 in 1.
+        assert label_set(df, min_count=3) == ["I25", "I251", "I2510"]
+        assert label_set(df, min_count=1) == [
+            "I25", "I251", "I2510", "E78", "E785", "W19",
+        ]
+        # Ordered by descending record count, so index 0 is the most common code.
+        assert label_set(df, min_count=2)[0] in {"I25", "I251", "I2510"}
+
+    def test_multi_hot_credits_superclasses(self, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd, multi_hot
+
+        df = load_ext_icd(self._table(tmp_path))
+        targets = multi_hot(df, ["I25", "I251", "I2510", "E785", "W19"])
+
+        assert list(targets.index) == self.STUDY_IDS
+        # A record coded I2510 is positive for its two parent categories too.
+        assert targets.loc[44458630].tolist() == [1, 1, 1, 0, 0]
+        assert targets.loc[49036311].tolist() == [1, 1, 1, 0, 1]
+        # No diagnosis -> all zero, not dropped.
+        assert targets.loc[45090959].sum() == 0
+
+    def test_ecg_subsets_are_the_benchmark_subsets(self, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import ecg_subset, load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        assert len(ecg_subset(df, "ALL")) == 4
+        assert len(ecg_subset(df, "ED")) == 3
+        assert len(ecg_subset(df, "HOSP")) == 1
+        # Case-insensitive, and an unknown subset is refused rather than empty.
+        assert len(ecg_subset(df, "ed")) == 3
+        with pytest.raises(ValueError, match="subset must be one of"):
+            ecg_subset(df, "outpatient")
+
+    def test_upstream_folds_are_zero_indexed_and_separate_from_ecgbenchs(self, tmp_path):
+        """0-17 train, 18 val, 19 test -- not ECGBench's 1-indexed ten folds."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd, upstream_fold_split
+
+        df = load_ext_icd(self._table(tmp_path))
+
+        assert list(upstream_fold_split(df, "train").index) == self.STUDY_IDS[:3]
+        assert list(upstream_fold_split(df, "val").index) == [45090959]
+        assert list(upstream_fold_split(df, "test").index) == [48446569]
+        # strat_fold is a different column and a different partition.
+        assert list(upstream_fold_split(df, "train", stratified=True).index) == \
+            self.STUDY_IDS[:3]
+        with pytest.raises(ValueError, match="split must be one of"):
+            upstream_fold_split(df, "validation")
+
+    def test_prefix_keeps_ecg_time_from_colliding_with_the_host(self, tmp_path):
+        """MIMIC-IV-ECG's own label frame also carries ecg_time."""
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path), prefix="icd_")
+
+        assert "icd_ecg_time" in df.columns
+        assert "ecg_time" not in df.columns
+        assert df.index.name == "study_id"  # the key itself is not prefixed
+
+    def test_every_helper_accepts_the_prefix(self, tmp_path):
+        """A prefixed frame must not silently break the helpers.
+
+        The prefix cannot be inferred: 'fold' and 'strat_fold' share a suffix, so
+        a suffix match on a prefixed frame is ambiguous. Hence prefix= everywhere.
+        """
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import (
+            ecg_subset,
+            label_set,
+            load_ext_icd,
+            multi_hot,
+            upstream_fold_split,
+        )
+
+        df = load_ext_icd(self._table(tmp_path), prefix="icd_")
+
+        assert label_set(df, min_count=3, prefix="icd_") == ["I25", "I251", "I2510"]
+        assert len(ecg_subset(df, "ED", prefix="icd_")) == 3
+        assert list(upstream_fold_split(df, "test", prefix="icd_").index) == [48446569]
+        targets = multi_hot(df, ["I25", "W19"], prefix="icd_")
+        assert targets.loc[49036311].tolist() == [1, 1]
+
+        # Without the prefix the column is genuinely absent, and the error says so
+        # rather than returning an empty frame.
+        with pytest.raises(ValueError, match="Pass prefix="):
+            ecg_subset(df, "ED")
+
+    def test_column_subset_keeps_the_key(self, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        df = load_ext_icd(self._table(tmp_path), columns=["all_diag_all", "fold"])
+
+        assert list(df.columns) == ["all_diag_all", "fold"]
+        assert list(df.index) == self.STUDY_IDS
+
+    def test_missing_source_names_the_release_and_the_agreement(self, tmp_path):
+        from ecgbench.labels.mimic_iv_ecg_ext_icd import load_ext_icd
+
+        with pytest.raises(LabelSourceMissingError, match="mimic-iv-ecg-ext-icd-labels"):
+            load_ext_icd(tmp_path)
+
+    def test_there_is_deliberately_no_ext_icd_config(self):
+        """A config would let `ecgbench splits` build a second MIMIC-IV-ECG partition."""
+        from ecgbench.config import list_available_configs
+        from ecgbench.labels import _custom_loaders
+
+        available = list_available_configs()
+        assert "mimic_iv_ecg_ext_icd" not in available
+        assert "mimic_iv_ecg_ext_icd_labels" not in available
+        # _custom_loaders maps *config* slugs to loaders, and there is no config.
+        assert "mimic_iv_ecg_ext_icd" not in _custom_loaders()

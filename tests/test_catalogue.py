@@ -153,8 +153,16 @@ class TestKnownRelationships:
         link = next(
             x for x in by_slug["mimic-iv-ecg-ext-icd"].related if x.slug == "mimic-iv-ecg"
         )
+        # Declared on mimic-iv-ecg as "has_derivative"; this side is derived.
         assert link.relation == "derived_from"
+        assert link.derived is True
         assert link.verified is True
+        assert link.shares_records is True
+        # An ICD label layer over another dataset's records gets no split of its
+        # own, and its upstream 20 folds must not be crossed with ECGBench's 10.
+        # Both consequences have to survive the inversion.
+        assert "no separate fold assignment" in link.note
+        assert "20-fold" in link.note
 
     def test_unverified_claims_are_flagged(self, by_slug):
         """Relationships taken from documentation must not claim verification.

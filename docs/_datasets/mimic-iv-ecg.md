@@ -34,8 +34,17 @@ related:
     shares_records: true
     verified: true
     note: >
-      Adds ED and hospital ICD-10 diagnoses. Covers all 800,035 studies and all
-      161,352 subjects exactly, and joins cleanly on study_id.
+      Ext-ICD adds ED and hospital ICD-10-CM discharge diagnoses and ships no
+      waveforms of its own. Verified from the files: all 800,035 study_ids and all
+      161,352 subject_ids are present with none missing and none extra, file_name
+      matches record_list.csv's path in 100% of rows, and ecg_time agrees in 100%.
+      Because Ext-ICD's records are MIMIC-IV-ECG's, ECGBench publishes no separate
+      fold assignment for Ext-ICD — you use the mimic_iv_ecg folds and join its
+      columns onto them.
+      Ext-ICD does carry the upstream authors' own 20-fold split, which is
+      independent of ECGBench's 10: 79.3% of its test fold sits in ECGBench's train
+      split, and 6,449 of that fold's 8,067 patients appear there. Pick one
+      partition and stay inside it.
 
 sections:
   - type: description
@@ -302,5 +311,5 @@ sections:
       - { label: "PhysioNet page", url: "https://physionet.org/content/mimic-iv-ecg/1.0/" }
       - { label: "Dataset DOI", url: "https://doi.org/10.13026/4nqg-sb35" }
       - { label: "Open demo subset (659 records, no labels)", url: "https://physionet.org/content/mimic-iv-ecg-demo/0.1/" }
-      - { label: "MIMIC-IV-ECG-Ext-ICD (ICD-10 diagnoses)", url: "https://physionet.org/content/mimic-iv-ecg-ext-icd/1.0.1/" }
+      - { label: "MIMIC-IV-ECG-Ext-ICD (ICD-10 diagnoses)", url: "https://physionet.org/content/mimic-iv-ecg-ext-icd-labels/1.0.1/" }
 ---
