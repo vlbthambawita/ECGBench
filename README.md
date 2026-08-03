@@ -180,6 +180,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `brugada_huca` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `leipzig_heart_center_ecg` | I, II, III, aVR, aVL, aVF, V1-V6, **then 2-8 intracardiac channels in six different orders** |
 | `norwegian_athlete_ecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
+| `mhd_effect_ecg_mri` | I, II, III, aVR, aVL, aVF, V1-V6 — but **14 of 53 records hold only I, II, III** |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -266,6 +267,29 @@ Human labels are degenerate (26 of 28 "Normal ECG", no abnormal class at all), s
 folds are stratified on `cardiologist_primary_rhythm` instead, and with 2-3 records
 per fold you should rotate folds via `split=None, fold_numbers=[...]` rather than use
 the default 24/2/2 mapping. See `examples/load_norwegian_athlete_ecg.py`.
+
+`mhd_effect_ecg_mri` is the one dataset where the **distortion is the point**: 53
+ECGs recorded inside 1T, 3T and 7T MRI scanners, where the magnetohydrodynamic
+effect (blood ions moving through the static B0 field) superimposes a voltage that
+buries the P wave, ST segment and T wave. Amplitudes reach **−31 mV**, far past the
+recorders' nominal ±6 mV and ±2.4 mV input ranges, so `amplitude_range_mv` is ±35 —
+a conventional ±10 would exclude 16 of 53 records for being exactly what they are
+meant to be. 10 records are reference ECGs taken *outside* the bore for the same
+subjects (−0.88…+3.09 mV over the same window), standing in for the in-bore ground
+truth that cannot be measured. There is no diagnosis to predict: all subjects were
+healthy and the 14,950 manual QRS marks carry no beat classification, so the label
+is the acquisition condition and the task is signal separation.
+
+It is also the one dataset whose **patient ID had to be derived**. Filename subject
+numbers are scoped per scanner — `ECGMRI1T01` and `ECGMRI3T01` are different people
+— and three slots belong to subjects recorded in more than one scanner, so grouping
+on the number would split one person across folds. `subject_key` is the
+sex/age/weight/height tuple instead, collapsing 29 slots into 26 people; folds are
+grouped on it and no subject spans a fold. Records mix 12-lead and 3-lead layouts
+(only I, II, III are present in every one) and run 24 s to 12 min, so batching needs
+both `leads=` and `window=(0, 25000)`. Note the shipped release has 53 records where
+the README, PhysioNet page and CinC paper all say 43. See
+`examples/load_mhd_effect_ecg_mri.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

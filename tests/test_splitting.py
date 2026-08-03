@@ -1390,3 +1390,141 @@ class TestNorwegianAthleteECGSplitter:
         assert config.patient_id_column is None
         seen = pd.concat(result.folds.values())[config.record_id_column]
         assert len(seen) == len(df) and seen.is_unique
+
+
+class TestMHDEffectECGMRISplitter:
+    """Folds must group by the DERIVED subject key, not the per-scanner number."""
+
+    def _header(self, record, *, field="3T", position="Feet first (Ff)",
+                sex="Male", age="27years", weight="75kg", height="190cm"):
+        return (
+            f"{record} 3 1024 25000\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 I\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 II\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 III\n"
+            f"#--Magnetic field strength:{field}\n"
+            "#--MR scanner:Siemens Magnetom Skyra\n"
+            "#--Orientation of the static magnetic field (B0):Horizontal\n"
+            "#--ECG recorder:MIPM Tesla M3 Patient Monitor\n"
+            "#--ADC resolution:24bit\n"
+            "#--ADC input voltage range:+/-2.4mV\n"
+            "#--ECG lead configuration:Reduced Einthoven Triangle\n"
+            f"#--Sex:{sex}\n"
+            f"#--Age:{age}\n"
+            f"#--Weight:{weight}\n"
+            f"#--Height:{height}\n"
+            f"#--Positon in the scanner:{position}\n"
+            "#--Respiration:Spontaneous respiration\n"
+        )
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="mhd_effect_ecg_mri",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="subject_key",
+            default_sampling_rate=1024, sampling_rates=[1024],
+            signal_path_columns={1024: "signal_path"}, label_column="condition",
+            url="https://physionet.org/content/mhd-effect-ecg-mri/1.0.0/",
+        )
+
+    def _source(self, tmp_path, n_subjects=12):
+        """One 3T + one reference record per subject, plus a cross-scanner pair.
+
+        Subject 01 is deliberately recorded at both 3T and 7T under the SAME
+        demographics, mirroring the real 3T01 == 7T04 case.
+        """
+        records = {}
+        for i in range(1, n_subjects + 1):
+            demo = dict(age=f"{20 + i}years", weight=f"{60 + i}kg", height=f"{170 + i}cm",
+                        sex="Female" if i % 3 == 0 else "Male")
+            records[f"ECGMRI3T{i:02d}Ff"] = self._header(f"ECGMRI3T{i:02d}Ff", **demo)
+            records[f"ECGMRI3T{i:02d}Out"] = self._header(
+                f"ECGMRI3T{i:02d}Out", field="Outside the scanner",
+                position="Outside the scanner", **demo,
+            )
+            if i == 1:
+                # Same person, different scanner and different subject slot.
+                records["ECGMRI7T09Ff"] = self._header(
+                    "ECGMRI7T09Ff", field="7T", **demo
+                )
+        (tmp_path / "RECORDS").write_text("\n".join(records) + "\n", encoding="utf-8")
+        for record, text in records.items():
+            (tmp_path / f"{record}.hea").write_text(text, encoding="utf-8")
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.mhd_effect_ecg_mri import MHDEffectECGMRISplitter
+
+        assert isinstance(get_splitter("mhd_effect_ecg_mri"), MHDEffectECGMRISplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("mhd_effect_ecg_mri")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 25  # 12 subjects x 2 records + 1 cross-scanner record
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["signal_path"].tolist() == df["record_name"].tolist()
+        assert {"condition", "subject_key", "n_qrs"} <= set(df.columns)
+
+    def test_cached_csv_keeps_subject_number_a_string(self, sample_config, tmp_path):
+        """'01' must not come back as int 1 — it would stop matching the filename."""
+        config = self._config(sample_config)
+        splitter = get_splitter("mhd_effect_ecg_mri")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "ECGMRI3T01Ff.hea").unlink()   # force the cache path
+        df = splitter.load_metadata(path, config)
+
+        assert df["subject_number"].map(type).eq(str).all()
+        assert "01" in set(df["subject_number"])
+
+    def test_stratification_labels_come_from_the_label_loader(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("mhd_effect_ecg_mri")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "condition"
+        assert set(labels) == {"3T", "7T", "reference"}
+
+    def test_stratification_requires_the_subject_column(self, sample_config):
+        """Without it, split_dataset would silently fall back to ungrouped folds."""
+        splitter = get_splitter("mhd_effect_ecg_mri")
+        df = pd.DataFrame({"record_name": ["ECGMRI3T01Ff"], "condition": ["3T"]})
+
+        with pytest.raises(ValueError, match="subject_key"):
+            splitter.get_stratification_labels(df, self._config(sample_config))
+
+    def test_no_subject_spans_a_fold(self, sample_config, tmp_path):
+        """The whole point of the derived key: one person, one fold.
+
+        Subject 01 appears as slots 3T01 and 7T09, so a filename-based key would
+        scatter them. Folds must keep every record of one subject_key together.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("mhd_effect_ecg_mri")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assigned = pd.concat(
+            [fold.assign(fold_id=n) for n, fold in result.folds.items()]
+        )
+        per_subject = assigned.groupby("subject_key")["fold_id"].nunique()
+        assert (per_subject == 1).all(), per_subject[per_subject > 1].to_dict()
+
+        # And specifically the cross-scanner subject.
+        cross = assigned[assigned["scanner_subject_slot"].isin(["3T01", "7T09"])]
+        assert cross["subject_key"].nunique() == 1
+        assert cross["fold_id"].nunique() == 1
+        assert len(cross) == 3
+
+        seen = assigned[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique

@@ -1355,3 +1355,230 @@ class TestNorwegianAthleteECGLabels:
 
         with pytest.raises(LabelSourceMissingError, match="norwegian-athlete-ecg"):
             load_labels(tmp_path, self._config(sample_config))
+
+
+class TestMHDEffectECGMRILabels:
+    """No diagnosis to predict: the labels are acquisition conditions + QRS counts."""
+
+    #: A 3-channel header keeps the fixtures small. Note "Positon" — the source's
+    #: own misspelling, which the parser must match.
+    def _header(self, record, *, field="3T", scanner="Siemens Magnetom Skyra",
+                b0="Horizontal", position="Feet first (Ff)", sex="Male",
+                age="27years", weight="75kg", height="190cm", n_samples=25000,
+                recorder="Getemed CM 3000, 12-lead Holter ECG",
+                lead_config="Diagnostic 12 lead ECG"):
+        return (
+            f"{record} 3 1024 {n_samples}\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 I\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 II\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 III\n"
+            "# \n"
+            "#*Technical parameters of the MR scanner:\n"
+            f"#--Magnetic field strength:{field}\n"
+            f"#--MR scanner:{scanner}\n"
+            f"#--Orientation of the static magnetic field (B0):{b0}\n"
+            "#*Technical parameters of the ECG hardware: \n"
+            f"#--ECG recorder:{recorder}\n"
+            "#--ADC resolution:12bit\n"
+            "#--ADC input voltage range:+/-6mV\n"
+            f"#--ECG lead configuration:{lead_config}\n"
+            "#*Information about the subject: \n"
+            f"#--Sex:{sex}\n"
+            f"#--Age:{age}\n"
+            f"#--Weight:{weight}\n"
+            f"#--Height:{height}\n"
+            f"#--Positon in the scanner:{position}\n"
+            "#--Respiration:Spontaneous respiration\n"
+        )
+
+    def _tree(self, tmp_path, headers):
+        """Write RECORDS plus one .hea per {record: header} entry."""
+        (tmp_path / "RECORDS").write_text("\n".join(headers) + "\n", encoding="utf-8")
+        for record, text in headers.items():
+            (tmp_path / f"{record}.hea").write_text(text, encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config,
+            slug="mhd_effect_ecg_mri",
+            record_id_column="record_name",
+            patient_id_column="subject_key",
+            default_sampling_rate=1024,
+            signal_path_columns={1024: "signal_path"},
+            url="https://physionet.org/content/mhd-effect-ecg-mri/1.0.0/",
+        )
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("mhd_effect_ecg_mri").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # .hea comment block + .qrs files
+        assert spec.join_column == "record_name"
+
+    def test_parse_record_name_splits_field_subject_and_position(self):
+        from ecgbench.labels.mhd_effect_ecg_mri import parse_record_name
+
+        parsed = parse_record_name("ECGMRI3T04Ff")
+        assert parsed["scanner_field_T"] == 3
+        assert parsed["field_strength_T"] == 3
+        assert parsed["subject_number"] == "04"        # zero-padded, stays a string
+        assert parsed["scanner_subject_slot"] == "3T04"
+        assert parsed["position"] == "Feet first"
+        assert parsed["run"] == 1
+        assert parsed["is_reference"] is False
+        assert parsed["condition"] == "3T"
+
+    def test_reference_records_get_zero_field_but_keep_their_scanner(self):
+        """B0 is 0 outside the bore, yet the session still belongs to a scanner."""
+        from ecgbench.labels.mhd_effect_ecg_mri import parse_record_name
+
+        parsed = parse_record_name("ECGMRI7T02Out")
+        assert parsed["is_reference"] is True
+        assert parsed["field_strength_T"] == 0     # what the subject was exposed to
+        assert parsed["scanner_field_T"] == 7      # which session it belongs to
+        assert parsed["condition"] == "reference"
+
+    def test_repeated_runs_are_numbered(self):
+        """ECGMRI3T09Ff1/2/3 are three feet-first runs of one subject."""
+        from ecgbench.labels.mhd_effect_ecg_mri import parse_record_name
+
+        assert [parse_record_name(f"ECGMRI3T09Ff{n}")["run"] for n in (1, 2, 3)] == [1, 2, 3]
+        assert parse_record_name("ECGMRI3T09Hf")["run"] == 1
+
+    def test_unparseable_record_name_raises(self):
+        from ecgbench.labels.mhd_effect_ecg_mri import parse_record_name
+
+        with pytest.raises(ValueError, match="does not match the documented convention"):
+            parse_record_name("someRecord01")
+        with pytest.raises(ValueError, match="unknown position suffix"):
+            parse_record_name("ECGMRI3T04Zz")
+
+    def test_parses_the_misspelled_position_key(self, tmp_path):
+        """The header key is '#--Positon in the scanner', not 'Position'."""
+        from ecgbench.labels.mhd_effect_ecg_mri import parse_header_comments
+
+        record = "ECGMRI3T04Ff"
+        (tmp_path / f"{record}.hea").write_text(self._header(record), encoding="utf-8")
+        fields = parse_header_comments(tmp_path / f"{record}.hea")
+
+        assert fields["position_header"] == "Feet first (Ff)"
+        assert fields["mr_scanner"] == "Siemens Magnetom Skyra"
+        assert fields["lead_config"] == "Diagnostic 12 lead ECG"
+        assert fields["respiration"] == "Spontaneous respiration"
+        assert fields["n_signals"] == 3
+        assert fields["sampling_rate"] == 1024
+        assert fields["channel_names"] == "I|II|III"
+        assert fields["duration_seconds"] == round(25000 / 1024, 3)
+
+    def test_subject_key_reunites_the_same_person_across_scanners(self, tmp_path, sample_config):
+        """The real trap: subject numbers are per-scanner, so 3T01 != 1T01.
+
+        Grouping on the filename number would split one person across folds, which
+        is leakage in a dataset built to compare field strengths.
+        """
+        from ecgbench.labels.mhd_effect_ecg_mri import load_labels
+
+        same = dict(sex="Male", age="27years", weight="75kg", height="190cm")
+        other = dict(sex="Female", age="29years", weight="60kg", height="165cm")
+        tree = self._tree(tmp_path, {
+            "ECGMRI1T01Sup": self._header("ECGMRI1T01Sup", field="1T", position="Supine", **same),
+            "ECGMRI3T02Ff": self._header("ECGMRI3T02Ff", **same),
+            "ECGMRI7T05Ff": self._header("ECGMRI7T05Ff", field="7T", **same),
+            "ECGMRI3T01Ff": self._header("ECGMRI3T01Ff", **other),
+        })
+        df = load_labels(tree, self._config(sample_config))
+
+        # Three filename slots, one person.
+        assert df.loc["ECGMRI1T01Sup", "subject_key"] == df.loc["ECGMRI3T02Ff", "subject_key"]
+        assert df.loc["ECGMRI7T05Ff", "subject_key"] == df.loc["ECGMRI3T02Ff", "subject_key"]
+        # Same subject NUMBER, different person — must not collide.
+        assert df.loc["ECGMRI3T01Ff", "subject_key"] != df.loc["ECGMRI1T01Sup", "subject_key"]
+        assert df["scanner_subject_slot"].nunique() == 4
+        assert df["subject_key"].nunique() == 2
+
+    def test_position_disagreement_is_flagged_not_resolved(self, tmp_path, sample_config):
+        """ECGMRI3T01Hf's filename says head-first; its header says feet-first."""
+        from ecgbench.labels.mhd_effect_ecg_mri import load_labels
+
+        tree = self._tree(tmp_path, {
+            "ECGMRI3T01Hf": self._header("ECGMRI3T01Hf", position="Feet first (Ff)"),
+            "ECGMRI3T01Ff": self._header("ECGMRI3T01Ff", position="Feet first (Ff)"),
+        })
+        df = load_labels(tree, self._config(sample_config))
+
+        assert bool(df.loc["ECGMRI3T01Hf", "position_disagrees"]) is True
+        assert df.loc["ECGMRI3T01Hf", "position"] == "Head first"          # filename
+        assert df.loc["ECGMRI3T01Hf", "position_header"] == "Feet first (Ff)"
+        assert bool(df.loc["ECGMRI3T01Ff", "position_disagrees"]) is False
+
+    def test_reference_record_naming_a_field_strength_is_flagged(self, tmp_path, sample_config):
+        """ECGMRI1T01Out says field '1T' though it was recorded outside the bore.
+
+        Filtering references on field_strength_header would silently miss it, so
+        is_reference/condition come from the filename instead.
+        """
+        from ecgbench.labels.mhd_effect_ecg_mri import load_labels
+
+        tree = self._tree(tmp_path, {
+            # The inconsistent one: position says outside, field strength says 1T.
+            "ECGMRI1T01Out": self._header(
+                "ECGMRI1T01Out", field="1T", b0="Vertical",
+                position="Outside the scanner",
+            ),
+            # The other nine look like this.
+            "ECGMRI7T02Out": self._header(
+                "ECGMRI7T02Out", field="Outside the scanner",
+                b0="Outside the scanner", position="Outside the scanner",
+            ),
+        })
+        df = load_labels(tree, self._config(sample_config))
+
+        assert bool(df.loc["ECGMRI1T01Out", "reference_header_agrees"]) is False
+        assert bool(df.loc["ECGMRI7T02Out", "reference_header_agrees"]) is True
+        # Both are still recognised as references, which is the point.
+        assert df["is_reference"].all()
+        assert set(df["condition"]) == {"reference"}
+
+    def test_demographics_are_parsed_to_numbers_and_kept_raw(self, tmp_path, sample_config):
+        from ecgbench.labels.mhd_effect_ecg_mri import load_labels
+
+        tree = self._tree(tmp_path, {"ECGMRI3T04Ff": self._header("ECGMRI3T04Ff")})
+        row = load_labels(tree, self._config(sample_config)).loc["ECGMRI3T04Ff"]
+
+        assert row["age_raw"] == "27years" and row["age"] == 27.0
+        assert row["weight_raw"] == "75kg" and row["weight"] == 75.0
+        assert row["height_raw"] == "190cm" and row["height"] == 190.0
+
+    def test_qrs_counts_separate_unexpected_symbols(self, tmp_path):
+        """All 14,950 marks in v1.0.0 are 'N', and they are POSITIONS not classes."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.mhd_effect_ecg_mri import count_qrs
+
+        wfdb.wrann("ECGMRI3T04Ff", "qrs",
+                   sample=np.array([100, 200, 300, 400]),
+                   symbol=["N", "N", "N", "V"], write_dir=str(tmp_path))
+        counts = count_qrs(tmp_path / "ECGMRI3T04Ff")
+
+        assert counts["n_qrs"] == 3
+        assert counts["n_qrs_other"] == 1
+
+    def test_missing_annotation_file_does_not_kill_the_scan(self, tmp_path):
+        pytest.importorskip("wfdb")
+
+        from ecgbench.labels.mhd_effect_ecg_mri import count_qrs
+
+        assert count_qrs(tmp_path / "ECGMRI9T99Ff") == {"n_qrs": 0, "n_qrs_other": 0}
+
+    def test_header_listed_in_records_but_absent_names_the_release(self, tmp_path, sample_config):
+        from ecgbench.labels.mhd_effect_ecg_mri import scan_records
+
+        (tmp_path / "RECORDS").write_text("ECGMRI3T04Ff\nECGMRI3T05Ff\n", encoding="utf-8")
+        (tmp_path / "ECGMRI3T04Ff.hea").write_text(
+            self._header("ECGMRI3T04Ff"), encoding="utf-8"
+        )
+        with pytest.raises(LabelSourceMissingError, match="mhd-effect-ecg-mri"):
+            scan_records(tmp_path, self._config(sample_config))

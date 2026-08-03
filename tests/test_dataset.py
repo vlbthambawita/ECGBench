@@ -345,6 +345,23 @@ class TestShippedLeadNames:
         # leads is a count of what lead_names lists, not an assumption of 12.
         assert len(names) == config.leads
 
+    def test_mhd_declares_the_12_lead_layout_that_only_39_of_53_records_use(self):
+        """The MHD dataset ships two channel layouts, and only 0-2 are shared.
+
+        39 records are diagnostic 12-lead (Getemed CM 3000); 14 are 3-lead
+        I/II/III (MRI-conditional MIPM Tesla M3). lead_names declares the 12-lead
+        layout, so leads=["I"|"II"|"III"] resolves everywhere while anything past
+        III raises on the 14 three-lead records rather than returning the wrong
+        physical channel.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("mhd_effect_ecg_mri")
+        assert config.leads == 12
+        assert config.lead_names[:3] == ["I", "II", "III"]
+        assert config.lead_names[3:6] == ["aVR", "aVL", "aVF"]
+        assert config.lead_names[6:] == ["V1", "V2", "V3", "V4", "V5", "V6"]
+
     def test_leipzig_declares_the_ecg_subset_of_a_variable_channel_layout(self):
         """Leipzig is the one dataset whose lead_names is a strict SUBSET of the
         channels a record holds, and that is deliberate.

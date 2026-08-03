@@ -143,6 +143,35 @@ def test_load_norwegian_athlete_ecg_config():
     assert config.publish_fold_csvs is True
 
 
+def test_load_mhd_effect_ecg_mri_config():
+    """MHD effect: mixed 12/3-lead, variable length, derived subject grouping."""
+    config = load_config("mhd_effect_ecg_mri")
+    assert config.slug == "mhd_effect_ecg_mri"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Per-channel, per-record gains and baselines; wfdb applies both.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [1024]
+    assert config.default_sampling_rate == 1024
+    assert config.record_id_column == "record_name"
+    # Derived from demographics, NOT the filename's per-scanner subject number.
+    assert config.patient_id_column == "subject_key"
+    assert config.metadata_csv == "ecgbench_metadata.csv"  # generated from headers
+    # Length varies 24.4 s to 722.7 s, so the truncation check must stay disabled.
+    assert config.validation.expected_samples == {}
+    # MHD distortion reaches -31 mV; +/-10 would exclude 16 of 53 real records.
+    assert config.validation.amplitude_range_mv == (-35.0, 35.0)
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None  # headers + .qrs files
+    assert config.labels.join_column == "record_name"
+    # ODC-By, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
@@ -153,6 +182,7 @@ def test_list_available_configs():
     assert "ptbdb" in slugs
     assert "ludb" in slugs
     assert "norwegian_athlete_ecg" in slugs
+    assert "mhd_effect_ecg_mri" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 
