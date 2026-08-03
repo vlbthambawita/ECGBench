@@ -8,6 +8,11 @@ HuggingFace upload, is required and always runs last** — a dataset that is not
 on the Hub 404s for every user, because `ECGDataset` defaults to fetching fold
 CSVs from there.
 
+**First, check the dataset actually has its own recordings.** If it is a feature,
+annotation or label layer over another dataset's records — PTB-XL+ over PTB-XL, say —
+most of this checklist does not apply and generating splits for it is actively harmful.
+Jump to "Derived and annotation-only datasets" below.
+
 **There are two slug namespaces — do not use one where the other belongs.**
 
 | | Form | Example | Must match |
@@ -23,6 +28,7 @@ pick both up front and keep them straight.
 
 ## Phase 0 — Discovery (before writing anything)
 
+- [ ] **Does it contain its own recordings?** Count the signal files and compare the metadata's record ids against every dataset already in the catalogue. A release whose records are another dataset's — an annotation, feature or relabelling layer — must NOT get its own config or splits; see "Derived and annotation-only datasets" below. This is the first question because getting it wrong means building a second partition of a dataset ECGBench already partitions.
 - [ ] Locate the dataset's **official source URL**, **license**, **citation**, **DOI**.
 - [ ] Confirm signal **format**. `wfdb` and `csv` are implemented; anything else raises `NotImplementedError` in `_load_signal` and needs a branch there (in **both** `validation/engine.py` and `dataset.py` — they each have a copy).
 - [ ] Confirm the **units of the stored samples** and set `signal_unit_scale` so they reach ECGBench as millivolts (µV → `0.001`). Read one file and check the peak amplitude: a QRS peaking near 1000 is microvolts, near 1.0 is millivolts.
@@ -352,6 +358,67 @@ would need a keyed HMAC whose key never reaches the public repo — and the sign
 column would have to be dropped too, because paths like
 `files/p1376/p13767422/s40000162/40000162` embed the identifiers directly.
 
+### Derived and annotation-only datasets
+
+Worked example: **PTB-XL+** (`ecgbench/labels/ptbxl_plus.py`, issue #13). It ships no raw
+ECGs at all — it is 3 feature tables, 2 statement tables, derived median beats and
+283,326 fiducial-point files, all keyed by PTB-XL's own `ecg_id`.
+
+**Do not give such a dataset a config, a splitter, or a fold assignment.** Every one of
+its rows is another dataset's record, so `ecgbench splits` would produce a *second*
+ten-fold partition over recordings that dataset already partitions — and both would
+carry ECGBench's imprimatur. A user who trained on one and evaluated on the other would
+be testing on training data. The `related:` graph exists to warn about overlap that
+upstream providers created; there is no reason to manufacture more of it inside the
+project.
+
+Integrate it as a **label/feature provider** instead:
+
+- [ ] **Confirm the records really are the other dataset's**, from the files. Compare id
+  sets both ways (missing *and* extra), and join against a real split to get a match
+  rate. For PTB-XL+: the statements and ecgdeli tables cover PTB-XL v1.0.3's 21,799
+  `ecg_id`s exactly, and 17,376 of 17,376 records of PTB-XL's train split join.
+- [ ] Write `ecgbench/labels/<slug>.py` exposing loaders that return frames **indexed by
+  the host dataset's record id**, so a user can `reindex`/`join` onto the host's existing
+  folds. Do **not** register it in `_custom_loaders()` — that dict maps *config* slugs to
+  loaders, and this dataset has no config.
+- [ ] Keep provider tables separate and offer a combined frame with **prefixed columns**.
+  Independent providers reuse feature names, so an unprefixed concat silently overwrites;
+  raise on duplicates rather than letting the last one win.
+- [ ] **Find the key column by name, and check every column — not the first and last
+  few.** PTB-XL+'s `12sl_features.csv` keeps `ecg_id` at column **145 of 783**, buried
+  among the features. Scanning the head and tail of a wide table suggests it has no key,
+  which is wrong and sends you building a positional join you do not need. Print
+  `list(df.columns)` and search it.
+- [ ] **Never assume row order, even when a key exists.** Both PTB-XL+ 12SL tables run
+  `1, 21803, 21804, …` — not ascending. If a table genuinely lacks a key, recover it from
+  an aligned file in *file* order, verify the alignment against an independent measure of
+  the same quantity (e.g. one provider's heart rate against another's RR interval), and
+  refuse to guess when row counts disagree.
+- [ ] **Record per-artefact coverage, not one record count.** Derived releases are
+  ragged: PTB-XL+ has 21,799 rows of statements, 21,795 unig features, 21,794 unig median
+  beats and 20,914 12sl median beats. A single "records:" figure hides that, so put a
+  coverage table on the dataset page.
+- [ ] **Do not expose a derived waveform you cannot state the units of.** PTB-XL+'s
+  median beats fail twice: every `12sl` header is unreadable by `wfdb.rdrecord` (a stale
+  `ge_median_beats_wfdb/` prefix in the record line, which wfdb rejects), and the `unig`
+  amplitudes are ~1000x their declared `/mV` gain. Return paths, not arrays, and say why.
+- [ ] **Catalogue entry (Phase 1).** Set `format:` to describe what it actually is
+  (`"features & annotations for PTB-XL · no raw ECGs"`), declare the `derived_from` edge
+  with `verified: true` once checked, and make the note say *that no separate split is
+  published and why* — that is the actionable consequence for a reader.
+- [ ] Add a section to the page explaining the integration, with a runnable join snippet,
+  and state that **both** downloads are needed.
+- [ ] **Phase 4 and Phase 7 do not apply**: there is nothing to validate (no signals of
+  its own) and nothing to upload (no fold CSVs). Say so in the PR rather than leaving a
+  reviewer wondering.
+- [ ] Example script under `examples/load_<slug>.py` that loads the **host** dataset and
+  joins this one onto it, so the intended usage is the thing that is executable.
+- [ ] Tests in `tests/test_labels.py`: the positional-join key recovery, the refusal on
+  mismatched row counts, prefix collision handling, and an assertion that **no config
+  exists** for the slug — that last one is what stops someone "helpfully" adding one
+  later.
+
 ---
 
 ## Common gotchas
@@ -373,6 +440,8 @@ column would have to be dropped too, because paths like
 - **Labels never reach the batch unless you fill in `labels:`.** Fold CSVs are identification-only by design, so a dataset with a perfect config and no `labels:` block silently returns no ground truth. If the data genuinely has none, declare `available: false` with a reason rather than leaving the block out.
 - **A single-label reduction of multi-label data is a trap.** Name it `primary_*`, document how ties break, and say plainly it is for stratification only. In PTB-XL 10.8% of records have tied superclasses, so the "primary" class is partly an artefact of the tie-break rule.
 - **`ecgbench_metadata.csv`-style generated sources mean labels depend on pipeline order.** `ecg_arrhythmia` labels only exist after `ecgbench splits` has run once, because that is what scans the WFDB headers. Say so in the example script, and let `LabelSourceMissingError` name the file.
+- **A dataset with no recordings of its own must not get splits.** Feature, annotation and relabelling layers (PTB-XL+ over PTB-XL) key on the host dataset's record ids. Generating folds for them creates a second ECGBench partition of the same recordings, which is a leakage trap of our own making. Integrate as a label provider — see "Derived and annotation-only datasets" — and assert in a test that no config exists for the slug.
+- **A wide table can hide its key column in the middle.** PTB-XL+'s `12sl_features.csv` has 783 columns with `ecg_id` at position 145, so inspecting the first and last few — the natural move on a 783-column table — suggests there is no key at all. Search `list(df.columns)` by name. And do not assume row order even once you have the key: both PTB-XL+ 12SL tables run `1, 21803, 21804, …`, not ascending, so a positional join is wrong.
 - **Overlapping datasets are the norm, not the exception.** Around a third of the catalogue sits in a family — CinC challenges bundle PTB-XL and CPSC-2018, CODE's subsets come out of CODE-full, MIMIC demo out of MIMIC full. Adding a dataset without checking whether it overlaps an existing one ships a silent leakage trap. Check before you write the entry.
 - **`shares_records` cannot be inferred from IDs alone.** The MIMIC demo and the full release hold the same 659 recordings but renumber `study_id` into a disjoint range and truncate timestamps to the minute, so comparing keys says 0% overlap while the truth is 99.8%. When IDs disagree, try a natural key (subject + timestamp) before concluding anything.
 - **Lead order is not a given.** `config.leads` is a count, not an order. `signal[4]` is aVL in PTB-XL, Chapman and ecg_arrhythmia, but aVF in MIMIC-IV-ECG. Fill in `lead_names:` from the files so `ECGDataset(leads=["aVL"])` returns the same physical lead everywhere; a model trained across datasets without it silently crosses two leads.

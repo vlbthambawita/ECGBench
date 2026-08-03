@@ -157,10 +157,29 @@ class TestKnownRelationships:
         assert link.verified is True
 
     def test_unverified_claims_are_flagged(self, by_slug):
-        """Relationships taken from documentation must not claim verification."""
+        """Relationships taken from documentation must not claim verification.
+
+        PTBDB and PTB-XL were both digitised by the PTB from German recordings of
+        the same era, but no crosswalk ships with either, so the shared cohort is
+        a documentary claim rather than a checked one.
+        """
+        link = next(
+            x for x in by_slug["ptb-diagnostic-ecg-database"].related if x.slug == "ptb-xl"
+        )
+        assert link.relation == "same_cohort"
+        assert link.verified is False
+        # A cohort shared without shared recordings must not raise a leakage flag.
+        assert link.shares_records is False
+
+    def test_ptbxl_plus_is_a_verified_annotation_layer(self, by_slug):
+        """PTB-XL+ annotates PTB-XL's own records; that WAS checked against files."""
         link = next(x for x in by_slug["ptb-xl-plus"].related if x.slug == "ptb-xl")
         assert link.relation == "derived_from"
-        assert link.verified is False
+        assert link.verified is True
+        assert link.shares_records is True
+        # The note must say why no separate split is published, since that is the
+        # actionable consequence.
+        assert "no separate fold assignment" in link.note
 
     def test_challenge_leakage_is_recorded(self, by_slug):
         """The reason this feature exists: CinC training sources overlap PTB-XL."""

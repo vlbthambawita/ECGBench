@@ -274,6 +274,35 @@ not all.
 `window` combines freely with `fold_numbers`, `leads` and `units`; it is applied
 first, then lead selection, then units, then `transform`.
 
+### Derived datasets (annotations for another dataset's records)
+
+Some releases contain no recordings of their own — they annotate someone else's.
+**PTB-XL+** is the example: 3 feature tables, 2 statement tables, derived median
+beats and 283,326 fiducial-point files, all keyed by PTB-XL's `ecg_id`.
+
+Those get **no config and no splits**, deliberately. Their records are the host
+dataset's, so generating folds would create a second ECGBench partition of the
+same recordings and let someone train on one and evaluate on the other. They are
+label providers instead: load the host on its own folds and join.
+
+```python
+from ecgbench import ECGDataset
+from ecgbench.labels.ptbxl_plus import load_ptbxl_plus
+
+ds = ECGDataset("ptbxl", split="train", data_path="/data/ptb-xl/1.0.3/", labels=True)
+plus = load_ptbxl_plus("/data/ptb-xl-plus/1.0.1/", features=("unig",))
+
+joined = plus.reindex(ds.metadata_df["ecg_id"].values)   # 17,376 of 17,376
+joined.iloc[0]["ptbxl_scp_codes"]     # [('NORM', 100.0), ('LVOLT', 100.0), ('SR', 100.0)]
+joined.iloc[0]["12sl_statements"]     # ['NSR', 'NML']  -- the algorithm's opinion
+joined.iloc[0]["unig_QRS_Dur_Global"] # 86.0 ms
+```
+
+You need both downloads, since PTB-XL+ has no waveforms. Feature columns are
+provider-prefixed because the three providers reuse names. See
+`examples/load_ptbxl_plus.py`, and the dataset page for the release's own defects
+— notably that `12sl_features.csv` ships with no key column.
+
 ### Restricted and credentialed datasets
 
 Most datasets' fold CSVs are published to the [HuggingFace

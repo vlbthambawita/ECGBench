@@ -131,6 +131,26 @@ HuggingFace dataset repo `vlbthambawita/ECGBench` mirrors that tree with the dat
 
 The repo id is **overridable on upload but hard-coded on download**: `run_upload(hf_repo_id=...)` takes it as a parameter with a `--hf-repo-id` CLI flag, while `ECGDataset._load_from_hf` assigns `repo_id = "vlbthambawita/ECGBench"` inline with no override. Forking to a different Hub repo therefore requires a source edit in `dataset.py`.
 
+## Derived datasets get no config
+
+A release whose records belong to another dataset — a feature, annotation or
+relabelling layer — must not get a config, a splitter or a fold assignment. Generating
+folds for it would create a second ECGBench partition of recordings an existing config
+already partitions, so a user could train on one and evaluate on the other. **PTB-XL+**
+is the worked case: `ecgbench/labels/ptbxl_plus.py` exposes its statements and features
+indexed by PTB-XL's `ecg_id`, and there is deliberately **no `ptbxl_plus` config** —
+`tests/test_labels.py::TestPTBXLPlusLabels::test_there_is_deliberately_no_ptbxl_plus_config`
+enforces that. Such a module is *not* registered in `labels/__init__.py:_custom_loaders()`,
+because that dict maps config slugs to loaders and there is no config.
+
+Its loader also carries a trap worth knowing before touching that file:
+`12sl_features.csv` keeps `ecg_id` at **column 145 of 783**, buried among the features,
+so a glance at the header suggests the table has no key — and neither 12SL table is
+sorted by `ecg_id` (both run `1, 21803, 21804, …`). The loader keys by column name and
+keeps a row-order fallback, which refuses to guess when row counts disagree, only in case
+a future release drops the column. See "Derived and
+annotation-only datasets" in `ADD_DATASET_TODO.md`.
+
 ## Distribution policy — not every dataset's splits are published
 
 `DatasetConfig.publish_fold_csvs` (default `True`) decides whether a dataset's fold

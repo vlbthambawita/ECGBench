@@ -624,3 +624,164 @@ class TestBrugadaHUCALabels:
         assert BRUGADA_CLASSES[0] == "healthy"
         assert BRUGADA_CLASSES[1] == "confirmed Brugada syndrome"
         assert BRUGADA_CLASSES[2] == "other/atypical"
+
+
+class TestPTBXLPlusLabels:
+    """PTB-XL+ is an annotation layer over PTB-XL's records, with an unkeyed table."""
+
+    #: Deliberately NOT ascending, like the shipped file.
+    IDS = [1, 21803, 21804, 7, 5]
+
+    def _tree(self, tmp_path, ids=None, feature_rows=None, drop_key=False):
+        ids = list(self.IDS if ids is None else ids)
+        (tmp_path / "labels").mkdir(exist_ok=True)
+        (tmp_path / "features").mkdir(exist_ok=True)
+
+        pd.DataFrame({
+            "ecg_id": ids,
+            "statements": [str(["NSR", "NML"])] * len(ids),
+            "statements_cat": [str(["NSR"])] * len(ids),
+        }).to_csv(tmp_path / "labels/12sl_statements.csv", index=False)
+
+        pd.DataFrame({
+            "ecg_id": ids,
+            "scp_codes": [str([("NORM", 100.0)])] * len(ids),
+        }).to_csv(tmp_path / "labels/ptbxl_statements.csv", index=False)
+
+        # The real 12sl feature table carries ecg_id at column 145 of 783 — present
+        # but not first, which is what makes it easy to miss.
+        n = len(ids) if feature_rows is None else feature_rows
+        frame = pd.DataFrame({
+            "HR__Global": [60 + i for i in range(n)],
+            "ecg_id": ids[:n],
+            "P_Area_I": [0.1 * i for i in range(n)],
+        })
+        if drop_key:
+            frame = frame.drop(columns=["ecg_id"])
+        frame.to_csv(tmp_path / "features/12sl_features.csv", index=False)
+
+        pd.DataFrame({
+            "ecg_id": ids,
+            "RR_Mean_Global": [1000] * len(ids),
+            # A name the 12sl table also uses — the real providers overlap heavily,
+            # which is why prefixing is the default.
+            "P_Area_I": [0.5] * len(ids),
+        }).to_csv(tmp_path / "features/ecgdeli_features.csv", index=False)
+        return tmp_path
+
+    def test_12sl_key_is_found_by_name_not_position(self, tmp_path):
+        """ecg_id sits mid-table in the real file (col 145 of 783), not first."""
+        from ecgbench.labels.ptbxl_plus import load_features
+
+        tree = self._tree(tmp_path)
+        raw = pd.read_csv(tree / "features/12sl_features.csv", nrows=0).columns
+        assert list(raw).index("ecg_id") != 0, "fixture must not put the key first"
+
+        df = load_features(tree, "12sl")
+
+        assert df.index.name == "ecg_id"
+        # File order preserved, NOT sorted: the second half of the trap.
+        assert list(df.index) == self.IDS
+        assert sorted(df.index) != list(df.index)
+        # Values stayed with their row, and the key is not left as a feature.
+        assert df.loc[1, "HR__Global"] == 60
+        assert df.loc[5, "HR__Global"] == 64
+        assert "ecg_id" not in df.columns
+
+    def test_fallback_keys_from_statements_if_the_column_ever_disappears(self, tmp_path):
+        """Defensive path: v1.0.1 has the column, but a reissue might drop it."""
+        from ecgbench.labels.ptbxl_plus import load_features
+
+        df = load_features(self._tree(tmp_path, drop_key=True), "12sl")
+
+        assert list(df.index) == self.IDS
+
+    def test_row_count_mismatch_refuses_to_guess(self, tmp_path):
+        """A positional join on mismatched lengths would corrupt every row."""
+        from ecgbench.labels.ptbxl_plus import load_features
+
+        # Key dropped so the row-order fallback engages, then lengths disagree.
+        tree = self._tree(tmp_path, feature_rows=3, drop_key=True)
+
+        with pytest.raises(ValueError, match="row-aligned"):
+            load_features(tree, "12sl")
+
+    def test_the_key_column_wins_over_the_statements_row_order(self, tmp_path):
+        """If the two ever disagree, the table's own key is authoritative."""
+        from ecgbench.labels.ptbxl_plus import load_features
+
+        tree = self._tree(tmp_path)
+        # A reissue where the feature rows are keyed differently from the
+        # statements order: the key column must win, not the row position.
+        pd.DataFrame({
+            "HR__Global": [70, 71, 72, 73, 74],
+            "ecg_id": [99, 98, 97, 96, 95],
+        }).to_csv(tree / "features/12sl_features.csv", index=False)
+
+        df = load_features(tree, "12sl")
+
+        assert list(df.index) == [99, 98, 97, 96, 95]
+
+    def test_keyed_feature_tables_use_their_own_column(self, tmp_path):
+        from ecgbench.labels.ptbxl_plus import load_features
+
+        df = load_features(self._tree(tmp_path), "ecgdeli")
+
+        assert df.index.name == "ecg_id"
+        assert list(df.index) == self.IDS
+
+    def test_statement_literals_are_parsed(self, tmp_path):
+        from ecgbench.labels.ptbxl_plus import load_statements
+
+        st = load_statements(self._tree(tmp_path), "12sl")
+        px = load_statements(self._tree(tmp_path), "ptbxl")
+
+        assert st.loc[1, "statements"] == ["NSR", "NML"]
+        assert px.loc[1, "scp_codes"] == [("NORM", 100.0)]
+
+    def test_combined_frame_prefixes_providers(self, tmp_path):
+        """The three feature sets share column names, so collisions must be impossible."""
+        from ecgbench.labels.ptbxl_plus import load_ptbxl_plus
+
+        df = load_ptbxl_plus(self._tree(tmp_path), features=("12sl", "ecgdeli"))
+
+        assert "12sl_statements" in df.columns
+        assert "ptbxl_scp_codes" in df.columns
+        assert "12sl_HR__Global" in df.columns
+        assert "ecgdeli_RR_Mean_Global" in df.columns
+        assert not df.columns.duplicated().any()
+
+    def test_unprefixed_collision_is_reported_not_silent(self, tmp_path):
+        from ecgbench.labels.ptbxl_plus import load_ptbxl_plus
+
+        # 12sl and ecgdeli both ship P_Area_I in this fixture, as the real
+        # providers share many feature names.
+        with pytest.raises(ValueError, match="Duplicate columns"):
+            load_ptbxl_plus(self._tree(tmp_path), statements=(),
+                            features=("12sl", "ecgdeli"), prefix=False)
+
+    def test_median_beats_are_paths_only_with_provider_padding(self, tmp_path):
+        """12sl pads to 5 digits, unig to 6 — and neither is decoded."""
+        from ecgbench.labels.ptbxl_plus import median_beat_path
+
+        for provider, stem in (("12sl", "00001_medians"), ("unig", "000001_medians")):
+            d = tmp_path / "median_beats" / provider / "00000"
+            d.mkdir(parents=True)
+            (d / f"{stem}.hea").write_text("x", encoding="utf-8")
+            assert median_beat_path(tmp_path, 1, provider).name == stem
+
+        # Absent records return None rather than a path that does not exist.
+        assert median_beat_path(tmp_path, 999999, "unig") is None
+
+    def test_missing_source_names_the_release(self, tmp_path):
+        from ecgbench.labels.ptbxl_plus import load_statements
+
+        with pytest.raises(LabelSourceMissingError, match="ptb-xl-plus"):
+            load_statements(tmp_path, "ptbxl")
+
+    def test_there_is_deliberately_no_ptbxl_plus_config(self):
+        """A config would let `ecgbench splits` build a second partition of PTB-XL."""
+        from ecgbench.config import list_available_configs
+
+        assert "ptbxl_plus" not in list_available_configs()
+        assert "ptb_xl_plus" not in list_available_configs()
