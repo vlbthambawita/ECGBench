@@ -25,3 +25,13 @@ needs_review:
   icon_type: glyph
   color: "#ef4444"
   background: "rgba(239,68,68,0.15)"
+
+# The source has withdrawn the data, so no amount of work on our side makes this
+# dataset loadable. A distinct hue from needs_review (#ef4444) on purpose: nothing
+# here needs reviewing, and the block is not ours to lift.
+unavailable:
+  label: "Unavailable"
+  icon: "⊘"
+  icon_type: glyph
+  color: "#f472b6"
+  background: "rgba(244,114,182,0.15)"

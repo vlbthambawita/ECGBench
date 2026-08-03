@@ -281,7 +281,8 @@ def search(
         category: Filter by category slug (e.g. ``12-lead-physionet``).
         access: Filter by access type (``open`` | ``credentialed`` | ``restricted``).
         status: Filter by status key (``not_started``, ``implementing``,
-            ``completed``, ``needs_review``).
+            ``completed``, ``needs_review``, ``unavailable``). ``unavailable``
+            means the source has withdrawn the data, not that work is outstanding.
     """
     results: list[CatalogueEntry] = list(_load())
 
