@@ -1279,3 +1279,114 @@ class TestLeipzigHeartCenterSplitter:
         for fold in result.folds.values():
             families = set(fold["stratify_class"])
             assert families == {"AVRT", "AVNRT", "TOF"}, families
+
+
+class TestNorwegianAthleteECGSplitter:
+    """28 header-labelled records, stratified on the cardiologist's opening rhythm."""
+
+    RHYTHMS = ("Normal sinus rhythm", "Sinus arrhythmia", "Sinus bradycardia")
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="norwegian_athlete_ecg",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={500: "signal_path"},
+            label_column="cardiologist_primary_rhythm",
+            url="https://physionet.org/content/norwegian-athlete-ecg/1.0.0/",
+        )
+
+    def _source(self, tmp_path, n=28):
+        """Write n headers whose rhythms repeat the real 16/7/5-ish proportions."""
+        names = [f"ath_{i:03d}" for i in range(1, n + 1)]
+        (tmp_path / "RECORDS").write_text("\n".join(names) + "\n", encoding="utf-8")
+        for index, name in enumerate(names):
+            rhythm = self.RHYTHMS[0] if index % 4 else self.RHYTHMS[1 + index % 2]
+            (tmp_path / f"{name}.hea").write_text(
+                f"{name} 12 500 5000\n"
+                f"{name}.dat 16 50000/mV 16 0 100 200 0 I\n"
+                f"#SL12: Sinus bradycardia, Right axis deviation, Borderline ECG\n"
+                f"#C: {rhythm}, Normal ECG\n",
+                encoding="utf-8",
+            )
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.norwegian_athlete_ecg import (
+            NorwegianAthleteECGSplitter,
+        )
+
+        assert isinstance(get_splitter("norwegian_athlete_ecg"), NorwegianAthleteECGSplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        """The release ships no metadata table, and validate_dataset re-reads it
+        from disk — so writing the cache is load-bearing, not an optimisation."""
+        config = self._config(sample_config)
+        splitter = get_splitter("norwegian_athlete_ecg")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 28
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["record_name"].tolist()[:2] == ["ath_001", "ath_002"]
+        # Signals sit flat in the root, named by the bare stem.
+        assert df["signal_path"].tolist() == df["record_name"].tolist()
+
+    def test_cached_csv_is_reused_on_the_second_call(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("norwegian_athlete_ecg")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "ath_001.hea").unlink()  # cache must be read instead of the headers
+        df = splitter.load_metadata(path, config)
+
+        assert len(df) == 28
+
+    def test_list_columns_round_trip_without_a_comma(self, sample_config, tmp_path):
+        """Findings hold commas of their own, so the CSV must not join them on one."""
+        from ecgbench.splitting.strategies.norwegian_athlete_ecg import LIST_SEPARATOR
+
+        config = self._config(sample_config)
+        splitter = get_splitter("norwegian_athlete_ecg")
+        splitter.load_metadata(self._source(tmp_path), config)
+
+        reread = pd.read_csv(tmp_path / "ecgbench_metadata.csv")
+        assert LIST_SEPARATOR == ";"
+        assert reread.loc[0, "sl12_findings"] == (
+            "Sinus bradycardia;Right axis deviation"
+        )
+
+    def test_stratification_labels_come_from_the_label_loader(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("norwegian_athlete_ecg")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "rhythm"
+        assert set(labels) <= set(self.RHYTHMS)
+        assert len(labels) == 28
+
+    def test_stratification_requires_load_metadata_first(self, sample_config):
+        splitter = get_splitter("norwegian_athlete_ecg")
+
+        with pytest.raises(ValueError, match="cardiologist_primary_rhythm"):
+            splitter.get_stratification_labels(pd.DataFrame({"record_name": ["a"]}),
+                                               self._config(sample_config))
+
+    def test_folds_are_record_disjoint_and_cover_every_record(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("norwegian_athlete_ecg")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        # One record per athlete, so a record-level split is already athlete-level.
+        assert config.patient_id_column is None
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique

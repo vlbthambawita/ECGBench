@@ -115,6 +115,34 @@ def test_load_ludb_config():
     assert config.validation.expected_samples[500] == 5000
 
 
+def test_load_norwegian_athlete_ecg_config():
+    """Norwegian athletes: 28 header-labelled records, uncalibrated amplitudes."""
+    config = load_config("norwegian_athlete_ecg")
+    assert config.slug == "norwegian_athlete_ecg"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # wfdb applies the header's nominal 50000/mV gain; there is no scale factor
+    # that could undo the per-lead min-max normalisation, so this stays 1.0.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    assert config.lead_names == ["I", "II", "III", "AVR", "AVL", "AVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.record_id_column == "record_name"
+    assert config.patient_id_column is None  # 28 records, 28 athletes
+    assert config.metadata_csv == "ecgbench_metadata.csv"  # generated from headers
+    assert config.validation.expected_samples[500] == 5000
+    # Tight on purpose: per-lead normalisation pins every lead to +/-0.6553 mV,
+    # so the usual [-10, 10] could never fire on this dataset.
+    assert config.validation.amplitude_range_mv == (-1.0, 1.0)
+    # Labels live in the .hea comments, not a CSV.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_name"
+    # CC BY 4.0, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
@@ -124,6 +152,7 @@ def test_list_available_configs():
     assert "mimic_iv_ecg_demo" in slugs
     assert "ptbdb" in slugs
     assert "ludb" in slugs
+    assert "norwegian_athlete_ecg" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 

@@ -99,6 +99,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         leipzig_heart_center_ecg,
         ludb,
         mimic_iv_ecg,
+        norwegian_athlete_ecg,
         ptbdb,
         ptbxl,
     )
@@ -107,6 +108,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "ptbxl": ptbxl.load_labels,
         "ptbdb": ptbdb.load_labels,
         "ludb": ludb.load_labels,
+        "norwegian_athlete_ecg": norwegian_athlete_ecg.load_labels,
         "challenge2021": challenge2021.load_labels,
         "incartdb": incartdb.load_labels,
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,

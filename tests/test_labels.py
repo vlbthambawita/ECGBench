@@ -1181,3 +1181,177 @@ class TestLeipzigHeartCenterLabels:
 
         with pytest.raises(LabelSourceMissingError, match="leipzig-heart-center-ecg"):
             scan_records(tmp_path)
+
+
+class TestNorwegianAthleteECGLabels:
+    """Two free-text interpretations per header, with commas inside statements."""
+
+    # Real ath_001 content. Note the double space before "Normal ECG" — the file
+    # has it, and it must not become an empty statement.
+    HEADER = (
+        "ath_001 12 500 5000\n"
+        "ath_001.dat 16 50000/mV 16 0 10251 49595 0 I\n"
+        "#SL12: Sinus bradycardia with marked sinus arrhythmia, Right axis"
+        " deviation, Borderline ECG\n"
+        "#C: Sinus arrhythmia,  Normal ECG\n"
+    )
+
+    def _tree(self, tmp_path, records):
+        """Write a RECORDS file plus one .hea per entry of {name: header text}."""
+        (tmp_path / "RECORDS").write_text("\n".join(records) + "\n", encoding="utf-8")
+        for name, text in records.items():
+            (tmp_path / f"{name}.hea").write_text(text, encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config,
+            slug="norwegian_athlete_ecg",
+            record_id_column="record_name",
+            url="https://physionet.org/content/norwegian-athlete-ecg/1.0.0/",
+        )
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("norwegian_athlete_ecg").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the .hea comment lines are the source
+        assert spec.join_column == "record_name"
+
+    def test_parses_both_interpretations(self, tmp_path, sample_config):
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        path = self._tree(tmp_path, {"ath_001": self.HEADER})
+        df = load_labels(path, self._config(sample_config))
+
+        assert df.index.name == "record_name"
+        assert list(df.index) == ["ath_001"]
+        row = df.loc["ath_001"]
+        assert row["sl12_findings"] == [
+            "Sinus bradycardia with marked sinus arrhythmia", "Right axis deviation",
+        ]
+        assert row["sl12_verdict"] == "Borderline ECG"
+        # The double space must not leave a stray empty finding behind.
+        assert row["cardiologist_findings"] == ["Sinus arrhythmia"]
+        assert row["cardiologist_verdict"] == "Normal ECG"
+        assert row["cardiologist_primary_rhythm"] == "Sinus arrhythmia"
+        # Raw strings are kept verbatim for both sources.
+        assert row["cardiologist_raw"] == "Sinus arrhythmia,  Normal ECG"
+
+    def test_statements_containing_commas_are_not_shattered(self):
+        """The trap: 3 GE statements have commas of their own (ath_024, ath_027)."""
+        from ecgbench.labels.norwegian_athlete_ecg import split_statements
+
+        line = (
+            "Sinus bradycardia, Nonspecific intraventricular conduction delay, "
+            "ST elevation, consider early repolarization, pericarditis, or injury, "
+            "Abnormal ECG"
+        )
+        assert split_statements(line) == [
+            "Sinus bradycardia",
+            "Nonspecific intraventricular conduction delay",
+            "ST elevation, consider early repolarization, pericarditis, or injury",
+            "Abnormal ECG",
+        ]
+        # A naive split would report 7 statements instead of 4.
+        assert len(line.split(",")) == 7
+
+    def test_lowercase_fragments_can_be_real_statements(self):
+        """Why capitalisation cannot be used to detect continuations.
+
+        ath_005 and ath_017 write genuine findings in lowercase, so the
+        'lowercase means continuation' heuristic would silently merge them.
+        """
+        from ecgbench.labels.norwegian_athlete_ecg import split_statements
+
+        assert split_statements(
+            "Sinus bradycardia, normal sinus rhythm, First degree AV block, Normal ECG"
+        ) == [
+            "Sinus bradycardia", "normal sinus rhythm", "First degree AV block",
+            "Normal ECG",
+        ]
+
+    def test_critical_and_acute_alerts_leave_the_findings_list(self, tmp_path, sample_config):
+        """ath_007-style header: asterisk-wrapped alerts become their own columns."""
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        header = (
+            "ath_007 12 500 5000\n"
+            "ath_007.dat 16 50000/mV 16 0 646 573 0 I\n"
+            "#SL12: ***Critical test result: STEMI, Normal sinus rhythm, Pulmonary"
+            " disease pattern, ** ** ACUTE MI/STEMI** **, Abnormal ECG\n"
+            "#C: Normal sinus rhythm, Normal ECG\n"
+        )
+        df = load_labels(
+            self._tree(tmp_path, {"ath_007": header}), self._config(sample_config)
+        )
+        row = df.loc["ath_007"]
+
+        assert row["sl12_critical_test_result"] == "STEMI"
+        assert row["sl12_acute_alert"] == "ACUTE MI/STEMI"  # asterisks stripped
+        assert row["sl12_findings"] == [
+            "Normal sinus rhythm", "Pulmonary disease pattern",
+        ]
+        assert row["sl12_verdict"] == "Abnormal ECG"
+        # The dataset's headline quantity: SL12 flags what the cardiologist clears.
+        assert row["cardiologist_verdict"] == "Normal ECG"
+        assert bool(row["sl12_overcalls"]) is True
+        assert bool(row["verdicts_match"]) is False
+
+    def test_ekg_misspelling_normalises_but_the_raw_form_survives(self, tmp_path, sample_config):
+        """ath_010 ends 'Abnormal EKG'. Dropping it would lose a whole record."""
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        header = self.HEADER.replace("Borderline ECG", "Abnormal EKG")
+        df = load_labels(
+            self._tree(tmp_path, {"ath_001": header}), self._config(sample_config)
+        )
+
+        assert df.loc["ath_001", "sl12_verdict"] == "Abnormal ECG"
+        assert df.loc["ath_001", "sl12_verdict_raw"] == "Abnormal EKG"
+
+    def test_unknown_verdict_raises_rather_than_going_silently_missing(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        header = self.HEADER.replace("Borderline ECG", "Inconclusive tracing")
+        with pytest.raises(ValueError, match="unrecognised .* verdict"):
+            load_labels(
+                self._tree(tmp_path, {"ath_001": header}), self._config(sample_config)
+            )
+
+    def test_unknown_opening_rhythm_raises_because_it_is_the_split_label(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        header = self.HEADER.replace("#C: Sinus arrhythmia, ", "#C: Atrial fibrillation, ")
+        with pytest.raises(ValueError, match="not a known rhythm"):
+            load_labels(
+                self._tree(tmp_path, {"ath_001": header}), self._config(sample_config)
+            )
+
+    def test_missing_interpretation_line_raises(self, tmp_path, sample_config):
+        """Every record carries both lines; one missing means a truncated copy."""
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        header = "\n".join(
+            line for line in self.HEADER.splitlines() if not line.startswith("#C:")
+        ) + "\n"
+        with pytest.raises(ValueError, match=r"missing the \['C'\]"):
+            load_labels(
+                self._tree(tmp_path, {"ath_001": header}), self._config(sample_config)
+            )
+
+    def test_header_listed_in_records_but_absent_names_the_release(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.norwegian_athlete_ecg import load_labels
+
+        (tmp_path / "RECORDS").write_text("ath_001\nath_002\n", encoding="utf-8")
+        (tmp_path / "ath_001.hea").write_text(self.HEADER, encoding="utf-8")
+
+        with pytest.raises(LabelSourceMissingError, match="norwegian-athlete-ecg"):
+            load_labels(tmp_path, self._config(sample_config))

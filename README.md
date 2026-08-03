@@ -179,6 +179,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `brugada_huca` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `leipzig_heart_center_ecg` | I, II, III, aVR, aVL, aVF, V1-V6, **then 2-8 intracardiac channels in six different orders** |
+| `norwegian_athlete_ecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -243,6 +244,28 @@ to 1800 s so batching needs a `window=` too. It also **contains** PTB-XL,
 PTBDB, INCART, CPSC-2018, Chapman-Shaoxing and Ningbo — its `source` label says
 which cohort each record came from, and evaluating on any of those after training
 on it is testing on training data. See `examples/load_challenge2021.py`.
+
+`norwegian_athlete_ecg` is the smallest dataset here — 28 records, one per elite
+Norwegian endurance athlete — and the only one whose **amplitudes are not
+calibrated**. Every lead of every record was independently min-max normalised to the
+full int16 range (all 336 lead-records bottom out at exactly `-32767`), so with the
+headers' nominal `50000/mV` gain each lead spans exactly ±0.6553 mV. Absolute and
+inter-lead voltages are therefore gone — no LVH or ST-elevation-in-mm criteria — and
+no `signal_unit_scale` or `units=` can undo a per-lead normalisation. Morphology and
+timing survive. This is undocumented upstream and was established from the files.
+A knock-on effect: `missing_leads` and `flat_line` **cannot fire** on it, because a
+dead lead would be rescaled to full amplitude like any other.
+
+It is also the only dataset carrying **two independent interpretations per record**,
+as WFDB header comments: the GE Marquette SL12 algorithm's and a cardiologist's,
+exposed as separate `sl12_*` and `cardiologist_*` label fields. SL12 is the *system
+under test*, not the ground truth — it reads 13 of 28 records as borderline or
+abnormal where the cardiologist reads normal, and raises a critical `ACUTE MI/STEMI`
+alert on 4 athletes, three of whom the cardiologist calls a plain "Normal ECG".
+Human labels are degenerate (26 of 28 "Normal ECG", no abnormal class at all), so
+folds are stratified on `cardiologist_primary_rhythm` instead, and with 2-3 records
+per fold you should rotate folds via `split=None, fold_numbers=[...]` rather than use
+the default 24/2/2 mapping. See `examples/load_norwegian_athlete_ecg.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

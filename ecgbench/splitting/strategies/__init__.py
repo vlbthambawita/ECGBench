@@ -11,6 +11,7 @@ from . import (  # noqa: F401
     ludb,
     mimic_iv_ecg,
     mimic_iv_ecg_demo,
+    norwegian_athlete_ecg,
     ptbdb,
     ptbxl,
 )

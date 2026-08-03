@@ -329,6 +329,9 @@ class TestShippedLeadNames:
             # Standard order and spelling, identical in all 363 headers.
             ("brugada_huca", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Uppercase limb leads like ptbxl, identical in all 28 headers.
+            ("norwegian_athlete_ecg", ["I", "II", "III", "AVR", "AVL", "AVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):
