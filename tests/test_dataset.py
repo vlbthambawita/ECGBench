@@ -332,6 +332,11 @@ class TestShippedLeadNames:
             # Uppercase limb leads like ptbxl, identical in all 28 headers.
             ("norwegian_athlete_ecg", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Lowercase 'a', identical in all 5,749 raw/ headers. The derived
+            # medians/ headers of the SAME records spell them AVR/AVL/AVF and add
+            # VCGMAG/X/Y/Z, but medians/ is not this config's signal.
+            ("ecgcipa", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

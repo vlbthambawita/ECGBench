@@ -214,6 +214,48 @@ def test_load_wctecgdb_config():
     assert config.publish_fold_csvs is True
 
 
+def test_load_ecgcipa_config():
+    """CiPA: microvolt samples at 1 kHz, and treatment instead of a diagnosis."""
+    config = load_config("ecgcipa")
+    assert config.slug == "ecgcipa"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # The headers declare gain 0.26595744680851063 with unit /uV, so wfdb returns
+    # MICROVOLTS. Left at 1.0 every record's peak reads ~2000 "mV" and
+    # amplitude_outlier fires on all 5,749.
+    assert config.signal_unit_scale == 0.001
+    assert config.leads == 12
+    # Standard order, lowercase 'a' — the derived medians/ headers spell the same
+    # three leads AVR/AVL/AVF, so the two directories disagree with each other.
+    assert config.lead_names == [
+        "I", "II", "III", "aVR", "aVL", "aVF",
+        "V1", "V2", "V3", "V4", "V5", "V6",
+    ]
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    assert config.duration_seconds == 10
+    assert config.validation.expected_samples == {1000: 10000}
+    assert config.validation.expected_leads == 12
+    # The house default, and it excludes exactly 2 electrode-artefact records.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # EGREFID UUIDs, unique across the release; subjects 1001-1050 and 2001-2010.
+    assert config.record_id_column == "record_id"
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # No shipped record-to-file table; the splitter generates one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    # Labels are assembled from four analysis datasets by a module; source_csv
+    # names the one the loader cannot work without.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv == "adeg.csv"
+    assert config.labels.join_column == "EGREFID"
+    # A pharmacology dataset: the closest thing to a class is the drug.
+    assert config.label_column == "treatment"
+    # ODC-By, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
@@ -226,6 +268,7 @@ def test_list_available_configs():
     assert "norwegian_athlete_ecg" in slugs
     assert "mhd_effect_ecg_mri" in slugs
     assert "wctecgdb" in slugs
+    assert "ecgcipa" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 

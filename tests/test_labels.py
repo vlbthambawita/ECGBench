@@ -1797,3 +1797,391 @@ class TestWCTECGLabels:
             "Other or non-cardiac",
             "Not reported",
         }
+
+
+class TestECGCIPALabels:
+    """Drug exposure and interval measurements from four CDISC analysis datasets."""
+
+    #: One adeg row per (record, parameter). The values are the real
+    #: 00689D31-8491-4643-B3C8-45241FBBD47C measurements.
+    INTERVALS = {
+        "HR": 64.0,
+        "RR": 943.333333,
+        "PR": 188.0,
+        "QRS": 78.0,
+        "QT": 371.0,
+        "QTCF": 378.284764,
+        "JTP": 232.0,
+        "JTPC": 239.98394,
+        "TPTE": 61.0,
+    }
+
+    def _config(self, sample_config):
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config,
+            slug="ecgcipa",
+            record_id_column="record_id",
+            patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000,
+            url="https://physionet.org/content/ecgcipa/1.0.0/",
+            labels=LabelConfig(source_csv="adeg.csv", join_column="EGREFID"),
+        )
+
+    def _adeg_rows(self, record, subject, *, replicate=2, params=None, **overrides):
+        """One row per parameter, with the design context repeated as the source does."""
+        params = self.INTERVALS if params is None else params
+        base = {
+            "STUDYID": "SCR-004",
+            "USUBJID": subject,
+            "TRTA": "Ranolazine",
+            "TRTP": "Ranolazine",
+            "TRTSEQA": "Ranolazine",
+            "APERIOD": 1,
+            "APERIODC": "Period 1",
+            "ATPT": "54 hrs",
+            "ATPTN": 24,
+            "NRRLT": 6.0,
+            "ARRLT": 5.928056,
+            "ADTM": "2017-03-29 12:55:41",
+            "ADY": 3,
+            "APERDAY": 3,
+            "AEGBLFL": None,
+            "ECGPCFL": "Y",
+            "EGREFID": record,
+            "DTYPE": None,
+            "BASE": None,
+            "CHG": None,
+        }
+        base.update(overrides)
+        return [
+            {**base, "PARAMCD": code, "AVAL": value, "EGREPNUM": replicate}
+            for code, value in params.items()
+        ]
+
+    def _tree(self, tmp_path, *, adeg_rows, records, adpc_rows=(), subjects=None):
+        """Write RECORDS, the four analysis CSVs and empty raw/medians headers."""
+        lines = [f"raw/{stem}" for stem in records]
+        lines += [f"medians/{stem}" for stem in records]
+        (tmp_path / "RECORDS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        pd.DataFrame(adeg_rows).to_csv(tmp_path / "adeg.csv", index=False)
+        pd.DataFrame(
+            list(adpc_rows),
+            columns=["USUBJID", "APERIOD", "ATPTN", "PARAMCD", "AVAL", "LLOQFL"],
+        ).to_csv(tmp_path / "adpc.csv", index=False)
+
+        subjects = subjects or [
+            {
+                "USUBJID": 1001,
+                "AGE": 41,
+                "SEX": "M",
+                # Leading whitespace, exactly as the release ships it.
+                "RACE": "  WHITE",
+                "ETHNIC": "NOT HISPANIC OR LATINO",
+                "ARM": "Ranolazine",
+                "ACTARM": "Ranolazine",
+            }
+        ]
+        pd.DataFrame(subjects).to_csv(tmp_path / "adsl.csv", index=False)
+        pd.DataFrame(
+            [
+                {"USUBJID": s["USUBJID"], "PARAMCD": code, "AVAL": value}
+                for s in subjects
+                for code, value in (
+                    ("HEIGHT", 180.0), ("WEIGHT", 84.0), ("BMI", 25.9),
+                    ("SYSBP", 121.0), ("DIABP", 77.0),
+                )
+            ]
+        ).to_csv(tmp_path / "addm.csv", index=False)
+        return tmp_path
+
+    def test_shipped_config_points_at_adeg(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("ecgcipa").labels
+        assert spec is not None and spec.available
+        # The loader reads adpc/adsl/addm too, but adeg is the one it cannot do
+        # without, so a missing-file error should name it.
+        assert spec.source_csv == "adeg.csv"
+        assert spec.join_column == "EGREFID"
+
+    def test_paths_point_at_raw_and_medians_separately(self, tmp_path, sample_config):
+        """signal_path must be the raw acquisition; medians/ is derived."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "00689D31-8491-4643-B3C8-45241FBBD47C"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001),
+            records=[f"1001/{record}"],
+        )
+        df = load(path, self._config(sample_config))
+
+        assert df.index.name == "record_id"
+        assert list(df.index) == [record]
+        assert df.loc[record, "patient_id"] == "1001"
+        assert df.loc[record, "signal_path"] == f"raw/1001/{record}"
+        assert df.loc[record, "median_beat_path"] == f"medians/1001/{record}"
+
+    def test_intervals_are_pivoted_out_of_the_long_table(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "00689D31-8491-4643-B3C8-45241FBBD47C"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001),
+            records=[f"1001/{record}"],
+        )
+        row = load(path, self._config(sample_config)).loc[record]
+
+        assert row["hr_bpm"] == 64.0
+        assert row["qt_ms"] == 371.0
+        assert row["qtcf_ms"] == pytest.approx(378.284764)
+        assert row["jtpeak_ms"] == 232.0
+        assert row["tpeak_tend_ms"] == 61.0
+        assert row["treatment"] == "Ranolazine"
+        assert bool(row["has_matching_pk"]) is True
+        assert bool(row["used_for_baseline"]) is False
+
+    def test_the_two_time_axes_are_kept_apart(self, tmp_path, sample_config):
+        """ATPT counts from the period's first dose, NRRLT from that day's dose.
+
+        A record on study day 3 reads 54 and 6 for the same instant, so collapsing
+        them onto one column would stack three dosing days on top of each other.
+        """
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "00689D31-8491-4643-B3C8-45241FBBD47C"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001),
+            records=[f"1001/{record}"],
+        )
+        row = load(path, self._config(sample_config)).loc[record]
+
+        assert row["timepoint"] == "54 hrs"
+        assert row["nominal_hours_from_period_start"] == 54.0
+        assert row["nominal_hours_from_reference"] == 6.0
+        assert row["study_day"] == 3
+
+    def test_missing_measurements_stay_missing(self, tmp_path, sample_config):
+        """10 records have no PR and 9 no T intervals; a 0 would be a lie."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "AAAAAAAA-0000-0000-0000-000000000001"
+        no_t = {k: v for k, v in self.INTERVALS.items()
+                if k in {"HR", "RR", "PR", "QRS"}}
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001, params=no_t),
+            records=[f"1001/{record}"],
+        )
+        row = load(path, self._config(sample_config)).loc[record]
+
+        assert row["qrs_ms"] == 78.0
+        for column in ("qt_ms", "qtcf_ms", "jtpeak_ms", "jtpeakc_ms", "tpeak_tend_ms"):
+            assert pd.isna(row[column])
+
+    def test_triplicate_average_rows_are_not_records(self, tmp_path, sample_config):
+        """adeg's DTYPE=AVERAGE rows have a blank EGREFID and carry the endpoints.
+
+        They are the only rows where BASE/CHG exist, so they must be excluded from
+        the per-record frame and reachable separately — not silently dropped.
+        """
+        from ecgbench.labels.ecgcipa import load_labels as load
+        from ecgbench.labels.ecgcipa import load_triplicate_averages
+
+        record = "00689D31-8491-4643-B3C8-45241FBBD47C"
+        averages = [
+            {
+                "STUDYID": "SCR-004", "USUBJID": 1001, "TRTA": "Ranolazine",
+                "TRTP": "Ranolazine", "TRTSEQA": "Ranolazine", "APERIOD": 1,
+                "APERIODC": "Period 1", "ATPT": "54 hrs", "ATPTN": 24,
+                "NRRLT": 6.0, "ARRLT": 5.9, "ADTM": "2017-03-29 12:55:41",
+                "ADY": 3, "APERDAY": 3, "AEGBLFL": None, "ECGPCFL": None,
+                "EGREFID": None, "DTYPE": "AVERAGE", "PARAMCD": "QTCF",
+                "AVAL": 400.0, "EGREPNUM": None, "BASE": 380.0, "CHG": 20.0,
+            }
+        ]
+        config = self._config(sample_config)
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001) + averages,
+            records=[f"1001/{record}"],
+        )
+
+        df = load(path, config)
+        assert len(df) == 1  # the AVERAGE row is not a record
+        assert df.loc[record, "qtcf_ms"] == pytest.approx(378.284764)
+
+        avg = load_triplicate_averages(path, config)
+        assert len(avg) == 1
+        assert avg.loc[0, "parameter"] == "QTCF"
+        assert avg.loc[0, "CHG"] == 20.0
+        # Keyed by subject/period/timepoint — there is no record to join to.
+        assert {"patient_id", "period", "timepoint_n"} <= set(avg.columns)
+
+    def test_replicate_number_is_anchored_and_disagreement_flagged(
+        self, tmp_path, sample_config
+    ):
+        """EGREPNUM disagrees across parameters in 4 of the 5,749 records."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "454D8FEA-5B86-4321-ABCD-FA4F8E1700E2"
+        rows = self._adeg_rows(record, 1001, replicate=3)
+        for row in rows:
+            if row["PARAMCD"] in {"JTP", "JTPC", "QT", "QTCF", "TPTE"}:
+                row["EGREPNUM"] = 2
+        path = self._tree(tmp_path, adeg_rows=rows, records=[f"1001/{record}"])
+        frame = load(path, self._config(sample_config))
+        row = frame.loc[record]
+
+        # Anchored on HR, which is measured for every record.
+        assert row["replicate_number"] == 3
+        assert bool(row["replicate_number_inconsistent"]) is True
+        assert str(frame["replicate_number"].dtype) == "Int64"
+
+    def test_dofetilide_concentration_keeps_its_own_unit(self, tmp_path, sample_config):
+        """Dofetilide is pg/mL and the other six analytes are ng/mL."""
+        from ecgbench.labels.ecgcipa import ANALYTE_COLUMNS
+
+        assert ANALYTE_COLUMNS["DOF"] == ("plasma_dofetilide_pg_ml", "pg/mL")
+        for code, (name, unit) in ANALYTE_COLUMNS.items():
+            if code != "DOF":
+                assert unit == "ng/mL"
+                assert name.endswith("_ng_ml")
+
+    def test_below_lloq_zeros_are_distinguishable_from_measurements(
+        self, tmp_path, sample_config
+    ):
+        """263 adpc rows report 0 for 'below the limit of quantification'."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        measured = "AAAAAAAA-0000-0000-0000-00000000000A"
+        censored = "AAAAAAAA-0000-0000-0000-00000000000B"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=(
+                self._adeg_rows(measured, 1001, ATPTN=24)
+                + self._adeg_rows(censored, 1001, ATPTN=5)
+            ),
+            records=[f"1001/{measured}", f"1001/{censored}"],
+            adpc_rows=[
+                (1001, 1, 24, "RAN", 4668.74, None),
+                (1001, 1, 5, "RAN", 0.0, "Y"),
+            ],
+        )
+        df = load(path, self._config(sample_config))
+
+        assert df.loc[measured, "plasma_ranolazine_ng_ml"] == pytest.approx(4668.74)
+        assert df.loc[measured, "plasma_below_lloq"] == ""
+        assert bool(df.loc[measured, "plasma_any_below_lloq"]) is False
+        # A 0 that means "censored", not "none detected".
+        assert df.loc[censored, "plasma_ranolazine_ng_ml"] == 0.0
+        assert df.loc[censored, "plasma_below_lloq"] == "RAN"
+        assert bool(df.loc[censored, "plasma_any_below_lloq"]) is True
+
+    def test_the_lloq_flag_survives_a_csv_round_trip(self, tmp_path, sample_config):
+        """plasma_below_lloq is "" for uncensored records, which pandas reads back
+        from a CSV as NaN — so `!= ""` on a re-read frame matches every row. The
+        boolean is what the generated metadata CSV and any user filter rely on."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        measured = "AAAAAAAA-0000-0000-0000-00000000000A"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(measured, 1001, ATPTN=24),
+            records=[f"1001/{measured}"],
+            adpc_rows=[(1001, 1, 24, "RAN", 4668.74, None)],
+        )
+        load(path, self._config(sample_config)).to_csv(tmp_path / "round_trip.csv")
+        reread = pd.read_csv(tmp_path / "round_trip.csv")
+
+        assert pd.isna(reread.loc[0, "plasma_below_lloq"])  # the trap
+        assert reread.loc[0, "plasma_below_lloq"] != ""  # ... which reads as censored
+        assert bool(reread.loc[0, "plasma_any_below_lloq"]) is False  # ... and this does not
+
+    def test_race_whitespace_is_stripped(self, tmp_path, sample_config):
+        """adsl ships '  WHITE' and ' ASIAN'; a groupby on those splits classes."""
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        record = "00689D31-8491-4643-B3C8-45241FBBD47C"
+        path = self._tree(
+            tmp_path,
+            adeg_rows=self._adeg_rows(record, 1001),
+            records=[f"1001/{record}"],
+        )
+        row = load(path, self._config(sample_config)).loc[record]
+
+        assert row["race"] == "WHITE"
+        assert row["age_years"] == 41
+        assert row["bmi_kg_m2"] == 25.9
+        assert row["systolic_bp_mmhg"] == 121.0
+
+    def test_missing_adeg_names_the_file(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgcipa import load_labels as load
+
+        (tmp_path / "RECORDS").write_text("raw/1001/x\nmedians/1001/x\n")
+        with pytest.raises(LabelSourceMissingError, match="adeg.csv"):
+            load(tmp_path, self._config(sample_config))
+
+    def test_fiducials_are_resolved_positionally_not_by_symbol(self):
+        """'(' marks both the P and QRS onsets, ')' both the QRS and T offsets.
+
+        The real 00689D31-...D47C annotation, whose derived intervals equal
+        adeg.csv's published PR 188, QRS 78, QT 371, J-Tpeak 232, Tpeak-Tend 61.
+        """
+        from ecgbench.labels.ecgcipa import _fiducials
+
+        marks = [(165, "("), (353, "("), (396, "N"), (431, ")"), (663, "t"), (724, ")")]
+        f = _fiducials(marks)
+
+        assert f["p_onset_ms"] == 165
+        assert f["qrs_onset_ms"] == 353
+        assert f["qrs_peak_ms"] == 396
+        assert f["qrs_offset_ms"] == 431
+        assert f["t_peak_ms"] == 663
+        assert f["t_offset_ms"] == 724
+        assert f["t_peak_secondary_ms"] is None
+        assert f["qrs_onset_ms"] - f["p_onset_ms"] == 188
+        assert f["qrs_offset_ms"] - f["qrs_onset_ms"] == 78
+        assert f["t_offset_ms"] - f["qrs_onset_ms"] == 371
+        assert f["t_peak_ms"] - f["qrs_offset_ms"] == 232
+        assert f["t_offset_ms"] - f["t_peak_ms"] == 61
+
+    def test_fiducials_of_an_incompletely_annotated_beat(self):
+        """9 records have no T annotation at all — the last ')' is then the QRS
+        offset, and reading it as the T offset would invent a QT interval."""
+        from ecgbench.labels.ecgcipa import _fiducials
+
+        f = _fiducials([(353, "("), (396, "N"), (431, ")")])
+        assert f["qrs_onset_ms"] == 353
+        assert f["qrs_offset_ms"] == 431
+        assert f["p_onset_ms"] is None  # only one onset: it is the QRS
+        assert f["t_offset_ms"] is None
+        assert f["t_peak_ms"] is None
+
+        # 30 records carry a secondary T peak.
+        g = _fiducials(
+            [(165, "("), (353, "("), (396, "N"), (431, ")"),
+             (600, "t"), (663, "t"), (724, ")")]
+        )
+        assert g["t_peak_ms"] == 600
+        assert g["t_peak_secondary_ms"] == 663
+        assert g["t_offset_ms"] == 724
+
+    def test_every_interval_and_analyte_code_maps_to_a_unique_column(self):
+        """Hand-written maps, so a duplicated value would silently overwrite."""
+        from ecgbench.labels.ecgcipa import (
+            ANALYTE_COLUMNS,
+            INTERVAL_COLUMNS,
+            VITAL_COLUMNS,
+        )
+
+        for mapping in (INTERVAL_COLUMNS, VITAL_COLUMNS):
+            assert len(set(mapping.values())) == len(mapping)
+        names = [name for name, _ in ANALYTE_COLUMNS.values()]
+        assert len(set(names)) == len(names) == 7

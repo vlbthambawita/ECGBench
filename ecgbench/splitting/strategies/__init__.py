@@ -5,6 +5,7 @@ from . import (  # noqa: F401
     challenge2021,
     chapman,
     ecg_arrhythmia,
+    ecgcipa,
     generic,
     incartdb,
     leipzig_heart_center_ecg,

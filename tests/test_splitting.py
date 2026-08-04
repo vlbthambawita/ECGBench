@@ -1675,3 +1675,178 @@ class TestWCTECGSplitter:
 
         seen = pd.concat(result.folds.values())[config.record_id_column]
         assert len(seen) == len(df) and seen.is_unique
+
+
+class TestECGCIPASplitter:
+    """5,749 records from 60 subjects, in near-duplicate triplicates."""
+
+    TREATMENTS = (
+        "Ranolazine", "Verapamil", "Chloroquine", "Lopinavir+Ritonavir",
+        "Placebo", "Dofetilide",
+    )
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ecgcipa",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_id", patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000, sampling_rates=[1000],
+            label_column="treatment",
+            url="https://physionet.org/content/ecgcipa/1.0.0/",
+        )
+
+    def _source(self, tmp_path, n_subjects=30, timepoints=4, replicates=3):
+        """Write RECORDS plus the four analysis CSVs for a miniature study.
+
+        Mirrors the release's shape rather than its size: one treatment per
+        subject, `timepoints` nominal timepoints, `replicates` records each.
+        """
+        stems, adeg, adpc, adsl, addm = [], [], [], [], []
+        for index in range(n_subjects):
+            subject = 1001 + index
+            treatment = self.TREATMENTS[index % len(self.TREATMENTS)]
+            adsl.append({
+                "USUBJID": subject, "AGE": 25 + index, "SEX": "M" if index % 2 else "F",
+                "RACE": "  WHITE", "ETHNIC": "NOT HISPANIC OR LATINO",
+                "ARM": treatment, "ACTARM": treatment,
+            })
+            for code, value in (("HEIGHT", 175.0), ("WEIGHT", 70.0), ("BMI", 22.9),
+                                ("SYSBP", 120.0), ("DIABP", 75.0)):
+                addm.append({"USUBJID": subject, "PARAMCD": code, "AVAL": value})
+            for timepoint in range(1, timepoints + 1):
+                adpc.append({
+                    "USUBJID": subject, "APERIOD": 1, "ATPTN": timepoint,
+                    "PARAMCD": "RAN", "AVAL": 100.0 * timepoint, "LLOQFL": None,
+                })
+                for replicate in range(1, replicates + 1):
+                    record = f"{subject}-{timepoint:02d}-{replicate}"
+                    stems.append(f"{subject}/{record}")
+                    for param, value in (("HR", 64.0), ("RR", 940.0), ("PR", 188.0),
+                                         ("QRS", 78.0), ("QT", 371.0), ("QTCF", 378.0),
+                                         ("JTP", 232.0), ("JTPC", 240.0),
+                                         ("TPTE", 61.0)):
+                        adeg.append({
+                            "STUDYID": "SCR-004", "USUBJID": subject,
+                            "TRTA": treatment, "TRTP": treatment,
+                            "TRTSEQA": treatment, "APERIOD": 1,
+                            "APERIODC": "Period 1", "ATPT": f"{timepoint} hrs",
+                            "ATPTN": timepoint, "NRRLT": float(timepoint),
+                            "ARRLT": float(timepoint), "ADY": 1, "APERDAY": 1,
+                            "ADTM": "2017-03-27 06:57:10", "AEGBLFL": None,
+                            "ECGPCFL": "Y", "EGREFID": record, "DTYPE": None,
+                            "PARAMCD": param, "AVAL": value,
+                            "EGREPNUM": replicate,
+                        })
+
+        lines = [f"raw/{stem}" for stem in stems] + [f"medians/{stem}" for stem in stems]
+        (tmp_path / "RECORDS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        pd.DataFrame(adeg).to_csv(tmp_path / "adeg.csv", index=False)
+        pd.DataFrame(adpc).to_csv(tmp_path / "adpc.csv", index=False)
+        pd.DataFrame(adsl).to_csv(tmp_path / "adsl.csv", index=False)
+        pd.DataFrame(addm).to_csv(tmp_path / "addm.csv", index=False)
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ecgcipa import ECGCIPASplitter
+
+        assert isinstance(get_splitter("ecgcipa"), ECGCIPASplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        """The release ships no record-to-file table, and validate_dataset re-reads
+        the CSV from disk — so writing the cache is load-bearing."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 30 * 4 * 3
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["patient_id"].nunique() == 30
+
+    def test_signal_path_points_at_raw_not_the_derived_medians(
+        self, sample_config, tmp_path
+    ):
+        """Both directories hold a record per id; only raw/ is the ECG."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert df["signal_path"].str.startswith("raw/").all()
+        assert df["median_beat_path"].str.startswith("medians/").all()
+        assert df.loc[0, "signal_path"] == "raw/1001/1001-01-1"
+
+    def test_cached_csv_is_reused_on_the_second_call(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "adeg.csv").unlink()  # the cache is read, not the source tables
+        df = splitter.load_metadata(path, config)
+
+        assert len(df) == 30 * 4 * 3
+
+    def test_stratification_labels_come_from_the_label_loader(
+        self, sample_config, tmp_path
+    ):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "treatment"
+        assert set(labels) == set(self.TREATMENTS)
+        assert len(labels) == len(df)
+
+    def test_stratification_requires_load_metadata_first(self, sample_config):
+        splitter = get_splitter("ecgcipa")
+
+        with pytest.raises(ValueError, match="treatment"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"record_id": ["a"]}), self._config(sample_config)
+            )
+
+    def test_no_patient_spans_two_folds(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        assert result.group_column == "patient_id"
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for patient in frame["patient_id"]:
+                assert fold_of.setdefault(patient, fold) == fold
+        assert len(fold_of) == 30
+
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique
+
+    def test_triplicates_of_a_timepoint_never_split(self, sample_config, tmp_path):
+        """The three records of a timepoint are the same person seconds apart at
+        the same plasma concentration — near-duplicates, not independent samples.
+
+        Patient grouping is what keeps them together; nothing else would, and a
+        per-record split would put a near-copy of most test records in train.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgcipa")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for row in frame.itertuples():
+                key = (row.patient_id, row.period, row.timepoint_n)
+                assert fold_of.setdefault(key, fold) == fold
+        assert len(fold_of) == 30 * 4

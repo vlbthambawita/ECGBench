@@ -95,6 +95,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     """
     from ecgbench.labels import (
         challenge2021,
+        ecgcipa,
         incartdb,
         leipzig_heart_center_ecg,
         ludb,
@@ -117,6 +118,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,
         "mimic_iv_ecg": mimic_iv_ecg.load_labels,
         "wctecgdb": wctecgdb.load_labels,
+        "ecgcipa": ecgcipa.load_labels,
     }
 
 

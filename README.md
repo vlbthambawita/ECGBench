@@ -182,6 +182,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `norwegian_athlete_ecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `mhd_effect_ecg_mri` | I, II, III, aVR, aVL, aVF, V1-V6 — but **14 of 53 records hold only I, II, III** |
 | `wctecgdb` | **37 channels, no aVR/aVL/aVF**: I, II, III, V1-V6, LA, RA, LL, UV1-UV6 — each **once raw (`-Raw`) and once filtered** — then `WCT` |
+| `ecgcipa` | I, II, III, aVR, aVL, aVF, V1-V6 — but the **derived median beat of the same record** spells them AVR/AVL/AVF and adds VCGMAG, X, Y, Z |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -319,6 +320,24 @@ says why the patient was admitted, not what the ten seconds show; the 8-way
 carry precordial channels **synthesised** as `V = UV − WCT` — flagged per record, and to
 be excluded when evaluating precordial reconstruction. See
 `examples/load_wctecgdb.py`.
+
+`ecgcipa` is the one dataset here with **no diagnosis at all**. It is 5,749 ten-second
+12-lead ECGs at **1 kHz** (10,000 samples — the largest 12-lead tensor in the
+catalogue) from **60 healthy volunteers** in an FDA Phase I trial, and what varies is
+the drug: ranolazine, verapamil, lopinavir+ritonavir, chloroquine, placebo or a
+dofetilide/diltiazem crossover. The labels are drug, time from dose, plasma
+concentration and nine interval measurements (QT, QTcF, J-Tpeak, J-Tpeakc, …), so
+`treatment` is the stratification label and everything else is continuous. Samples are
+**microvolts** (`signal_unit_scale: 0.001`), and `units="uV"` returns the source scale.
+
+Three things to know before using it. **Records come in near-duplicate triplicates** —
+three segments per subject per timepoint, so 5,749 records are closer to 1,917
+observations; patient grouping keeps each triplicate intact. **Every record ships
+twice**, as the raw segment and as a derived 16-channel median beat (`+VCGMAG/X/Y/Z`)
+whose `.atr` fiducials are what the published intervals were measured from — the median
+beats deliberately get no fold of their own. And **the study's own endpoints cannot be
+attached to a waveform**: change from baseline lives only on `adeg.csv`'s
+triplicate-average rows, which carry no record ID. See `examples/load_ecgcipa.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
