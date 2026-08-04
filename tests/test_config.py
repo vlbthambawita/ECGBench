@@ -172,6 +172,48 @@ def test_load_mhd_effect_ecg_mri_config():
     assert config.publish_fold_csvs is True
 
 
+def test_load_wctecgdb_config():
+    """Wilson Central Terminal: 37 channels at 800 Hz, patient-grouped segments."""
+    config = load_config("wctecgdb")
+    assert config.slug == "wctecgdb"
+    assert config.version == "1.0.1"
+    assert config.signal_format == "wfdb"
+    # The per-channel header gains are genuine calibration and wfdb applies them,
+    # so records come back as physiologic millivolts.
+    assert config.signal_unit_scale == 1.0
+    # A channel count, not a 12-lead set: 18 raw + 18 filtered + WCT. aVR/aVL/aVF
+    # are absent from the release entirely.
+    assert config.leads == 37
+    assert config.lead_names is not None
+    assert len(config.lead_names) == 37
+    assert config.lead_names[:3] == ["I-Raw", "II-Raw", "III-Raw"]
+    assert config.lead_names[18:21] == ["I", "II", "III"]
+    assert config.lead_names[-1] == "WCT"
+    assert "aVR" not in config.lead_names and "AVR" not in config.lead_names
+    # 800 Hz, and 8001 samples is 10.00125 s — duration_seconds is the nominal 10.
+    assert config.sampling_rates == [800]
+    assert config.default_sampling_rate == 800
+    assert config.duration_seconds == 10
+    assert config.validation.expected_samples == {800: 8001}
+    assert config.validation.expected_leads == 37
+    # Raw limb/unipolar channels are unreferenced potentials with a DC offset of
+    # several mV, so the usual [-10, 10] would flag most records.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    # seg01 repeats in all 92 patient directories, so the id flattens the path.
+    assert config.record_id_column == "record_name"
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {800: "signal_path"}
+    assert config.metadata_csv == "ecgbench_metadata.csv"  # generated from headers
+    # Labels live in the .hea comments, not a CSV.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_name"
+    assert config.label_column == "diagnosis_group"
+    # ODC-By, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
@@ -183,6 +225,7 @@ def test_list_available_configs():
     assert "ludb" in slugs
     assert "norwegian_athlete_ecg" in slugs
     assert "mhd_effect_ecg_mri" in slugs
+    assert "wctecgdb" in slugs
     # Template should not be listed (starts with _)
     assert "_template" not in slugs
 

@@ -362,6 +362,36 @@ class TestShippedLeadNames:
         assert config.lead_names[3:6] == ["aVR", "aVL", "aVF"]
         assert config.lead_names[6:] == ["V1", "V2", "V3", "V4", "V5", "V6"]
 
+    def test_wctecgdb_declares_37_channels_raw_then_filtered_then_wct(self):
+        """WCT is the one dataset that ships every channel twice.
+
+        Channels 0-17 are the raw acquisition, 18-35 the same signals after DC
+        removal and a 0.05-150 Hz band-pass, and 36 is the Wilson Central Terminal
+        (filtered only — there is no WCT-Raw). Names, not indices, are what keeps
+        the two families apart: index 18 is filtered lead I, index 0 is raw lead I,
+        and the raw copy carries a DC offset the filtered one does not. aVR, aVL and
+        aVF are absent from the release, so leads=["aVR"] must raise rather than
+        return something plausible.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("wctecgdb")
+        assert config.leads == 37
+        assert len(config.lead_names) == 37
+        raw = config.lead_names[:18]
+        filtered = config.lead_names[18:36]
+        assert all(name.endswith("-Raw") for name in raw)
+        assert not any(name.endswith("-Raw") for name in filtered)
+        # Same 18 channels in the same order, minus the suffix.
+        assert [name[:-4] for name in raw] == filtered
+        assert filtered[:9] == ["I", "II", "III", "V1", "V2", "V3", "V4", "V5", "V6"]
+        # The three limb electrode potentials and the six true unipolar chest leads.
+        assert filtered[9:] == ["LA", "RA", "LL",
+                                "UV1", "UV2", "UV3", "UV4", "UV5", "UV6"]
+        assert config.lead_names[36] == "WCT"
+        for absent in ("aVR", "aVL", "aVF", "WCT-Raw"):
+            assert absent not in config.lead_names
+
     def test_leipzig_declares_the_ecg_subset_of_a_variable_channel_layout(self):
         """Leipzig is the one dataset whose lead_names is a strict SUBSET of the
         channels a record holds, and that is deliberate.

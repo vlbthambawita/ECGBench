@@ -1528,3 +1528,150 @@ class TestMHDEffectECGMRISplitter:
 
         seen = assigned[config.record_id_column]
         assert len(seen) == len(df) and seen.is_unique
+
+
+class TestWCTECGSplitter:
+    """540 segments from 92 patients, so patient grouping is not optional."""
+
+    DIAGNOSES = (
+        ("Non ST\xa0segment\xa0elevation myocardial infarction (NSTEMI)",
+         "Myocardial infarction"),
+        ("Stable angina", "Angina or coronary artery disease"),
+        ("Atrial fibrillation", "Atrial fibrillation or flutter"),
+        ("not reported", "Not reported"),
+    )
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="wctecgdb",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={800: "signal_path"},
+            default_sampling_rate=800, sampling_rates=[800],
+            label_column="diagnosis_group",
+            url="https://physionet.org/content/wctecgdb/1.0.1/",
+        )
+
+    def _source(self, tmp_path, n_patients=40, segments=3):
+        """Write n_patients x segments headers, cycling the four diagnoses."""
+        names = []
+        for patient in range(1, n_patients + 1):
+            diagnosis = self.DIAGNOSES[patient % len(self.DIAGNOSES)][0]
+            for segment in range(1, segments + 1):
+                name = f"patient{patient:03d}/seg{segment:02d}"
+                names.append(name)
+                path = tmp_path / f"{name}.hea"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(
+                    f"seg{segment:02d} 37 800 8001\n"
+                    f"seg{segment:02d}.dat 16 36213.4604(-6137)/mV 0 0 500 -11346 0 I-Raw\n"
+                    "\n"
+                    f"#Age: {40 + patient}\n"
+                    f"#Sex: {'M' if patient % 3 else 'F'}\n"
+                    f"#Diagnosis report: {diagnosis}\n",
+                    encoding="cp1252",
+                )
+        (tmp_path / "RECORDS").write_text("\n".join(names) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.wctecgdb import WCTECGSplitter
+
+        assert isinstance(get_splitter("wctecgdb"), WCTECGSplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        """The release ships no metadata table, and validate_dataset re-reads it
+        from disk — so writing the cache is load-bearing, not an optimisation."""
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 120
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["record_name"].tolist()[:2] == ["patient001_seg01", "patient001_seg02"]
+
+    def test_signal_path_keeps_the_directory_the_record_id_flattens(
+        self, sample_config, tmp_path
+    ):
+        """patient001_seg01 identifies the record; patient001/seg01 locates it."""
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert df["signal_path"].tolist()[:2] == [
+            "patient001/seg01", "patient001/seg02",
+        ]
+        assert (tmp_path / (df["signal_path"][0] + ".hea")).exists()
+
+    def test_cached_csv_is_reused_on_the_second_call(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "patient001/seg01.hea").unlink()  # cache, not the headers
+        df = splitter.load_metadata(path, config)
+
+        assert len(df) == 120
+
+    def test_list_column_round_trips_without_a_comma(self, sample_config, tmp_path):
+        """The channel list holds commas itself ("V1, V1-raw"), so ';' it is."""
+        from ecgbench.splitting.strategies.wctecgdb import LIST_SEPARATOR
+
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+        path = self._source(tmp_path)
+        header = (path / "patient001/seg01.hea").read_text(encoding="cp1252")
+        (path / "patient001/seg01.hea").write_text(
+            header + "#Reconstruct Precordials: V1, V1-raw, V2, V2-raw\n",
+            encoding="cp1252",
+        )
+        splitter.load_metadata(path, config)
+
+        reread = pd.read_csv(tmp_path / "ecgbench_metadata.csv")
+        assert LIST_SEPARATOR == ";"
+        assert reread.loc[0, "reconstructed_precordials"] == "V1;V1-raw;V2;V2-raw"
+
+    def test_stratification_labels_come_from_the_label_loader(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "diagnosis_group"
+        assert set(labels) == {group for _, group in self.DIAGNOSES}
+        assert len(labels) == 120
+
+    def test_stratification_requires_load_metadata_first(self, sample_config):
+        splitter = get_splitter("wctecgdb")
+
+        with pytest.raises(ValueError, match="diagnosis_group"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"record_name": ["a"]}), self._config(sample_config)
+            )
+
+    def test_no_patient_spans_two_folds(self, sample_config, tmp_path):
+        """The whole point of grouping: one patient contributes up to 31 near-
+        duplicate segments, and its diagnosis label is constant across them."""
+        config = self._config(sample_config)
+        splitter = get_splitter("wctecgdb")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        assert result.group_column == "patient_id"
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for patient in frame["patient_id"]:
+                assert fold_of.setdefault(patient, fold) == fold
+        assert len(fold_of) == 40
+
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique

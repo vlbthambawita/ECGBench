@@ -15,4 +15,5 @@ from . import (  # noqa: F401
     norwegian_athlete_ecg,
     ptbdb,
     ptbxl,
+    wctecgdb,
 )

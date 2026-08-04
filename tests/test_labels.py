@@ -1582,3 +1582,218 @@ class TestMHDEffectECGMRILabels:
         )
         with pytest.raises(LabelSourceMissingError, match="mhd-effect-ecg-mri"):
             scan_records(tmp_path, self._config(sample_config))
+
+
+class TestWCTECGLabels:
+    """Demographics and one free-text admission diagnosis, from the headers."""
+
+    # Real patient001/seg01 content, truncated to two of the 37 signal lines. The
+    # diagnosis carries byte 0xA0 where a dash belongs — that is what the release
+    # ships, and it is why the loader decodes cp1252 rather than utf-8.
+    DIAGNOSIS = "Non ST\xa0segment\xa0elevation myocardial infarction (NSTEMI)"
+    HEADER = (
+        "seg01 37 800 8001\n"
+        "seg01.dat 16 36213.4604(-6137)/mV 0 0 500 -11346 0 I-Raw\n"
+        "seg01.dat 16 145039.7107(2528)/mV 0 0 -3436 -23891 0 WCT\n"
+        "\n"
+        "#Age: 46\n"
+        "#Sex: M\n"
+        f"#Diagnosis report: {DIAGNOSIS}\n"
+    )
+
+    def _tree(self, tmp_path, records):
+        """Write RECORDS plus one patientNNN/segMM.hea per {path: header text}."""
+        (tmp_path / "RECORDS").write_text("\n".join(records) + "\n", encoding="utf-8")
+        for name, text in records.items():
+            path = tmp_path / f"{name}.hea"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # cp1252, like the release — a utf-8 write would not reproduce byte 0xA0.
+            path.write_text(text, encoding="cp1252")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config,
+            slug="wctecgdb",
+            record_id_column="record_name",
+            url="https://physionet.org/content/wctecgdb/1.0.1/",
+        )
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("wctecgdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the .hea comment lines are the source
+        assert spec.join_column == "record_name"
+
+    def test_record_id_flattens_the_patient_directory(self, tmp_path, sample_config):
+        """seg01 exists in all 92 patient directories, so it cannot be the id."""
+        from ecgbench.labels.wctecgdb import load_labels
+
+        path = self._tree(
+            tmp_path,
+            {"patient001/seg01": self.HEADER, "patient002/seg01": self.HEADER},
+        )
+        df = load_labels(path, self._config(sample_config))
+
+        assert df.index.name == "record_name"
+        assert list(df.index) == ["patient001_seg01", "patient002_seg01"]
+        assert df["patient_id"].tolist() == ["patient001", "patient002"]
+        assert df["segment"].tolist() == ["seg01", "seg01"]
+
+    def test_demographics_and_diagnosis_are_parsed(self, tmp_path, sample_config):
+        from ecgbench.labels.wctecgdb import load_labels
+
+        df = load_labels(
+            self._tree(tmp_path, {"patient001/seg01": self.HEADER}),
+            self._config(sample_config),
+        )
+        row = df.loc["patient001_seg01"]
+
+        assert row["age"] == 46
+        assert row["sex"] == "M"
+        # The non-breaking spaces are folded, and the raw string survives verbatim.
+        assert row["diagnosis"] == (
+            "Non ST segment elevation myocardial infarction (NSTEMI)"
+        )
+        assert row["diagnosis_raw"] == self.DIAGNOSIS
+        assert "\xa0" in row["diagnosis_raw"]
+        assert bool(row["diagnosis_reported"]) is True
+        assert row["diagnosis_group"] == "Myocardial infarction"
+        assert row["reconstructed_precordials"] == []
+        assert bool(row["has_reconstructed_precordials"]) is False
+
+    def test_windows_1252_headers_do_not_need_replacement_characters(
+        self, tmp_path, sample_config
+    ):
+        """A utf-8 read of these headers either raises or produces U+FFFD."""
+        from ecgbench.labels.wctecgdb import load_labels
+
+        path = self._tree(tmp_path, {"patient001/seg01": self.HEADER})
+        raw = (path / "patient001/seg01.hea").read_bytes()
+        assert b"\xa0" in raw
+        with pytest.raises(UnicodeDecodeError):
+            raw.decode("utf-8")
+
+        df = load_labels(path, self._config(sample_config))
+        assert "�" not in df.loc["patient001_seg01", "diagnosis"]
+
+    def test_misspellings_are_corrected_and_the_raw_form_survives(
+        self, tmp_path, sample_config
+    ):
+        """Four real variants; leaving them apart would split one class into two."""
+        from ecgbench.labels.wctecgdb import load_labels, normalise_diagnosis
+
+        assert normalise_diagnosis("Atypica chest pain") == "Atypical chest pain"
+        assert normalise_diagnosis("sinus bradycardia") == "Sinus bradycardia"
+        assert normalise_diagnosis("Type 2 Myocaridal infarctoin") == (
+            "Type 2 myocardial infarction"
+        )
+        assert normalise_diagnosis("Congestive Cardic failure (CCF)") == (
+            "Congestive cardiac failure (CCF)"
+        )
+
+        header = self.HEADER.replace(self.DIAGNOSIS, "Atypica chest pain")
+        df = load_labels(
+            self._tree(tmp_path, {"patient001/seg01": header}),
+            self._config(sample_config),
+        )
+        assert df.loc["patient001_seg01", "diagnosis"] == "Atypical chest pain"
+        assert df.loc["patient001_seg01", "diagnosis_raw"] == "Atypica chest pain"
+
+    def test_not_reported_is_a_value_not_a_blank(self, tmp_path, sample_config):
+        """10 patients / 38 records have no diagnosis; NaN would hide that."""
+        from ecgbench.labels.wctecgdb import load_labels
+
+        header = self.HEADER.replace(self.DIAGNOSIS, "not reported")
+        df = load_labels(
+            self._tree(tmp_path, {"patient008/seg01": header}),
+            self._config(sample_config),
+        )
+        row = df.loc["patient008_seg01"]
+
+        assert row["diagnosis"] == "not reported"
+        assert bool(row["diagnosis_reported"]) is False
+        assert row["diagnosis_group"] == "Not reported"
+
+    def test_reconstructed_precordials_are_flagged_per_record(
+        self, tmp_path, sample_config
+    ):
+        """The 8 affected records are synthesised as V = UV - WCT, not measured."""
+        from ecgbench.labels.wctecgdb import load_labels
+
+        header = self.HEADER + "#Reconstruct Precordials: V1, V1-raw, V2, V2-raw\n"
+        df = load_labels(
+            self._tree(tmp_path, {"patient008/seg01": header}),
+            self._config(sample_config),
+        )
+        row = df.loc["patient008_seg01"]
+
+        assert row["reconstructed_precordials"] == ["V1", "V1-raw", "V2", "V2-raw"]
+        assert bool(row["has_reconstructed_precordials"]) is True
+
+    def test_unmapped_diagnosis_raises_because_it_is_the_split_label(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.wctecgdb import load_labels
+
+        header = self.HEADER.replace(self.DIAGNOSIS, "Brugada syndrome")
+        with pytest.raises(ValueError, match="Unmapped diagnosis"):
+            load_labels(
+                self._tree(tmp_path, {"patient001/seg01": header}),
+                self._config(sample_config),
+            )
+
+    def test_unexpected_sex_raises(self, tmp_path, sample_config):
+        from ecgbench.labels.wctecgdb import load_labels
+
+        header = self.HEADER.replace("#Sex: M", "#Sex: Male")
+        with pytest.raises(ValueError, match="unexpected #Sex"):
+            load_labels(
+                self._tree(tmp_path, {"patient001/seg01": header}),
+                self._config(sample_config),
+            )
+
+    def test_missing_comment_line_raises(self, tmp_path, sample_config):
+        """All 540 headers carry all three; one missing means a truncated copy."""
+        from ecgbench.labels.wctecgdb import load_labels
+
+        header = "\n".join(
+            line for line in self.HEADER.splitlines() if not line.startswith("#Age")
+        ) + "\n"
+        with pytest.raises(ValueError, match=r"missing the \['Age'\]"):
+            load_labels(
+                self._tree(tmp_path, {"patient001/seg01": header}),
+                self._config(sample_config),
+            )
+
+    def test_header_listed_in_records_but_absent_names_the_release(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.wctecgdb import load_labels
+
+        (tmp_path / "RECORDS").write_text(
+            "patient001/seg01\npatient001/seg02\n", encoding="utf-8"
+        )
+        (tmp_path / "patient001").mkdir()
+        (tmp_path / "patient001/seg01.hea").write_text(self.HEADER, encoding="cp1252")
+
+        with pytest.raises(LabelSourceMissingError, match="wctecgdb"):
+            load_labels(tmp_path, self._config(sample_config))
+
+    def test_every_group_in_the_map_is_one_of_the_eight(self):
+        """The map is hand-written, so a typo would create a ninth silent class."""
+        from ecgbench.labels.wctecgdb import DIAGNOSIS_GROUP
+
+        assert len(DIAGNOSIS_GROUP) == 40  # 43 header strings, 40 after correction
+        assert set(DIAGNOSIS_GROUP.values()) == {
+            "Myocardial infarction",
+            "Angina or coronary artery disease",
+            "Atrial fibrillation or flutter",
+            "Other tachyarrhythmia",
+            "Cardiomyopathy or heart failure",
+            "Bradyarrhythmia or conduction block",
+            "Other or non-cardiac",
+            "Not reported",
+        }

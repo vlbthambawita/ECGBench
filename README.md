@@ -181,15 +181,21 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `leipzig_heart_center_ecg` | I, II, III, aVR, aVL, aVF, V1-V6, **then 2-8 intracardiac channels in six different orders** |
 | `norwegian_athlete_ecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `mhd_effect_ecg_mri` | I, II, III, aVR, aVL, aVF, V1-V6 — but **14 of 53 records hold only I, II, III** |
+| `wctecgdb` | **37 channels, no aVR/aVL/aVF**: I, II, III, V1-V6, LA, RA, LL, UV1-UV6 — each **once raw (`-Raw`) and once filtered** — then `WCT` |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
 works on the lowercase datasets too — an unknown lead lists what is available, and
 a duplicate is rejected.
 
-PTBDB is the one dataset that is not 12-lead: it stores 15 signals, the
-conventional twelve plus the three Frank vectorcardiography leads. `leads=` is how
-you take the standard twelve out of it. Its records are also **variable length**
+Two datasets are not 12-lead at all. **PTBDB** stores 15 signals, the conventional
+twelve plus the three Frank vectorcardiography leads; `leads=` is how you take the
+standard twelve out of it. **`wctecgdb`** stores 37: I/II/III, V1-V6, the three limb
+electrode potentials LA/RA/LL and the six true unipolar chest leads UV1-UV6, each
+present both raw and after DC removal plus a 0.05-150 Hz band-pass, plus the Wilson
+Central Terminal itself. Index 0 is raw lead I and index 18 is *filtered* lead I —
+the same signal in two preprocessing states — so `leads=` by name is the only safe
+way to read it, and aVR/aVL/aVF have to be derived from I and II. Its records are also **variable length**
 (32 s to 120 s), so batching needs a fixed `window=` — see `examples/load_ptbdb.py`.
 
 `leipzig_heart_center_ecg` goes further: it is the one dataset where the channel
@@ -290,6 +296,29 @@ grouped on it and no subject spans a fold. Records mix 12-lead and 3-lead layout
 both `leads=` and `window=(0, 25000)`. Note the shipped release has 53 records where
 the README, PhysioNet page and CinC paper all say 43. See
 `examples/load_mhd_effect_ecg_mri.py`.
+
+`wctecgdb` is the one dataset that **measures the reference instead of assuming it**.
+Conventional ECG treats the Wilson Central Terminal — the point V1–V6 are measured
+against — as 0 V; this release brings the three limb electrodes out individually so the
+WCT can be recorded, and its authors report amplitudes reaching **241% of lead II**.
+Each of the 540 ten-second segments therefore holds **37 channels at 800 Hz** (8001
+samples, 10.00125 s): I/II/III, V1–V6, the limb electrode potentials LA/RA/LL and the
+true unipolar chest leads UV1–UV6, **each present both raw and filtered** (DC removal
+plus 0.05–150 Hz), then `WCT`. Index 0 is raw lead I and index 18 is *filtered* lead I,
+so `leads=` by name is the only safe way in, and aVR/aVL/aVF do not exist here at all.
+`amplitude_range_mv` is ±20 because the raw unreferenced channels carry several mV of DC
+offset — and 140 of the 540 records have a channel clipped at the ±9.2250 mV acquisition
+rail, which validation passes deliberately rather than treating saturation as damage.
+
+Its 540 segments come from **92 patients, 1–31 each** — five patients are 24% of the
+dataset — so folds are grouped on `patient_id` and any per-record rate is weighted by
+segment count. The only label is a **patient-level free-text admission diagnosis** (43
+distinct strings, 10 patients with none, Windows-1252 bytes and four misspellings), which
+says why the patient was admitted, not what the ten seconds show; the 8-way
+`diagnosis_group` reduction exists to stratify folds, not to train on. Eight records
+carry precordial channels **synthesised** as `V = UV − WCT` — flagged per record, and to
+be excluded when evaluating precordial reconstruction. See
+`examples/load_wctecgdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
