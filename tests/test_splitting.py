@@ -1850,3 +1850,199 @@ class TestECGCIPASplitter:
                 key = (row.patient_id, row.period, row.timepoint_n)
                 assert fold_of.setdefault(key, fold) == fold
         assert len(fold_of) == 30 * 4
+
+
+class TestECGDMMLDSplitter:
+    """4,211 records from 22 subjects, in near-duplicate triplicates."""
+
+    #: ARMCD code -> treatment, per the shipped column description.
+    ARMS = {
+        "A": "Dofetilide",
+        "B": "Lidocaine + Dofetilide",
+        "C": "Mexiletine + Dofetilide",
+        "D": "Moxifloxacin + Diltiazem",
+        "E": "Placebo",
+    }
+
+    #: The two randomised sequences used by the miniature study below. Real
+    #: v1.0.0 has ten, 2-3 subjects each.
+    SEQUENCES = ("E-A-B-D-C", "C-B-D-E-A")
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ecgdmmld",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_id", patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000, sampling_rates=[1000],
+            label_column="treatment",
+            url="https://physionet.org/content/ecgdmmld/1.0.0/",
+        )
+
+    def _source(self, tmp_path, n_subjects=20, periods=5, timepoints=4, replicates=3):
+        """Write a miniature SCR-003.Clinical.Data.csv.
+
+        Mirrors the release's shape rather than its size: a complete crossover in
+        which every subject passes through all five arms, `timepoints` nominal
+        timepoints per period and `replicates` records each.
+        """
+        rows = []
+        for index in range(n_subjects):
+            subject = 2001 + index
+            sequence = self.SEQUENCES[index % len(self.SEQUENCES)]
+            for period in range(1, periods + 1):
+                treatment = self.ARMS[sequence.split("-")[period - 1]]
+                for timepoint_index in range(timepoints):
+                    # -0.5 is the pre-dose triplicate; the rest are post-dose.
+                    timepoint = -0.5 if timepoint_index == 0 else float(timepoint_index)
+                    for replicate in range(1, replicates + 1):
+                        rows.append({
+                            "EGREFID": f"{subject}-{period}-{timepoint_index}-{replicate}",
+                            "RANDID": subject,
+                            "SEX": "M" if index % 2 else "F",
+                            "AGE": 21 + index,
+                            "HGHT": 175.0, "WGHT": 70.0,
+                            "SYSBP": 120.0, "DIABP": 75.0,
+                            "RACE": "WHITE", "ETHNIC": "NOT HISPANIC OR LATINO",
+                            "ARMCD": sequence,
+                            "VISIT": f"PERIOD-{period}-DOSING",
+                            "TRTA": treatment,
+                            "DOF": None, "LIDO": None, "MEXI": None,
+                            "MOXI": None, "MOXI.M2": None, "DILT": None,
+                            "TPT": timepoint,
+                            "BASELINE": "Y" if timepoint_index == 0 else "N",
+                            "RR": 1000.0, "PR": 166.0, "QT": 420.0, "QRS": 72.0,
+                            "JTPEAK": 263.0, "TPEAKTEND": 85.0,
+                            "TPEAKTPEAKP": None,
+                            "ERD_30": 52.0, "LRD_30": 28.0,
+                            "Twave_amplitude": 727.78, "Twave_asymmetry": 0.19,
+                            "Twave_flatness": 0.53,
+                        })
+        pd.DataFrame(rows).to_csv(
+            tmp_path / "SCR-003.Clinical.Data.csv", index=False
+        )
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ecgdmmld import ECGDMMLDSplitter
+
+        assert isinstance(get_splitter("ecgdmmld"), ECGDMMLDSplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        """The shipped table has no signal-path column, and validate_dataset
+        re-reads the CSV from disk — so writing the cache is load-bearing."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 20 * 5 * 4 * 3
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["patient_id"].nunique() == 20
+
+    def test_signal_path_points_at_raw_not_the_derived_medians(
+        self, sample_config, tmp_path
+    ):
+        """Both directories hold a record per id; only raw/ is the ECG."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert df["signal_path"].str.startswith("raw/").all()
+        assert df["median_beat_path"].str.startswith("medians/").all()
+        assert df.loc[0, "signal_path"] == "raw/2001/2001-1-0-1"
+
+    def test_cached_csv_is_reused_on_the_second_call(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "SCR-003.Clinical.Data.csv").unlink()  # cache read, not the source
+        df = splitter.load_metadata(path, config)
+
+        assert len(df) == 20 * 5 * 4 * 3
+
+    def test_stratification_labels_come_from_the_label_loader(
+        self, sample_config, tmp_path
+    ):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "treatment"
+        assert set(labels) == set(self.ARMS.values())
+        assert len(labels) == len(df)
+
+    def test_stratification_requires_load_metadata_first(self, sample_config):
+        splitter = get_splitter("ecgdmmld")
+
+        with pytest.raises(ValueError, match="treatment"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"record_id": ["a"]}), self._config(sample_config)
+            )
+
+    def test_no_patient_spans_two_folds(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        assert result.group_column == "patient_id"
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for patient in frame["patient_id"]:
+                assert fold_of.setdefault(patient, fold) == fold
+        assert len(fold_of) == 20
+
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique
+
+    def test_triplicates_of_a_timepoint_never_split(self, sample_config, tmp_path):
+        """The three records of a timepoint are the same person seconds apart at
+        the same plasma concentration — near-duplicates, not independent samples.
+
+        Patient grouping is what keeps them together; nothing else would, and a
+        per-record split would put a near-copy of most test records in train.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for row in frame.itertuples():
+                key = (row.patient_id, row.period, row.timepoint_hours)
+                assert fold_of.setdefault(key, fold) == fold
+        assert len(fold_of) == 20 * 5 * 4
+
+    def test_a_complete_crossover_puts_every_arm_in_every_fold(
+        self, sample_config, tmp_path
+    ):
+        """Every subject carries all five arms, so patient grouping alone gives
+        each fold all five — the stratifier cannot separate them and does not try.
+
+        This is the property that makes `treatment` a weak stratification target
+        here, and it is worth pinning: a future change that started splitting by
+        something other than patient would break it.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgdmmld")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        for fold, frame in result.folds.items():
+            assert set(frame["treatment"]) == set(self.ARMS.values()), fold

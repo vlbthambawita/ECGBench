@@ -256,6 +256,48 @@ def test_load_ecgcipa_config():
     assert config.publish_fold_csvs is True
 
 
+def test_load_ecgdmmld_config():
+    """ECGDMMLD: millivolt samples at 1 kHz, and a crossover treatment arm."""
+    config = load_config("ecgdmmld")
+    assert config.slug == "ecgdmmld"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # 1.0, NOT the sibling ecgcipa's 0.001. Every channel declares its own gain
+    # against unit /mV, so wfdb already returns millivolts. Copying ecgcipa's
+    # value would divide every sample by 1000 and amplitude_outlier would never
+    # fire again.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Uppercase 'A', like ptbxl — and the opposite of ecgcipa's raw/ headers,
+    # which spell the same three leads aVR/aVL/aVF.
+    assert config.lead_names == [
+        "I", "II", "III", "AVR", "AVL", "AVF",
+        "V1", "V2", "V3", "V4", "V5", "V6",
+    ]
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    assert config.duration_seconds == 10
+    assert config.validation.expected_samples == {1000: 10000}
+    assert config.validation.expected_leads == 12
+    # The house default, and it excludes exactly 2 electrode-artefact records.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # EGREFID UUIDs, unique across the release; subjects 2001-2022.
+    assert config.record_id_column == "record_id"
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # The shipped clinical table has no signal-path column, so the splitter
+    # generates one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv == "SCR-003.Clinical.Data.csv"
+    assert config.labels.join_column == "EGREFID"
+    # A pharmacology dataset: the closest thing to a class is the treatment arm.
+    assert config.label_column == "treatment"
+    # ODC-By, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()

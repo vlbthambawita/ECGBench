@@ -36,14 +36,18 @@ related:
   - slug: "ecg-effects-of-dofetilide-moxifloxacin-and-combinations-ecgdmmld"
     relation: "sibling_release"
     shares_records: false
-    verified: false
+    verified: true
     note: >
-      Same programme and layout again, sharing dofetilide as the positive control.
-      ECGDMMLD is 22 subjects under NCT02308748 at 500 Hz upsampled to 1 kHz; CiPA
-      is 60 subjects under NCT03070470 recorded at 1 kHz. No shared recordings.
-      Unverified against the files — taken from the PhysioNet pages. The same
-      subject-ID collision applies: both releases start numbering at 1001, so
-      prefix the subject ID before pooling them.
+      Same programme, sharing dofetilide as the positive control — ECGDMMLD is
+      SCR-003, CiPA is SCR-004. ECGDMMLD is 22 subjects under NCT02308748 at 500 Hz
+      up-sampled to 1 kHz; CiPA is 60 subjects under NCT03070470 recorded at 1 kHz.
+      **No shared recordings** — verified against the files: the two RECORDS lists
+      hold 5,749 and 4,211 record UUIDs with an intersection of 0. A subject-ID
+      collision does apply, but not the one the ECGRDVQ note describes: ECGDMMLD
+      numbers its subjects **2001-2022**, which collides with CiPA's Part 2 crossover
+      subjects **2001-2010** — ten different people sharing ten IDs. Prefix the
+      subject ID with the dataset before pooling, or patient-level grouping silently
+      merges them.
 
 sections:
   - type: description

@@ -1,0 +1,345 @@
+# ECGBench Config: ECG Effects of Dofetilide, Moxifloxacin and Combinations
+# =========================================================================
+# https://physionet.org/content/ecgdmmld/1.0.0/
+#
+# 4,211 ten-second 12-lead ECGs at 1 kHz from 22 healthy volunteers in a
+# randomised, double-blind, 5-period crossover Phase I trial (SCR-003,
+# NCT02308748) run by the US FDA to test whether blocking **late sodium current**
+# shortens the QT prolongation caused by a pure hERG blocker. Every subject passed
+# through all five arms in a randomised order: dofetilide alone (the hERG
+# positive control), dofetilide with mexiletine, dofetilide with lidocaine,
+# moxifloxacin with diltiazem, and placebo.
+#
+# Like `ecgcipa`, this is a **pharmacology dataset, not a diagnosis dataset**.
+# Nobody in it has a cardiac condition; what varies across records is the drug, the
+# time since dosing and the resulting change in repolarisation. There is no rhythm
+# or morphology class to predict, so stratification uses the treatment arm.
+#
+# SIX THINGS THAT ARE NOT LIKE THE OTHER 12-LEAD DATASETS HERE
+#
+# 1. `treatment` NAMES THE PERIOD'S REGIMEN, NOT THE DRUG ON BOARD. This is the
+#    trap that matters most, because it makes the stratification label wrong as a
+#    training target for roughly a third of the records. Within a period the drugs
+#    were staged hours apart: in the "Mexiletine + Dofetilide" arm, mexiletine
+#    alone is circulating at the 1.5-3 h timepoints (dofetilide plasma is NA) and
+#    dofetilide only joins it from 6.5 h; in "Moxifloxacin + Diltiazem",
+#    moxifloxacin runs alone until diltiazem appears at 12 h. A record labelled
+#    "Mexiletine + Dofetilide" at TPT=2.0 is a mexiletine-only ECG. Use the six
+#    plasma concentration columns for what was actually present; `treatment` is a
+#    randomisation arm.
+# 2. Every record ships TWICE, and only one copy is the ECG. `raw/<subject>/<uuid>`
+#    is the 10 s 12-lead acquisition and is what this config points at.
+#    `medians/<subject>/<uuid>` is a *derived* representative median beat — 16
+#    channels (the 12 leads plus the vector-magnitude lead VCGMAG and the Frank
+#    vx, vy, vz components), 1,200 samples, same 1 kHz — carrying the `.atr`
+#    fiducial annotations. Same record id, same acquisition, different object. The
+#    median beats get no fold of their own (that would be a second ECGBench
+#    partition of the same recordings); the label loader exposes their paths and
+#    fiducials instead.
+# 3. Records come in TRIPLICATE. Three 10 s segments were extracted per
+#    (subject, period, nominal timepoint) for 1,403 of the 1,404 timepoint groups —
+#    4,211 = 1,403 x 3 + 2 — seconds apart, from the same subject in the same
+#    posture at the same drug concentration. They are near-duplicates. Patient
+#    grouping keeps all three on one side of the split; nothing else would.
+# 4. 1000 Hz, and the samples really are MILLIVOLTS — unlike `ecgcipa`, whose
+#    sibling headers are in microvolts. Every channel of every record declares its
+#    own gain against unit `/mV` (per-lead AND per-record, e.g.
+#    `330979.8(-11915)/mV` for lead I and `33780.4(-16215)/mV` for lead II of the
+#    same record), each fitted to that channel's range. `wfdb.rdrecord` applies
+#    them, so signal_unit_scale is 1.0. Verified: peak amplitudes then land at
+#    1-4 mV. The ECGs were acquired at 500 Hz with 2.5 uV resolution and
+#    **up-sampled to 1000 Hz** by the depositors, so the 1 kHz here is
+#    interpolated, not measured.
+# 5. Lead order is standard and spelled with an UPPERCASE A: I, II, III, AVR, AVL,
+#    AVF, V1-V6 — PTB-XL's spelling, and the opposite of `ecgcipa`, whose raw
+#    headers write aVR/aVL/aVF. Matching in ECGDataset(leads=...) is
+#    case-insensitive, so either works; lead_names records what the files say.
+#    Here the medians/ headers agree with raw/ (both uppercase), which is also
+#    unlike ecgcipa, where the two directories disagree.
+# 6. The shipped metadata table has no signal-path column. SCR-003.Clinical.Data.csv
+#    is otherwise ideal — one row per record, 33 columns, EGREFID equal to the
+#    filename — but nothing in it says where the file is. The path is
+#    `raw/<RANDID>/<EGREFID>`, verified for all 4,211 records against the raw/
+#    directory tree, and ECGDMMLDSplitter writes `ecgbench_metadata.csv` carrying
+#    it on first run. The dataset root must therefore be writable.
+#
+# AND THREE DEFECTS IN THE RELEASE ITSELF
+#
+#   All three survive the release's own SHA256SUMS.txt (all 21,059 files match), so
+#   they are upstream properties and not download damage.
+#
+#   a. TPEAKTPEAKP IS EMPTY IN ALL 4,211 ROWS. The column is documented
+#      ("Interval between the two peaks of the T-wave (if secondary peak is
+#      present)") and it is 100% NA. Consistently, no `.atr` file anywhere in the
+#      release carries a second T-peak mark, though the PhysioNet page lists
+#      "secondary T peak (if present)" among the annotations. There is no secondary
+#      T-peak information in this dataset at all.
+#   b. 3 MEDIAN-BEAT HEADERS ARE CORRUPT and raise `IndexError` from
+#      `wfdb.rdrecord`. In each, one channel's `.dat` filename has digits from the
+#      gain field spliced into it — e.g. `...FFDFD3526620008.dat` for `vy` where the
+#      file is `...FFDFD3526628.dat`, alongside gain `62000`. The `.dat` files are
+#      intact (38,400 bytes, the right size) and the `.atr` files read fine; only
+#      the header text is wrong. 4,208 of 4,211 median beats load. The affected
+#      records are listed in ecgbench/labels/ecgdmmld.py. Their raw/ records are
+#      unaffected, so this costs the split nothing.
+#   c. 9 RECORDS HAVE NO QRS-OFFSET ANNOTATION, so `QRS` and `JTPEAK` are NA for
+#      them and their `.atr` carries 4 marks instead of 5. Everything else is
+#      complete: PR, QT and TPEAKTEND are present for all 4,211.
+#
+# ONE MORE THING WORTH KNOWING BEFORE YOU LOOK FOR THE ENDPOINT
+#
+#   The release ships no heart rate, no QTcF and no J-Tpeakc — only the absolute
+#   intervals. HR and QTcF are derived by the label loader (60000/RR and
+#   Fridericia); J-Tpeakc deliberately is not, because it needs the study's own
+#   rate-correction exponent rather than a standard formula.
+#
+#   The study's endpoint is *change* from baseline, and unlike `ecgcipa` — where the
+#   change columns exist only on unjoinable triplicate-average rows — here it is
+#   fully computable per record. `BASELINE=Y` flags the three pre-dose (TPT=-0.5)
+#   records of each of the 101 (subject, period) pairs, so the baseline is their
+#   mean; `load_baseline_deltas()` does exactly that. Placebo-correction still needs
+#   a cross-subject aggregation and is left to the user.
+
+name: "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)"
+slug: "ecgdmmld"
+version: "1.0.0"
+url: "https://physionet.org/content/ecgdmmld/1.0.0/"
+# The 1.1 GB release is genuinely public — no PhysioNet credentials needed:
+#   wget -r -N -c -np https://physionet.org/files/ecgdmmld/1.0.0/
+# It stays null because `metadata_csv` below is generated by the splitter on first
+# run, and `download_dataset` raises if it cannot find that file immediately after
+# extraction.
+download_url: null
+license: "ODC-By 1.0 (Open Data Commons Attribution License)"
+description: >
+  4,211 ten-second 12-lead ECGs at 1 kHz (up-sampled from a 500 Hz acquisition)
+  from 22 healthy volunteers in a randomised, double-blind, placebo-controlled
+  5-period crossover Phase I trial (study SCR-003, ClinicalTrials.gov
+  NCT02308748) run by the US FDA to test whether blocking late sodium current can
+  shorten the QT prolongation produced by a selective hERG blocker. Every subject
+  passed through all five arms in one of ten randomised sequences: dofetilide
+  alone, dofetilide with mexiletine, dofetilide with lidocaine, moxifloxacin with
+  diltiazem, and placebo. Within each period the drugs were staged hours apart, so
+  the late-sodium or calcium blocker circulates alone before the hERG blocker
+  joins it. Triplicate 10 s segments were extracted at 14 nominal timepoints from
+  half an hour before dosing to 24 hours after, each paired with a plasma
+  concentration sample, and each is published both as the raw 10 s segment and as
+  a derived 16-channel median beat carrying semi-automatic P-onset, QRS-onset,
+  QRS-offset, T-peak and T-offset annotations on the vector-magnitude lead.
+  Per-record RR, PR, QT, QRS, J-Tpeak, Tpeak-Tend, early and late repolarisation
+  durations and three T-wave morphology scores accompany the waveforms, alongside
+  subject demographics. No participant had cardiac disease: the label of interest
+  is drug exposure, not diagnosis.
+citation: >
+  Johannesen L, Vicente J, Mason JW, et al. (2016). Late sodium current block for
+  drug-induced long QT syndrome: results from a prospective clinical trial.
+  Clinical Pharmacology & Therapeutics 99(2):214-223.
+  https://doi.org/10.1002/cpt.205 — data: PhysioNet,
+  https://doi.org/10.13026/C2D016
+doi: "10.13026/C2D016"
+
+creators:
+  - type: Person
+    name: "Lars Johannesen"
+    url: "https://physionet.org/content/ecgdmmld/1.0.0/"
+  - type: Person
+    name: "Jose Vicente"
+    url: "https://physionet.org/content/ecgdmmld/1.0.0/"
+  - type: Person
+    name: "David G. Strauss"
+    url: "https://physionet.org/content/ecgdmmld/1.0.0/"
+  - type: Organization
+    name: "US Food and Drug Administration, Center for Drug Evaluation and Research"
+    url: "https://www.fda.gov/about-fda/center-drug-evaluation-and-research-cder"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 1.0: the headers declare per-lead, per-record gains against unit `/mV`, so
+# wfdb.rdrecord already returns millivolts. This is the opposite of the sibling
+# `ecgcipa`, whose headers declare `/uV` and need 0.001 — do not copy that value
+# across. Verified: with 1.0 the observed peak amplitude is 1-4 mV for 99.9% of
+# records.
+signal_unit_scale: 1.0
+leads: 12
+# Verified identical in all 4,211 raw headers. Uppercase 'A', like PTB-XL and
+# unlike ecgcipa's raw/ headers. The medians/ headers spell them the same way.
+lead_names: ["I", "II", "III", "AVR", "AVL", "AVF",
+             "V1", "V2", "V3", "V4", "V5", "V6"]
+duration_seconds: 10
+sampling_rates: [1000]
+default_sampling_rate: 1000
+
+# --- File Structure ---
+# SCR-003.Clinical.Data.csv is one row per record with EGREFID equal to the
+# filename, but it carries no signal path. ECGDMMLDSplitter writes this file on
+# first run, adding `signal_path` (raw/<RANDID>/<EGREFID>) and
+# `median_beat_path`, because validate_dataset re-reads data_path /
+# metadata_csv from disk rather than reusing the splitter's frame.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# The EGREFID UUID. Unique across the release — 4,211 distinct for 4,211 records.
+record_id_column: "record_id"
+patient_id_column: "patient_id"   # RANDID; 4,211 records from 22 subjects, 42-210 each
+
+signal_path_columns:
+  1000: "signal_path"  # raw/<RANDID>/<EGREFID>, e.g. raw/2001/0319214B-1559-...
+
+# --- Labels ---
+label_column: "treatment"
+label_format: "single"
+
+stratification:
+  # Custom: the splitter stratifies on `treatment` (TRTA, the period's randomised
+  # regimen) and groups on `patient_id`.
+  #
+  # Treatment is the only categorical worth balancing in a cohort with no disease.
+  # Two caveats, and the first is bigger here than in any sibling dataset:
+  #
+  #  - THIS IS A COMPLETE CROSSOVER, so stratifying on treatment cannot separate
+  #    arms. 19 of the 22 subjects passed through all five treatments, so grouping
+  #    by patient necessarily puts all five arms in the same fold. Treatment
+  #    balance across folds is therefore near-automatic and proves nothing; there
+  #    is no split of this dataset in which any two arms are disjoint by subject.
+  #    What the stratifier actually buys is protection against the three early
+  #    withdrawals (2011, 2015, 2021 completed 2, 1 and 3 periods) landing
+  #    together.
+  #  - Fold SIZES will be uneven, and patient grouping is why. 22 patients over 10
+  #    folds is 2-3 per fold, and records per subject run 42-210, so a fold holding
+  #    two withdrawn subjects is a fraction of the size of one holding two
+  #    completers. That is the correct trade — the alternative leaks triplicates —
+  #    but read the per-fold counts before quoting a per-fold result.
+  #
+  # Grouping also keeps each triplicate intact: all records of every one of the
+  # 1,404 (subject, period, timepoint) groups land in the same fold.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  expected_samples:
+    1000: 10000  # uniform: all 4,211 headers declare exactly 10000 samples at 1000 Hz
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The house default, and amplitude_outlier is the only check that fires at all.
+  # Scanned over all 4,211 records x 12 leads x 10,000 samples the observed range
+  # is -8.40 to +18.49 mV, but the distribution is tight: the 99.9th percentile of
+  # per-record peak absolute amplitude is 3.91 mV and only 4 records exceed 5 mV.
+  # [-10, 10] therefore excludes exactly 2 records —
+  # 9779B087-4B95-4FA0-9C6E-D532B1366DAE (subject 2016, +18.5 mV) and
+  # 1DA19FBE-DEB2-40BE-A657-AD9DCA8B9FBD (subject 2007, -6.8 to +13.6 mV) — which
+  # are electrode artefacts, not physiology. No record has a NaN sample, a missing
+  # lead or a flat lead (the minimum per-lead variance across the release is
+  # 2.3e-4 mV^2 against the check's 1e-6 threshold), and no header fails to parse.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ecgdmmld.py renames and types the 33 shipped
+# columns, derives heart rate and QTcF, attaches both signal paths, and adds the
+# per-record change from the subject-period pre-dose baseline via
+# load_baseline_deltas(). A module rather than a declarative column select because
+# of the derivations and because `median_beat_path` has to be built.
+labels:
+  source_csv: "SCR-003.Clinical.Data.csv"
+  join_column: "EGREFID"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "QT interval"
+    - "J-Tpeak"
+    - "proarrhythmia"
+    - "late sodium current"
+    - "hERG"
+    - "ion channel block"
+    - "dofetilide"
+    - "mexiletine"
+    - "lidocaine"
+    - "moxifloxacin"
+    - "diltiazem"
+    - "clinical pharmacology"
+    - "Phase I trial"
+    - "crossover trial"
+    - "pharmacokinetics"
+    - "1000 Hz"
+    - "PhysioNet"
+  rai_data_collection: >
+    Continuous 12-lead ECG was recorded from 22 healthy volunteers aged 18 to 35 at
+    a single US Phase I clinical pharmacology unit under study SCR-003
+    (ClinicalTrials.gov NCT02308748), a randomised, double-blind,
+    placebo-controlled 5-period crossover trial designed by the US FDA's Center for
+    Drug Evaluation and Research to test whether late sodium current block shortens
+    drug-induced QT prolongation. Each subject received all five treatments —
+    dofetilide alone, dofetilide with mexiletine, dofetilide with lidocaine,
+    moxifloxacin with diltiazem, and placebo — in one of ten randomised sequences,
+    with a one-week washout between periods. Within a period the agents were staged
+    across the day: dofetilide and mexiletine were given orally after meals while
+    lidocaine, moxifloxacin and diltiazem were infused intravenously over a
+    60-minute loading and 30-minute maintenance dose, so the late-sodium or calcium
+    blocker circulates alone at the early timepoints and the hERG blocker joins it
+    later. Recording used a Mortara Surveyor system at 500 Hz with 2.5 microvolt
+    amplitude resolution; the depositors up-sampled the extracted segments to
+    1000 Hz. Three optimal 10-second 12-lead segments with stable heart rate and
+    maximum signal quality were extracted with Antares software during supine rest
+    before each pharmacokinetic blood draw, at 14 nominal timepoints (-0.5, 1.5, 2,
+    2.5, 3, 6.5, 7, 7.5, 8, 12, 12.5, 13, 13.5 and 24 hours from the first dose of
+    the period), yielding 4,211 records. A representative median beat was derived
+    per record by QRS-synchronised sample-by-sample alignment, excluding non-sinus
+    beats by cross-correlation and RR-interval criteria, and annotated
+    semi-automatically on the vector-magnitude lead for P onset, QRS onset, QRS
+    offset, T peak and T offset; RR, PR, QT, QRS, J-Tpeak, Tpeak-Tend, 30% early
+    and late repolarisation durations and three T-wave morphology scores were
+    measured from those fiducials.
+  rai_data_biases: >
+    This cohort is healthy by design and is not a clinical population: 22
+    volunteers aged 19-35 (mean 26.1), 13 male and 9 female, screened to exclude
+    cardiac disease. Nothing in it supports training or evaluating a diagnostic
+    model — there is no arrhythmia, no structural disease and no rhythm label, and
+    QT prolongation here is deliberately drug-induced in healthy hearts rather than
+    pathological. 4,211 is a record count, not an independent sample count, and it
+    overstates independence twice over. Records come from 22 people, 42 to 210
+    each, so any per-record statistic is weighted by how many periods a subject
+    completed rather than by person; three subjects withdrew early, completing 1
+    (2015), 2 (2011) and 3 (2021) of the 5 periods. Worse, records come in
+    near-duplicate triplicates: three segments were extracted per subject per
+    timepoint for 1,403 of the 1,404 timepoint groups, seconds apart at the same
+    plasma concentration, so the effective sample size is closer to 1,404 than
+    4,211 and a split that ignores patient grouping is largely testing on its own
+    training data. Because the design is a complete crossover, every treatment
+    effect rests on the same 22 people rather than on independent arms — 20 to 21
+    subjects per treatment, all of them shared. Demographics skew young, and race
+    is recorded as 10 Black or African American, 10 White, 1 American Indian or
+    Alaska Native and 1 Asian, with 2 subjects Hispanic or Latino: not the
+    distribution of any patient population. The treatment label is coarser than it
+    looks — it names the period's randomised regimen, not the drug circulating when
+    a given record was taken, and in the two staged arms the second agent is absent
+    for the first four to eight timepoints. Finally, three documented measurements
+    are wholly or partly absent: TPEAKTPEAKP (the interval between two T-wave
+    peaks) is empty in all 4,211 rows and no annotation file marks a secondary T
+    peak; QRS duration and J-Tpeak are missing for 9 records whose QRS offset could
+    not be annotated; and the release ships no heart rate, QTcF or rate-corrected
+    J-Tpeak at all, so any rate correction is the user's own derivation.
+  rai_personal_sensitive_info: >
+    De-identified trial data released under an Open Data Commons Attribution
+    License. Subjects are numbered 2001-2022 with no names or site detail beyond a
+    single study code, and records are named by opaque UUID. Note that this
+    numbering collides with the sibling CiPA release, whose crossover subjects are
+    also numbered 2001-2010 — the two must be prefixed before pooling, or 10
+    unrelated people merge into one apparent set. The clinical data file does carry
+    attributes that are personal in aggregate: exact age in years (19-35), sex,
+    race, ethnicity, height, weight, resting systolic and diastolic blood pressure,
+    randomised treatment sequence, per-timepoint plasma concentration of six
+    analytes, and per-record interval and T-wave morphology measurements. With 22
+    subjects in one unit under one protocol, those together are more identifying
+    than any one of them; this is why ECGBench publishes fold CSVs of record and
+    subject identifiers only and never the label columns, and why load_labels
+    requires a local copy of the release.

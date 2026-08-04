@@ -2185,3 +2185,312 @@ class TestECGCIPALabels:
             assert len(set(mapping.values())) == len(mapping)
         names = [name for name, _ in ANALYTE_COLUMNS.values()]
         assert len(set(names)) == len(names) == 7
+
+
+class TestECGDMMLDLabels:
+    """Drug exposure, intervals and morphology from one shipped clinical table."""
+
+    #: Real values from 39BF8219-C83A-4121-926F-2BC730FBE127 (subject 2001,
+    #: placebo, pre-dose), so the renames are checked against the release.
+    ROW = {
+        "EGREFID": "39BF8219-C83A-4121-926F-2BC730FBE127",
+        "RANDID": 2001,
+        "SEX": "M",
+        "AGE": 21,
+        "HGHT": 175.0,
+        "WGHT": 60.3,
+        "SYSBP": 125.0,
+        "DIABP": 69.33,
+        "RACE": "BLACK OR AFRICAN AMERICAN",
+        "ETHNIC": "NOT HISPANIC OR LATINO",
+        "ARMCD": "E-A-B-D-C",
+        "VISIT": "PERIOD-1-DOSING",
+        "TRTA": "Placebo",
+        "DOF": None,
+        "LIDO": None,
+        "MEXI": None,
+        "MOXI": None,
+        "MOXI.M2": None,
+        "DILT": None,
+        "TPT": -0.5,
+        "BASELINE": "Y",
+        "RR": 1124.0,
+        "PR": 166.0,
+        "QT": 420.0,
+        "QRS": 72.0,
+        "JTPEAK": 263.0,
+        "TPEAKTEND": 85.0,
+        "TPEAKTPEAKP": None,
+        "ERD_30": 52.0,
+        "LRD_30": 28.0,
+        "Twave_amplitude": 727.7845179035,
+        "Twave_asymmetry": 0.1929824501,
+        "Twave_flatness": 0.5300399661,
+    }
+
+    def _config(self, sample_config):
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config,
+            slug="ecgdmmld",
+            record_id_column="record_id",
+            patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000,
+            url="https://physionet.org/content/ecgdmmld/1.0.0/",
+            labels=LabelConfig(
+                source_csv="SCR-003.Clinical.Data.csv", join_column="EGREFID"
+            ),
+        )
+
+    def _row(self, **overrides):
+        return {**self.ROW, **overrides}
+
+    def _tree(self, tmp_path, rows):
+        pd.DataFrame(list(rows)).to_csv(
+            tmp_path / "SCR-003.Clinical.Data.csv", index=False
+        )
+        return tmp_path
+
+    def test_shipped_config_points_at_the_clinical_table(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("ecgdmmld").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "SCR-003.Clinical.Data.csv"
+        assert spec.join_column == "EGREFID"
+
+    def test_columns_are_renamed_and_indexed_by_record(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+
+        assert df.index.name == "record_id"
+        assert list(df.index) == [self.ROW["EGREFID"]]
+        row = df.iloc[0]
+        assert row["patient_id"] == "2001"
+        assert row["treatment"] == "Placebo"
+        assert row["treatment_sequence"] == "E-A-B-D-C"
+        assert row["timepoint_hours"] == -0.5
+        assert row["rr_ms"] == 1124.0
+        assert row["qt_ms"] == 420.0
+        assert row["jtpeak_ms"] == 263.0
+        assert row["erd_30_ms"] == 52.0
+        # Microvolts, while the waveforms are millivolts.
+        assert row["twave_amplitude_uv"] == pytest.approx(727.7845179035)
+
+    def test_signal_paths_are_built_from_subject_and_record_id(
+        self, tmp_path, sample_config
+    ):
+        """The release ships no path column at all; both are derived."""
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+        row = df.iloc[0]
+
+        assert row["signal_path"] == f"raw/2001/{self.ROW['EGREFID']}"
+        assert row["median_beat_path"] == f"medians/2001/{self.ROW['EGREFID']}"
+
+    def test_period_is_parsed_from_the_visit_label(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(),
+                    self._row(
+                        EGREFID="r2",
+                        VISIT="PERIOD-4-DOSING",
+                        TRTA="Moxifloxacin + Diltiazem",
+                    ),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        assert list(df["period"]) == [1, 4]
+        assert str(df["period"].dtype) == "Int64"
+
+    def test_baseline_flag_becomes_a_boolean(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [self._row(), self._row(EGREFID="r2", BASELINE="N", TPT=2.0)],
+            ),
+            self._config(sample_config),
+        )
+
+        assert list(df["is_baseline"]) == [True, False]
+        assert df["is_baseline"].dtype == bool
+
+    def test_heart_rate_and_qtcf_are_derived_because_the_release_omits_them(
+        self, tmp_path, sample_config
+    ):
+        """Neither exists in the source, and an uncorrected QT is not comparable."""
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+        row = df.iloc[0]
+
+        assert row["hr_bpm"] == pytest.approx(60_000 / 1124.0)
+        # Fridericia: QT / cbrt(RR seconds).
+        assert row["qtcf_ms"] == pytest.approx(420.0 / (1.124 ** (1 / 3)))
+
+    def test_jtpeakc_is_deliberately_not_derived(self, tmp_path, sample_config):
+        """Rate-correcting J-Tpeak needs the study's own fitted exponent.
+
+        Inventing one would produce a plausible column reproducing nobody's
+        analysis, so the loader leaves it out — see the module docstring.
+        """
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+
+        assert "jtpeakc_ms" not in df.columns
+        assert "jtpeak_ms" in df.columns
+
+    def test_tpeak_tpeakp_is_exposed_even_though_it_is_always_empty(
+        self, tmp_path, sample_config
+    ):
+        """Documented by the release, NA in all 4,211 rows, and no .atr marks a
+        secondary T peak. Exposed so its absence is visible, not inferred."""
+        from ecgbench.labels.ecgdmmld import ALWAYS_EMPTY_COLUMNS
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+
+        assert "tpeak_tpeakp_ms" in ALWAYS_EMPTY_COLUMNS
+        assert "tpeak_tpeakp_ms" in df.columns
+        assert df["tpeak_tpeakp_ms"].isna().all()
+
+    def test_dofetilide_keeps_its_own_unit_in_the_column_name(self):
+        """Dofetilide is pg/mL and the other five are ng/mL; pooling is a 1000x
+        error, so the unit cannot be lost in a rename."""
+        from ecgbench.labels.ecgdmmld import ANALYTE_COLUMNS
+
+        assert ANALYTE_COLUMNS["DOF"] == ("plasma_dofetilide_pg_ml", "pg/mL")
+        for code, (name, unit) in ANALYTE_COLUMNS.items():
+            if code != "DOF":
+                assert unit == "ng/mL"
+                assert name.endswith("_ng_ml")
+
+    def test_median_beat_readable_flags_the_three_corrupt_headers(
+        self, tmp_path, sample_config
+    ):
+        """Three v1.0.0 median headers name a nonexistent .dat for one channel, so
+        wfdb.rdrecord raises. The raw/ records are fine."""
+        from ecgbench.labels.ecgdmmld import MEDIAN_HEADER_CORRUPT
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        broken = next(iter(MEDIAN_HEADER_CORRUPT))
+        df = load(
+            self._tree(tmp_path, [self._row(), self._row(EGREFID=broken)]),
+            self._config(sample_config),
+        )
+
+        assert len(MEDIAN_HEADER_CORRUPT) == 3
+        assert df.loc[self.ROW["EGREFID"], "median_beat_readable"]
+        assert not df.loc[broken, "median_beat_readable"]
+
+    def test_missing_source_file_names_it_and_says_where_to_get_it(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        with pytest.raises(LabelSourceMissingError, match="SCR-003.Clinical.Data.csv"):
+            load(tmp_path, self._config(sample_config))
+
+    def test_a_missing_expected_column_raises_rather_than_producing_a_gap(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        row = self._row()
+        del row["QT"]
+        with pytest.raises(ValueError, match="QT"):
+            load(self._tree(tmp_path, [row]), self._config(sample_config))
+
+    def test_baseline_deltas_reference_the_subject_period_pre_dose_mean(
+        self, tmp_path, sample_config
+    ):
+        """The study's endpoint is change from baseline, and unlike ecgcipa it is
+        computable per record here — the baseline is the pre-dose triplicate mean."""
+        from ecgbench.labels.ecgdmmld import load_baseline_deltas
+
+        rows = [
+            self._row(EGREFID="b1", QT=400.0, RR=1000.0),
+            self._row(EGREFID="b2", QT=410.0, RR=1000.0),
+            self._row(EGREFID="b3", QT=420.0, RR=1000.0),
+            self._row(EGREFID="p1", BASELINE="N", TPT=2.0, QT=450.0, RR=1000.0),
+        ]
+        df = load_baseline_deltas(
+            self._tree(tmp_path, rows), self._config(sample_config)
+        )
+
+        # Baseline QT is the mean of the three pre-dose records: 410.
+        assert df.loc["p1", "baseline_qt_ms"] == pytest.approx(410.0)
+        assert df.loc["p1", "delta_qt_ms"] == pytest.approx(40.0)
+        # The pre-dose records keep their own deviation from the triplicate mean.
+        assert df.loc["b1", "delta_qt_ms"] == pytest.approx(-10.0)
+        assert df.loc["b3", "delta_qt_ms"] == pytest.approx(10.0)
+
+    def test_baseline_deltas_are_per_period_not_per_subject(
+        self, tmp_path, sample_config
+    ):
+        """Each crossover period has its own pre-dose baseline; sharing one across
+        periods would attribute a washout drift to the drug."""
+        from ecgbench.labels.ecgdmmld import load_baseline_deltas
+
+        rows = [
+            self._row(EGREFID="p1b", VISIT="PERIOD-1-DOSING", QT=400.0),
+            self._row(EGREFID="p2b", VISIT="PERIOD-2-DOSING", TRTA="Dofetilide", QT=440.0),
+            self._row(
+                EGREFID="p2x", VISIT="PERIOD-2-DOSING", TRTA="Dofetilide",
+                BASELINE="N", TPT=2.0, QT=460.0,
+            ),
+        ]
+        df = load_baseline_deltas(
+            self._tree(tmp_path, rows), self._config(sample_config)
+        )
+
+        # Referenced against period 2's own 440, not period 1's 400.
+        assert df.loc["p2x", "baseline_qt_ms"] == pytest.approx(440.0)
+        assert df.loc["p2x", "delta_qt_ms"] == pytest.approx(20.0)
+
+    def test_arm_sequence_disagreement_is_warned_about(
+        self, tmp_path, sample_config, caplog
+    ):
+        """ARMCD indexed by period reproduces TRTA for all 4,211 records, so a
+        disagreement means the arm codes or period numbering changed."""
+        import logging
+
+        from ecgbench.labels.ecgdmmld import load_labels as load
+
+        # Sequence says period 1 is E (Placebo); claim Dofetilide instead.
+        rows = [self._row(TRTA="Dofetilide")]
+        with caplog.at_level(logging.WARNING, logger="ecgbench.labels.ecgdmmld"):
+            load(self._tree(tmp_path, rows), self._config(sample_config))
+
+        assert "treatment_sequence" in caplog.text
+
+    def test_every_interval_and_analyte_code_maps_to_a_unique_column(self):
+        """Hand-written maps, so a duplicated value would silently overwrite."""
+        from ecgbench.labels.ecgdmmld import (
+            ANALYTE_COLUMNS,
+            CONTEXT_COLUMNS,
+            INTERVAL_COLUMNS,
+            MORPHOLOGY_COLUMNS,
+            SUBJECT_COLUMNS,
+        )
+
+        for mapping in (
+            INTERVAL_COLUMNS, MORPHOLOGY_COLUMNS, SUBJECT_COLUMNS, CONTEXT_COLUMNS,
+        ):
+            assert len(set(mapping.values())) == len(mapping)
+        names = [name for name, _ in ANALYTE_COLUMNS.values()]
+        assert len(set(names)) == len(names) == 6

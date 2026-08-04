@@ -337,6 +337,11 @@ class TestShippedLeadNames:
             # VCGMAG/X/Y/Z, but medians/ is not this config's signal.
             ("ecgcipa", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Uppercase 'A' in all 4,211 raw/ headers — the opposite spelling to
+            # ecgcipa, the sibling release from the same programme. Here medians/
+            # agrees with raw/, which in ecgcipa it does not.
+            ("ecgdmmld", ["I", "II", "III", "AVR", "AVL", "AVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

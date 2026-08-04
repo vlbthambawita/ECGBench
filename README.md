@@ -183,6 +183,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `mhd_effect_ecg_mri` | I, II, III, aVR, aVL, aVF, V1-V6 — but **14 of 53 records hold only I, II, III** |
 | `wctecgdb` | **37 channels, no aVR/aVL/aVF**: I, II, III, V1-V6, LA, RA, LL, UV1-UV6 — each **once raw (`-Raw`) and once filtered** — then `WCT` |
 | `ecgcipa` | I, II, III, aVR, aVL, aVF, V1-V6 — but the **derived median beat of the same record** spells them AVR/AVL/AVF and adds VCGMAG, X, Y, Z |
+| `ecgdmmld` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — the **opposite spelling to `ecgcipa`**, its sibling release from the same programme; here the median beats agree with the raw records and add VCGMAG, vx, vy, vz |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -321,7 +322,11 @@ carry precordial channels **synthesised** as `V = UV − WCT` — flagged per re
 be excluded when evaluating precordial reconstruction. See
 `examples/load_wctecgdb.py`.
 
-`ecgcipa` is the one dataset here with **no diagnosis at all**. It is 5,749 ten-second
+`ecgcipa` and `ecgdmmld` are the two datasets here with **no diagnosis at all** — sibling
+releases from the same FDA programme, and the pair to read together because almost every
+convention they share, they share inverted.
+
+`ecgcipa` is 5,749 ten-second
 12-lead ECGs at **1 kHz** (10,000 samples — the largest 12-lead tensor in the
 catalogue) from **60 healthy volunteers** in an FDA Phase I trial, and what varies is
 the drug: ranolazine, verapamil, lopinavir+ritonavir, chloroquine, placebo or a
@@ -338,6 +343,24 @@ whose `.atr` fiducials are what the published intervals were measured from — t
 beats deliberately get no fold of their own. And **the study's own endpoints cannot be
 attached to a waveform**: change from baseline lives only on `adeg.csv`'s
 triplicate-average rows, which carry no record ID. See `examples/load_ecgcipa.py`.
+
+`ecgdmmld` is the same shape and inverts three of those details. 4,211 ten-second 12-lead
+ECGs at 1 kHz from **22 healthy volunteers** in a **complete 5-period crossover** — every
+subject took dofetilide alone, dofetilide with mexiletine, dofetilide with lidocaine,
+moxifloxacin with diltiazem, and placebo. Samples are **millivolts** (`signal_unit_scale:
+1.0`, *not* ecgcipa's 0.001), the limb leads are spelled **AVR/AVL/AVF** rather than
+aVR/aVL/aVF, and the 1 kHz is **up-sampled from a 500 Hz acquisition**. The study's
+endpoint *is* attachable here — `is_baseline` flags each period's pre-dose triplicate, so
+`load_baseline_deltas()` returns change from baseline per record, the thing ecgcipa cannot
+give you.
+
+Its own trap is the label. **`treatment` names the period's randomised regimen, not the
+drug on board**: the agents were staged hours apart, so only 57% of the dofetilide-arm
+records contain dofetilide and a "Mexiletine + Dofetilide" record at 2 h is a
+mexiletine-only ECG. Stratify on it, train on the six `plasma_*` columns. Because the
+crossover is complete, every fold gets all five arms automatically and no split can
+separate them — and with 2–3 subjects per fold, a per-fold metric describes two or three
+people. See `examples/load_ecgdmmld.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
