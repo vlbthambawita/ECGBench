@@ -97,6 +97,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         challenge2021,
         ecgcipa,
         ecgdmmld,
+        ecgrdvq,
         incartdb,
         leipzig_heart_center_ecg,
         ludb,
@@ -121,6 +122,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "wctecgdb": wctecgdb.load_labels,
         "ecgcipa": ecgcipa.load_labels,
         "ecgdmmld": ecgdmmld.load_labels,
+        "ecgrdvq": ecgrdvq.load_labels,
     }
 
 

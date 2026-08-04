@@ -2494,3 +2494,544 @@ class TestECGDMMLDLabels:
             assert len(set(mapping.values())) == len(mapping)
         names = [name for name, _ in ANALYTE_COLUMNS.values()]
         assert len(set(names)) == len(names) == 6
+
+
+class TestECGRDVQLabels:
+    """SCR-002: single-agent crossover arms, a long-format PK table, and a
+    32-bit wrap in two PR values."""
+
+    #: Real values from 491af4aa-941a-4a89-b74c-b38d91cfc5e9 (subject 1001,
+    #: ranolazine period, pre-dose), so the renames are checked against the release.
+    ROW = {
+        "EGREFID": "491af4aa-941a-4a89-b74c-b38d91cfc5e9",
+        "RANDID": 1001,
+        "SEX": "F",
+        "AGE": 25,
+        "HGHT": 161.5,
+        "WGHT": 54.8,
+        "SYSBP": 114.5,
+        "DIABP": 64.25,
+        "RACE": "WHITE",
+        "ETHNIC": "NOT HISPANIC OR LATINO",
+        "ARMCD": "A,C,E,D,B",
+        "VISIT": "PERIOD-1-DOSING",
+        "EXTRT": "Ranolazine",
+        "EXDOSE": 1500.0,
+        "EXDOSU": "mg",
+        "TPT": -0.5,
+        "BASELINE": "Y",
+        "PCTEST": None,
+        "PCSTRESN": None,
+        "PCSTRESU": None,
+        "RR": 902.0,
+        "PR": 130.0,
+        "QT": 400.0,
+        "QRS": 95.0,
+        "JTPEAK": 218.0,
+        "TPEAKTEND": 87.0,
+        "TPEAKTPEAKP": None,
+        "ERD_30": 39.0,
+        "LRD_30": 28.0,
+        "Twave_amplitude": 688.131,
+        "Twave_asymmetry": 0.104167,
+        "Twave_flatness": 0.363812,
+    }
+
+    def _config(self, sample_config):
+        from ecgbench.config import LabelConfig
+
+        return replace(
+            sample_config,
+            slug="ecgrdvq",
+            record_id_column="record_id",
+            patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000,
+            url="https://physionet.org/content/ecgrdvq/1.0.0/",
+            labels=LabelConfig(
+                source_csv="SCR-002.Clinical.Data.csv", join_column="EGREFID"
+            ),
+        )
+
+    def _row(self, **overrides):
+        return {**self.ROW, **overrides}
+
+    def _tree(self, tmp_path, rows):
+        pd.DataFrame(list(rows)).to_csv(
+            tmp_path / "SCR-002.Clinical.Data.csv", index=False
+        )
+        return tmp_path
+
+    def test_shipped_config_points_at_the_clinical_table(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("ecgrdvq").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "SCR-002.Clinical.Data.csv"
+        assert spec.join_column == "EGREFID"
+
+    def test_columns_are_renamed_and_indexed_by_record(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+
+        assert df.index.name == "record_id"
+        assert list(df.index) == [self.ROW["EGREFID"]]
+        row = df.iloc[0]
+        assert row["patient_id"] == "1001"
+        assert row["treatment"] == "Ranolazine"
+        # Comma-separated here; the sibling ecgdmmld uses dashes.
+        assert row["treatment_sequence"] == "A,C,E,D,B"
+        assert row["timepoint_hours"] == -0.5
+        assert row["rr_ms"] == 902.0
+        assert row["qt_ms"] == 400.0
+        assert row["jtpeak_ms"] == 218.0
+        assert row["erd_30_ms"] == 39.0
+        # Microvolts, while the waveforms are millivolts.
+        assert row["twave_amplitude_uv"] == pytest.approx(688.131)
+
+    def test_signal_paths_are_built_from_subject_and_record_id(
+        self, tmp_path, sample_config
+    ):
+        """The release ships no path column at all; both are derived."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+        row = df.iloc[0]
+
+        assert row["signal_path"] == f"raw/1001/{self.ROW['EGREFID']}"
+        assert row["median_beat_path"] == f"medians/1001/{self.ROW['EGREFID']}"
+
+    def test_period_is_parsed_from_the_visit_label(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(),
+                    self._row(
+                        EGREFID="r2",
+                        VISIT="PERIOD-4-DOSING",
+                        EXTRT="Quinidine Sulph",
+                        EXDOSE=400.0,
+                    ),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        assert list(df["period"]) == [1, 4]
+        assert str(df["period"].dtype) == "Int64"
+
+    def test_baseline_flag_becomes_a_boolean(self, tmp_path, sample_config):
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [self._row(), self._row(EGREFID="r2", BASELINE="N", TPT=2.0)],
+            ),
+            self._config(sample_config),
+        )
+
+        assert list(df["is_baseline"]) == [True, False]
+        assert df["is_baseline"].dtype == bool
+
+    def test_heart_rate_and_qtcf_are_derived_because_the_release_omits_them(
+        self, tmp_path, sample_config
+    ):
+        """Neither exists in the source, and an uncorrected QT is not comparable."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+        row = df.iloc[0]
+
+        assert row["hr_bpm"] == pytest.approx(60_000 / 902.0)
+        # Fridericia: QT / cbrt(RR seconds).
+        assert row["qtcf_ms"] == pytest.approx(400.0 / (0.902 ** (1 / 3)))
+
+    def test_jtpeakc_is_deliberately_not_derived(self, tmp_path, sample_config):
+        """Rate-correcting J-Tpeak needs the study's own fitted exponent."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(self._tree(tmp_path, [self._row()]), self._config(sample_config))
+
+        assert "jtpeakc_ms" not in df.columns
+        assert "jtpeak_ms" in df.columns
+
+    def test_wrapped_pr_is_repaired_and_flagged(self, tmp_path, sample_config):
+        """Two v1.0.0 records store PR as roughly -2^32, because the P onset fell
+        before the start of the median-beat window and an unsigned subtraction
+        wrapped. Adding 2^32 recovers the only physiologic residue."""
+        from ecgbench.labels.ecgrdvq import PR_WRAP_MODULUS
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(),
+                    self._row(EGREFID="wrapped", PR=345.0 - PR_WRAP_MODULUS),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        assert df.loc["wrapped", "pr_ms"] == pytest.approx(345.0)
+        assert bool(df.loc["wrapped", "pr_ms_repaired"]) is True
+        # An ordinary PR is untouched and unflagged.
+        assert df.loc[self.ROW["EGREFID"], "pr_ms"] == pytest.approx(130.0)
+        assert bool(df.loc[self.ROW["EGREFID"], "pr_ms_repaired"]) is False
+
+    def test_a_missing_pr_is_not_mistaken_for_a_wrap(self, tmp_path, sample_config):
+        """9 records have no median beat and therefore no PR at all. NaN must stay
+        NaN rather than being flagged as repaired."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(tmp_path, [self._row(EGREFID="nomedian", PR=None)]),
+            self._config(sample_config),
+        )
+
+        assert pd.isna(df.loc["nomedian", "pr_ms"])
+        assert bool(df.loc["nomedian", "pr_ms_repaired"]) is False
+
+    def test_plasma_concentration_is_long_format_with_its_unit(
+        self, tmp_path, sample_config
+    ):
+        """One agent per period means one measurement per record, so the release
+        names the analyte in a column instead of using six wide ones."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(
+                        EGREFID="ran", BASELINE="N", TPT=2.0,
+                        PCTEST="Ranolazine", PCSTRESN=3725.0, PCSTRESU="ng/mL",
+                    ),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        row = df.loc["ran"]
+        assert row["plasma_analyte"] == "Ranolazine"
+        assert row["plasma_concentration"] == pytest.approx(3725.0)
+        assert row["plasma_concentration_unit"] == "ng/mL"
+
+    def test_dofetilide_pg_ml_is_rescaled_into_the_ng_ml_column(
+        self, tmp_path, sample_config
+    ):
+        """Dofetilide is reported in pg/mL and the other three analytes in ng/mL, so
+        a mean over the raw column compares numbers 1000x apart in scale. The raw
+        column and its unit are left exactly as shipped."""
+        from ecgbench.labels.ecgrdvq import UNIT_NG_ML, UNIT_PG_ML
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(
+                        EGREFID="dof", EXTRT="Dofetilide", EXDOSE=500.0, EXDOSU="ug",
+                        BASELINE="N", TPT=2.0,
+                        PCTEST="Dofetilide", PCSTRESN=2790.0, PCSTRESU=UNIT_PG_ML,
+                    ),
+                    self._row(
+                        EGREFID="ver", EXTRT="Verapamil HCL", EXDOSE=120.0,
+                        BASELINE="N", TPT=2.0,
+                        PCTEST="Verapamil", PCSTRESN=167.0, PCSTRESU=UNIT_NG_ML,
+                    ),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        # Untouched.
+        assert df.loc["dof", "plasma_concentration"] == pytest.approx(2790.0)
+        # Rescaled: 2790 pg/mL is 2.79 ng/mL.
+        assert df.loc["dof", "plasma_concentration_ng_ml"] == pytest.approx(2.79)
+        # Already ng/mL, so unchanged.
+        assert df.loc["ver", "plasma_concentration_ng_ml"] == pytest.approx(167.0)
+
+    def test_an_unrecognised_concentration_unit_is_warned_about(
+        self, tmp_path, sample_config, caplog
+    ):
+        """A reissue introducing a third unit must not be scaled by 1.0 in silence."""
+        import logging
+
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        rows = [self._row(PCTEST="Ranolazine", PCSTRESN=1.0, PCSTRESU="umol/L")]
+        with caplog.at_level(logging.WARNING, logger="ecgbench.labels.ecgrdvq"):
+            load(self._tree(tmp_path, rows), self._config(sample_config))
+
+        assert "umol/L" in caplog.text
+
+    def test_dose_carries_its_own_unit_because_they_differ(
+        self, tmp_path, sample_config
+    ):
+        """500 for dofetilide is micrograms; 400-1500 for the rest are milligrams."""
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        df = load(
+            self._tree(
+                tmp_path,
+                [
+                    self._row(),
+                    self._row(
+                        EGREFID="dof", EXTRT="Dofetilide",
+                        EXDOSE=500.0, EXDOSU="ug",
+                    ),
+                ],
+            ),
+            self._config(sample_config),
+        )
+
+        assert df.loc[self.ROW["EGREFID"], "dose_unit"] == "mg"
+        assert df.loc["dof", "dose_unit"] == "ug"
+
+    def test_median_beat_available_flags_the_nine_records_without_one(
+        self, tmp_path, sample_config
+    ):
+        """medians/ holds 5,223 of the 5,232 records. Every interval was measured
+        from the median beat, so those 9 rows have no PR, QRS, QT or J-Tpeak — but
+        their raw/ records are intact."""
+        from ecgbench.labels.ecgrdvq import MEDIAN_BEAT_MISSING
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        absent = next(iter(MEDIAN_BEAT_MISSING))
+        df = load(
+            self._tree(tmp_path, [self._row(), self._row(EGREFID=absent)]),
+            self._config(sample_config),
+        )
+
+        assert len(MEDIAN_BEAT_MISSING) == 9
+        assert df.loc[self.ROW["EGREFID"], "median_beat_available"]
+        assert not df.loc[absent, "median_beat_available"]
+
+    def test_missing_source_file_names_it_and_says_where_to_get_it(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        with pytest.raises(LabelSourceMissingError, match="SCR-002.Clinical.Data.csv"):
+            load(tmp_path, self._config(sample_config))
+
+    def test_a_missing_expected_column_raises_rather_than_producing_a_gap(
+        self, tmp_path, sample_config
+    ):
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        row = self._row()
+        del row["QT"]
+        with pytest.raises(ValueError, match="QT"):
+            load(self._tree(tmp_path, [row]), self._config(sample_config))
+
+    def test_baseline_deltas_reference_the_subject_period_pre_dose_mean(
+        self, tmp_path, sample_config
+    ):
+        """All 109 (subject, period) pairs have their pre-dose triplicate, so the
+        study's change-from-baseline endpoint is computable for every record."""
+        from ecgbench.labels.ecgrdvq import load_baseline_deltas
+
+        rows = [
+            self._row(EGREFID="b1", QT=400.0, RR=1000.0),
+            self._row(EGREFID="b2", QT=410.0, RR=1000.0),
+            self._row(EGREFID="b3", QT=420.0, RR=1000.0),
+            self._row(EGREFID="p1", BASELINE="N", TPT=2.0, QT=450.0, RR=1000.0),
+        ]
+        df = load_baseline_deltas(
+            self._tree(tmp_path, rows), self._config(sample_config)
+        )
+
+        # Baseline QT is the mean of the three pre-dose records: 410.
+        assert df.loc["p1", "baseline_qt_ms"] == pytest.approx(410.0)
+        assert df.loc["p1", "delta_qt_ms"] == pytest.approx(40.0)
+        # The pre-dose records keep their own deviation from the triplicate mean.
+        assert df.loc["b1", "delta_qt_ms"] == pytest.approx(-10.0)
+        assert df.loc["b3", "delta_qt_ms"] == pytest.approx(10.0)
+
+    def test_baseline_deltas_are_per_period_not_per_subject(
+        self, tmp_path, sample_config
+    ):
+        """Each crossover period has its own pre-dose baseline; sharing one across
+        periods would attribute a washout drift to the drug."""
+        from ecgbench.labels.ecgrdvq import load_baseline_deltas
+
+        rows = [
+            self._row(EGREFID="p1b", VISIT="PERIOD-1-DOSING", QT=400.0),
+            self._row(
+                EGREFID="p2b", VISIT="PERIOD-2-DOSING", EXTRT="Verapamil HCL",
+                EXDOSE=120.0, QT=440.0,
+            ),
+            self._row(
+                EGREFID="p2x", VISIT="PERIOD-2-DOSING", EXTRT="Verapamil HCL",
+                EXDOSE=120.0, BASELINE="N", TPT=2.0, QT=460.0,
+            ),
+        ]
+        df = load_baseline_deltas(
+            self._tree(tmp_path, rows), self._config(sample_config)
+        )
+
+        # Referenced against period 2's own 440, not period 1's 400.
+        assert df.loc["p2x", "baseline_qt_ms"] == pytest.approx(440.0)
+        assert df.loc["p2x", "delta_qt_ms"] == pytest.approx(20.0)
+
+    def test_arm_sequence_disagreement_is_warned_about(
+        self, tmp_path, sample_config, caplog
+    ):
+        """ARMCD indexed by period reproduces EXTRT for all 5,232 records, so a
+        disagreement means the arm codes or period numbering changed."""
+        import logging
+
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        # Sequence A,C,E,D,B says period 1 is A (Ranolazine); claim Placebo.
+        rows = [self._row(EXTRT="Placebo")]
+        with caplog.at_level(logging.WARNING, logger="ecgbench.labels.ecgrdvq"):
+            load(self._tree(tmp_path, rows), self._config(sample_config))
+
+        assert "treatment_sequence" in caplog.text
+
+    def test_a_short_arm_sequence_is_not_a_disagreement(
+        self, tmp_path, sample_config, caplog
+    ):
+        """Subject 1002 withdrew after 4 of the 5 periods and carries a 4-code
+        sequence, so a period index past the end of it is expected."""
+        import logging
+
+        from ecgbench.labels.ecgrdvq import load_labels as load
+
+        rows = [
+            self._row(
+                EGREFID="withdrawn", RANDID=1002, ARMCD="E,A,B,C",
+                VISIT="PERIOD-4-DOSING", EXTRT="Verapamil HCL", EXDOSE=120.0,
+            )
+        ]
+        with caplog.at_level(logging.WARNING, logger="ecgbench.labels.ecgrdvq"):
+            load(self._tree(tmp_path, rows), self._config(sample_config))
+
+        assert "treatment_sequence" not in caplog.text
+
+    def test_every_column_map_is_injective(self):
+        """Hand-written maps, so a duplicated value would silently overwrite."""
+        from ecgbench.labels.ecgrdvq import (
+            ANALYTE_COLUMNS,
+            CONTEXT_COLUMNS,
+            INTERVAL_COLUMNS,
+            MORPHOLOGY_COLUMNS,
+            SUBJECT_COLUMNS,
+        )
+
+        for mapping in (
+            INTERVAL_COLUMNS, MORPHOLOGY_COLUMNS, SUBJECT_COLUMNS, CONTEXT_COLUMNS,
+            ANALYTE_COLUMNS,
+        ):
+            assert len(set(mapping.values())) == len(mapping)
+
+    def test_arm_codes_differ_from_the_sibling_release(self):
+        """A,B,C,D,E mean different drugs in SCR-002 and SCR-003, so the two maps
+        must never be shared. Both use E for placebo and nothing else agrees."""
+        from ecgbench.labels.ecgdmmld import (
+            ARM_CODE_TREATMENTS as DMMLD_CODES,
+        )
+        from ecgbench.labels.ecgrdvq import ARM_CODE_TREATMENTS as RDVQ_CODES
+
+        assert RDVQ_CODES["E"] == DMMLD_CODES["E"] == "Placebo"
+        for code in ("A", "B", "C", "D"):
+            assert RDVQ_CODES[code] != DMMLD_CODES[code]
+
+
+class TestECGRDVQFiducials:
+    """Resolving median-beat annotation marks, including the two short patterns."""
+
+    def test_the_usual_five_marks_resolve_in_order(self):
+        """P onset, QRS onset, QRS offset, T peak, T offset — 5,175 of 5,223."""
+        from ecgbench.labels.ecgrdvq import _fiducials
+
+        # Real marks from 491af4aa-941a-4a89-b74c-b38d91cfc5e9.
+        out = _fiducials([(171, "("), (301, "("), (396, ")"), (614, "t"), (701, ")")])
+
+        assert out["p_onset_ms"] == 171
+        assert out["qrs_onset_ms"] == 301
+        assert out["qrs_offset_ms"] == 396
+        assert out["t_peak_ms"] == 614
+        assert out["t_offset_ms"] == 701
+        assert out["t_peak_secondary_ms"] is None
+        assert out["n_annotations"] == 5
+        # And they reproduce the published intervals exactly.
+        assert out["qrs_onset_ms"] - out["p_onset_ms"] == 130  # PR
+        assert out["qrs_offset_ms"] - out["qrs_onset_ms"] == 95  # QRS
+        assert out["t_offset_ms"] - out["qrs_onset_ms"] == 400  # QT
+        assert out["t_peak_ms"] - out["qrs_offset_ms"] == 218  # J-Tpeak
+        assert out["t_offset_ms"] - out["t_peak_ms"] == 87  # Tpeak-Tend
+
+    def test_a_secondary_t_peak_is_captured(self):
+        """42 records carry one, unlike the sibling ecgdmmld where no annotation
+        marks a second T peak at all and TPEAKTPEAKP is empty in every row."""
+        from ecgbench.labels.ecgrdvq import _fiducials
+
+        # Real marks from 4d527f3e-7f0d-4daa-8ae6-a81af0619cdb (quinidine).
+        out = _fiducials(
+            [(137, "("), (304, "("), (404, ")"), (600, "t"), (672, "t"), (779, ")")]
+        )
+
+        assert out["t_peak_ms"] == 600
+        assert out["t_peak_secondary_ms"] == 672
+        # The published TPEAKTPEAKP for this record.
+        assert out["t_peak_secondary_ms"] - out["t_peak_ms"] == 72
+        # The T offset is still the last offset, not the one before the second peak.
+        assert out["t_offset_ms"] == 779
+
+    def test_a_missing_p_onset_leaves_pr_unrecoverable(self):
+        """2 records (subject 1007, verapamil) have 4 marks and no P onset, because
+        it lies before the start of the window — which is why their PR wrapped."""
+        from ecgbench.labels.ecgrdvq import _fiducials
+
+        # Real marks from c2017512-fefb-4058-9fd9-5a0950acc6a6.
+        out = _fiducials([(311, "("), (404, ")"), (615, "t"), (698, ")")])
+
+        assert out["p_onset_ms"] is None
+        assert out["qrs_onset_ms"] == 311
+        assert out["qrs_offset_ms"] == 404
+        assert out["t_offset_ms"] == 698
+        assert out["n_annotations"] == 4
+        # Everything not needing the P onset still reproduces the published value.
+        assert out["qrs_offset_ms"] - out["qrs_onset_ms"] == 93  # QRS
+        assert out["t_offset_ms"] - out["qrs_onset_ms"] == 387  # QT
+
+    def test_a_missing_t_offset_leaves_qt_unrecoverable(self):
+        """4 records (subject 1004, quinidine) have no T offset — quinidine
+        flattened the T wave until its end could not be marked."""
+        from ecgbench.labels.ecgrdvq import _fiducials
+
+        # Real marks from def367b2-2bc6-46e5-8b7c-c86a2e5513a4.
+        out = _fiducials([(180, "("), (302, "("), (410, ")"), (685, "t")])
+
+        assert out["p_onset_ms"] == 180
+        assert out["qrs_onset_ms"] == 302
+        assert out["qrs_offset_ms"] == 410
+        assert out["t_peak_ms"] == 685
+        assert out["t_offset_ms"] is None
+        # PR, QRS and J-Tpeak survive; the published values.
+        assert out["qrs_onset_ms"] - out["p_onset_ms"] == 122
+        assert out["qrs_offset_ms"] - out["qrs_onset_ms"] == 108
+        assert out["t_peak_ms"] - out["qrs_offset_ms"] == 275
+
+    def test_no_annotation_file_yields_an_empty_row(self):
+        """The 9 records with no median beat have no .atr to read."""
+        from ecgbench.labels.ecgrdvq import _fiducials
+
+        out = _fiducials([])
+
+        assert out["n_annotations"] == 0
+        assert all(
+            out[key] is None
+            for key in out
+            if key != "n_annotations"
+        )

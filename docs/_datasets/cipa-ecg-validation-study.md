@@ -22,17 +22,20 @@ related:
   - slug: "ecg-effects-of-ranolazine-dofetilide-verapamil-quinidine-ecgrdvq"
     relation: "sibling_release"
     shares_records: false
-    verified: false
+    verified: true
     note: >
-      Same research programme, same file layout (adeg/adpc/adsl/addm plus raw/ and
-      medians/), and three overlapping drugs — ranolazine, dofetilide and verapamil.
-      Different trial and different volunteers: ECGRDVQ is 22 subjects under a
-      separate protocol, CiPA is 60 under NCT03070470, so no recording is shared.
-      Unverified against the files — taken from the two PhysioNet pages and their
-      ClinicalTrials.gov identifiers. **Their subject IDs collide anyway**: both
-      releases number subjects from 1001 upward, so pooling them requires prefixing
-      the subject ID with the dataset, or the two cohorts merge into one apparent
-      set of people and patient-level grouping silently breaks.
+      Same research programme and three overlapping drugs — ranolazine, dofetilide
+      and verapamil. ECGRDVQ is SCR-002 and CiPA is SCR-004, so their file layouts
+      differ (ECGRDVQ ships a single SCR-002.Clinical.Data.csv beside raw/ and
+      medians/, where CiPA has adeg/adpc/adsl/addm). Different trial and different
+      volunteers: ECGRDVQ is 22 subjects under NCT01873950, CiPA is 60 under
+      NCT03070470. **No shared recordings** — verified against the files: the two
+      RECORDS lists hold 5,232 and 5,749 record UUIDs with an intersection of 0
+      (0 case-insensitively too). **Their subject IDs collide completely, though**:
+      ECGRDVQ numbers 1001-1022 and every one of those 22 IDs is also a CiPA Part 1
+      subject ID (1001-1050), belonging to a different person. Prefix the subject ID
+      with the dataset before pooling, or 22 pairs of unrelated people merge and
+      patient-level grouping silently breaks.
   - slug: "ecg-effects-of-dofetilide-moxifloxacin-and-combinations-ecgdmmld"
     relation: "sibling_release"
     shares_records: false

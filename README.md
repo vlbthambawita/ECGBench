@@ -184,6 +184,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `wctecgdb` | **37 channels, no aVR/aVL/aVF**: I, II, III, V1-V6, LA, RA, LL, UV1-UV6 — each **once raw (`-Raw`) and once filtered** — then `WCT` |
 | `ecgcipa` | I, II, III, aVR, aVL, aVF, V1-V6 — but the **derived median beat of the same record** spells them AVR/AVL/AVF and adds VCGMAG, X, Y, Z |
 | `ecgdmmld` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — the **opposite spelling to `ecgcipa`**, its sibling release from the same programme; here the median beats agree with the raw records and add VCGMAG, vx, vy, vz |
+| `ecgrdvq` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — same as `ecgdmmld` and again the opposite of `ecgcipa`; its median beats agree too, and add VCGMAG, vx, vy, vz |
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -322,9 +323,10 @@ carry precordial channels **synthesised** as `V = UV − WCT` — flagged per re
 be excluded when evaluating precordial reconstruction. See
 `examples/load_wctecgdb.py`.
 
-`ecgcipa` and `ecgdmmld` are the two datasets here with **no diagnosis at all** — sibling
-releases from the same FDA programme, and the pair to read together because almost every
-convention they share, they share inverted.
+`ecgrdvq`, `ecgdmmld` and `ecgcipa` are the three datasets here with **no diagnosis at
+all** — sibling releases from one FDA programme, in order SCR-002, SCR-003 and SCR-004,
+and the set to read together because almost every convention they share, they share
+inverted.
 
 `ecgcipa` is 5,749 ten-second
 12-lead ECGs at **1 kHz** (10,000 samples — the largest 12-lead tensor in the
@@ -361,6 +363,29 @@ mexiletine-only ECG. Stratify on it, train on the six `plasma_*` columns. Becaus
 crossover is complete, every fold gets all five arms automatically and no split can
 separate them — and with 2–3 subjects per fold, a per-fold metric describes two or three
 people. See `examples/load_ecgdmmld.py`.
+
+`ecgrdvq` is the earliest of the three (SCR-002) and the one whose label you can actually
+trust. 5,232 ten-second 12-lead ECGs at 1 kHz from **22 healthy volunteers** in a 5-period
+crossover of **single agents** — ranolazine, dofetilide, verapamil, quinidine and placebo,
+one per period — so `treatment` names the drug rather than a staged combination, and 93–94%
+of each active arm's records carry a measured concentration of exactly that drug. It shares
+ecgdmmld's millivolts, its uppercase **AVR/AVL/AVF** and its 500 Hz → 1 kHz up-sampling,
+and it computes change from baseline the same way. Reconstructed placebo-corrected from the
+shipped files, it recovers its own finding: **all four drugs prolong QTcF by +17 to +95 ms,
+while J-Tpeak separates them** — +37 and +24 ms for the predominant-hERG blockers
+(dofetilide, quinidine) against +6 and −8 for the multichannel ones (ranolazine,
+verapamil).
+
+Four things differ from its siblings. Triplicates are **exact** (all 1,744 groups hold 3,
+so 5,232 records are ~1,744 observations). The pharmacokinetic table is **long, not wide** —
+`plasma_analyte` names the one agent measured — and **dofetilide is pg/mL while the other
+three are ng/mL**, so use the derived `plasma_concentration_ng_ml` across arms; `dose`
+carries the same split (500 µg vs 120–1500 mg). Its median beats are **variable length**
+(968–1,876 samples, against ecgdmmld's fixed 1,200) and 9 are missing entirely, which is
+why 9 records have no PR/QRS/QT/J-Tpeak. And **secondary T peaks are real here** — 42
+records populate `tpeak_tpeakp_ms`, where ecgdmmld's copy of that column is empty in every
+row. Two PR values are stored as a 32-bit arithmetic wrap and are repaired, flagged by
+`pr_ms_repaired`. See `examples/load_ecgrdvq.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

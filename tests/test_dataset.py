@@ -342,6 +342,10 @@ class TestShippedLeadNames:
             # agrees with raw/, which in ecgcipa it does not.
             ("ecgdmmld", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Uppercase 'A' in all 5,232 raw/ headers, like its sibling ecgdmmld
+            # and unlike ecgcipa. The medians/ headers agree.
+            ("ecgrdvq", ["I", "II", "III", "AVR", "AVL", "AVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

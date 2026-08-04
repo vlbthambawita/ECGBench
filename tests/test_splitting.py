@@ -2046,3 +2046,249 @@ class TestECGDMMLDSplitter:
 
         for fold, frame in result.folds.items():
             assert set(frame["treatment"]) == set(self.ARMS.values()), fold
+
+
+class TestECGRDVQSplitter:
+    """5,232 records from 22 subjects, in exact triplicates."""
+
+    #: ARMCD code -> treatment, per the shipped column description. The same five
+    #: letters mean different drugs in the sibling SCR-003 release.
+    ARMS = {
+        "A": "Ranolazine",
+        "B": "Dofetilide",
+        "C": "Verapamil HCL",
+        "D": "Quinidine Sulph",
+        "E": "Placebo",
+    }
+
+    #: Dose per treatment — dofetilide is micrograms, the rest milligrams.
+    DOSES = {
+        "Ranolazine": (1500.0, "mg"),
+        "Dofetilide": (500.0, "ug"),
+        "Verapamil HCL": (120.0, "mg"),
+        "Quinidine Sulph": (400.0, "mg"),
+        "Placebo": (None, None),
+    }
+
+    #: Two of the eleven randomised sequences in v1.0.0, which uses 2-3 subjects
+    #: each. Comma-separated, unlike ecgdmmld's dashes.
+    SEQUENCES = ("A,C,E,D,B", "C,D,A,B,E")
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ecgrdvq",
+            metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_id", patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"},
+            default_sampling_rate=1000, sampling_rates=[1000],
+            label_column="treatment",
+            url="https://physionet.org/content/ecgrdvq/1.0.0/",
+        )
+
+    def _source(self, tmp_path, n_subjects=20, periods=5, timepoints=4, replicates=3):
+        """Write a miniature SCR-002.Clinical.Data.csv.
+
+        Mirrors the release's shape rather than its size: a complete crossover in
+        which every subject passes through all five single-agent arms, `timepoints`
+        nominal timepoints per period and `replicates` records each.
+        """
+        rows = []
+        for index in range(n_subjects):
+            subject = 1001 + index
+            sequence = self.SEQUENCES[index % len(self.SEQUENCES)]
+            for period in range(1, periods + 1):
+                treatment = self.ARMS[sequence.split(",")[period - 1]]
+                dose, dose_unit = self.DOSES[treatment]
+                for timepoint_index in range(timepoints):
+                    # -0.5 is the pre-dose triplicate; the rest are post-dose.
+                    timepoint = -0.5 if timepoint_index == 0 else float(timepoint_index)
+                    predose = timepoint_index == 0
+                    for replicate in range(1, replicates + 1):
+                        rows.append({
+                            "EGREFID": f"{subject}-{period}-{timepoint_index}-{replicate}",
+                            "RANDID": subject,
+                            "SEX": "M" if index % 2 else "F",
+                            "AGE": 21 + index,
+                            "HGHT": 175.0, "WGHT": 70.0,
+                            "SYSBP": 120.0, "DIABP": 75.0,
+                            "RACE": "WHITE", "ETHNIC": "NOT HISPANIC OR LATINO",
+                            "ARMCD": sequence,
+                            "VISIT": f"PERIOD-{period}-DOSING",
+                            "EXTRT": treatment,
+                            "EXDOSE": dose, "EXDOSU": dose_unit,
+                            "TPT": timepoint,
+                            "BASELINE": "Y" if predose else "N",
+                            # No PK sample pre-dose, and none at all on placebo.
+                            "PCTEST": (
+                                None if predose or treatment == "Placebo"
+                                else treatment.split()[0]
+                            ),
+                            "PCSTRESN": (
+                                None if predose or treatment == "Placebo" else 100.0
+                            ),
+                            "PCSTRESU": (
+                                None if predose or treatment == "Placebo"
+                                else ("pg/mL" if treatment == "Dofetilide" else "ng/mL")
+                            ),
+                            "RR": 1000.0, "PR": 166.0, "QT": 420.0, "QRS": 72.0,
+                            "JTPEAK": 263.0, "TPEAKTEND": 85.0,
+                            "TPEAKTPEAKP": None,
+                            "ERD_30": 52.0, "LRD_30": 28.0,
+                            "Twave_amplitude": 727.78, "Twave_asymmetry": 0.19,
+                            "Twave_flatness": 0.53,
+                        })
+        pd.DataFrame(rows).to_csv(
+            tmp_path / "SCR-002.Clinical.Data.csv", index=False
+        )
+        return tmp_path
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ecgrdvq import ECGRDVQSplitter
+
+        assert isinstance(get_splitter("ecgrdvq"), ECGRDVQSplitter)
+
+    def test_load_metadata_builds_and_caches_the_csv(self, sample_config, tmp_path):
+        """The shipped table has no signal-path column, and validate_dataset
+        re-reads the CSV from disk — so writing the cache is load-bearing."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert len(df) == 20 * 5 * 4 * 3
+        assert (tmp_path / "ecgbench_metadata.csv").exists()
+        assert df["patient_id"].nunique() == 20
+
+    def test_signal_path_points_at_raw_not_the_derived_medians(
+        self, sample_config, tmp_path
+    ):
+        """Both directories hold a record per id; only raw/ is the ECG."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        assert df["signal_path"].str.startswith("raw/").all()
+        assert df["median_beat_path"].str.startswith("medians/").all()
+        assert df.loc[0, "signal_path"] == "raw/1001/1001-1-0-1"
+
+    def test_cached_csv_is_reused_on_the_second_call(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        path = self._source(tmp_path)
+
+        splitter.load_metadata(path, config)
+        (path / "SCR-002.Clinical.Data.csv").unlink()  # cache read, not the source
+        df = splitter.load_metadata(path, config)
+
+        assert len(df) == 20 * 5 * 4 * 3
+
+    def test_stratification_labels_come_from_the_label_loader(
+        self, sample_config, tmp_path
+    ):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "treatment"
+        assert set(labels) == set(self.ARMS.values())
+        assert len(labels) == len(df)
+
+    def test_stratification_requires_load_metadata_first(self, sample_config):
+        splitter = get_splitter("ecgrdvq")
+
+        with pytest.raises(ValueError, match="treatment"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"record_id": ["a"]}), self._config(sample_config)
+            )
+
+    def test_no_patient_spans_two_folds(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert len(result.folds) == 5
+        assert result.group_column == "patient_id"
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for patient in frame["patient_id"]:
+                assert fold_of.setdefault(patient, fold) == fold
+        assert len(fold_of) == 20
+
+        seen = pd.concat(result.folds.values())[config.record_id_column]
+        assert len(seen) == len(df) and seen.is_unique
+
+    def test_triplicates_of_a_timepoint_never_split(self, sample_config, tmp_path):
+        """The three records of a timepoint are the same person seconds apart at the
+        same plasma concentration — near-duplicates, not independent samples. In this
+        release the structure is exact: all 1,744 groups hold precisely 3 records.
+
+        Patient grouping is what keeps them together; nothing else would, and a
+        per-record split would put a near-copy of most test records in train.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            for row in frame.itertuples():
+                key = (row.patient_id, row.period, row.timepoint_hours)
+                assert fold_of.setdefault(key, fold) == fold
+        assert len(fold_of) == 20 * 5 * 4
+
+    def test_a_complete_crossover_puts_every_arm_in_every_fold(
+        self, sample_config, tmp_path
+    ):
+        """Every subject carries all five arms, so patient grouping alone gives each
+        fold all five — the stratifier cannot separate them and does not try.
+
+        This is the property that makes `treatment` a weak stratification target
+        here, and it is worth pinning: a future change that started splitting by
+        something other than patient would break it.
+        """
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        df = splitter.load_metadata(self._source(tmp_path), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        for fold, frame in result.folds.items():
+            assert set(frame["treatment"]) == set(self.ARMS.values()), fold
+
+    def test_an_early_withdrawal_still_lands_in_exactly_one_fold(
+        self, sample_config, tmp_path
+    ):
+        """Subject 1002 completed 4 of the 5 periods, so its treatment mix is
+        lopsided — placing it is the one thing stratifying on treatment buys here."""
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgrdvq")
+        path = self._source(tmp_path)
+
+        # Drop the last period of one subject, as the release does for 1002.
+        source = pd.read_csv(path / "SCR-002.Clinical.Data.csv")
+        withdrawn = (source.RANDID == 1002) & (source.VISIT == "PERIOD-5-DOSING")
+        source[~withdrawn].to_csv(path / "SCR-002.Clinical.Data.csv", index=False)
+
+        df = splitter.load_metadata(path, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert df[df.patient_id == "1002"].period.nunique() == 4
+        folds = {
+            fold
+            for fold, frame in result.folds.items()
+            if (frame.patient_id == "1002").any()
+        }
+        assert len(folds) == 1

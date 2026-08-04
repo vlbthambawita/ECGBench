@@ -298,6 +298,49 @@ def test_load_ecgdmmld_config():
     assert config.publish_fold_csvs is True
 
 
+def test_load_ecgrdvq_config():
+    """ECGRDVQ: millivolt samples at 1 kHz, and a single-agent crossover treatment."""
+    config = load_config("ecgrdvq")
+    assert config.slug == "ecgrdvq"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # 1.0, like the sibling ecgdmmld and NOT ecgcipa's 0.001. Every channel
+    # declares its own gain against unit /mV, so wfdb already returns millivolts.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Uppercase 'A', like ptbxl and ecgdmmld — and the opposite of ecgcipa's raw/
+    # headers, which spell the same three leads aVR/aVL/aVF.
+    assert config.lead_names == [
+        "I", "II", "III", "AVR", "AVL", "AVF",
+        "V1", "V2", "V3", "V4", "V5", "V6",
+    ]
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    assert config.duration_seconds == 10
+    assert config.validation.expected_samples == {1000: 10000}
+    assert config.validation.expected_leads == 12
+    # The house default. Unlike ecgdmmld it excludes nothing — the release peaks at
+    # 6.98 mV — and flat_line is the check that fires instead, on the 2 dead-V4
+    # records.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # EGREFID UUIDs, unique across the release; subjects 1001-1022.
+    assert config.record_id_column == "record_id"
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # The shipped clinical table has no signal-path column, so the splitter
+    # generates one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.labels is not None
+    assert config.labels.available is True
+    # SCR-002 — the first of the three FDA studies, ahead of ecgdmmld's SCR-003.
+    assert config.labels.source_csv == "SCR-002.Clinical.Data.csv"
+    assert config.labels.join_column == "EGREFID"
+    # A pharmacology dataset: the closest thing to a class is the treatment.
+    assert config.label_column == "treatment"
+    # ODC-By, so the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
 def test_list_available_configs():
     """Test list_available_configs returns expected slugs."""
     slugs = list_available_configs()
