@@ -220,7 +220,7 @@ There is no CI test/lint job — run `pytest` and `ruff`/`black` locally before 
 ## Reference Docs
 
 - `ECGBench_architecture/ARCHITECTURE.md` — end-to-end flow in Mermaid diagrams; every box names a real function/class, so it doubles as a map into the source.
-- `ADD_DATASET_TODO.md` — full per-dataset checklist (discovery → catalogue → config → splitter → splits → tests → upload), with a Gotchas section covering the silent-failure traps. Verified against the code; use it as the authoritative procedure rather than the condensed "Adding a New Dataset" steps above.
+- `ADD_DATASET_TODO.md` — full per-dataset checklist (**GitHub issue** → discovery → catalogue → config → splitter → splits → tests → upload), with a Gotchas section covering the silent-failure traps. Verified against the code; use it as the authoritative procedure rather than the condensed "Adding a New Dataset" steps above. It starts at **Phase −1**: datasets are requested as issues, and the local data path plus any version/licence caveat live in the issue's **comments**, not its body — read them through the GitHub API before anything else.
 - `DATASET_ANALYSIS_PLAN.md` — design doc for the per-dataset analysis scripts (statistical tables + optional Plotly HTML report). **Not yet implemented, and its §0 decisions are contested** — it proposes replacing `ecgbench splits` with unpackaged `scripts/analyse_<slug>.py` files. Read §0 before acting on it.
 - `ecgbench_expenctation.txt` — the requirements the analysis plan derives from, plus a second (unimplemented) set covering loader-side preprocessing, lead filters, and per-dataset metadata filters.
 - `CLI_PLAN.md`, `webiste_paln_todo.md` — design notes for the CLI and the Markdown-driven website; historical, both already implemented.

@@ -3,12 +3,68 @@
 Reusable plan for adding a new dataset end-to-end (config → splits → upload).
 Copy this file (or duplicate the relevant sections) when starting on a new
 dataset, and tick items off as you go. The phases are roughly sequential, but
-phase 1 (catalogue) is independent and can happen at any time. **Phase 7, the
-HuggingFace upload, is required and always runs last** — a dataset that is not
-on the Hub 404s for every user, because `ECGDataset` defaults to fetching fold
-CSVs from there.
+phase 1 (catalogue) is independent and can happen at any time.
 
-**First, check the dataset actually has its own recordings.** If it is a feature,
+Two phases are non-negotiable and sit at either end. **Phase −1, reading the
+requesting GitHub issue and all of its comments, always runs first** — the local
+data path and other constraints live in the comments, not the body. **Phase 7, the
+HuggingFace upload, is required and always runs last** — a dataset that is not on
+the Hub 404s for every user, because `ECGDataset` defaults to fetching fold CSVs
+from there.
+
+---
+
+## Phase −1 — Read the whole GitHub issue, comments included
+
+Datasets are requested as issues labelled `DATASET - Datasets to be added`, and
+**the issue body is usually not the whole request.** The body is often a single
+link to the dataset's own catalogue page; the local path to an already-downloaded
+copy, the acquisition notes, the licence caveat and any "use this version, not
+that one" correction arrive as **comments**. Reading only the body means either
+re-downloading gigabytes that are already on disk, or building against the wrong
+copy.
+
+- [ ] **Read the issue body *and* every comment before touching anything.** Treat the
+  comments as part of the specification, not as commentary on it.
+- [ ] **Find the local data path and use it.** It is conventionally given in a comment
+  as `Local path: /...` — e.g. issue #19 (CiPA) carried only a catalogue link in the
+  body and `Local path: /global/D1/homes/vajira/data/SEARCH/physionet.org/files/ecgcipa`
+  in its one comment. Pass it as `--data-path` throughout; do not re-download a copy
+  that is already on disk. (Finding a public download URL is a *separate* question,
+  answered in Phase 2 — `download_url` must stay `null` whenever the splitter
+  generates `metadata_csv`, however public the release is.)
+- [ ] **Note the exact version directory.** The path in the comment is often the
+  dataset root *above* the version (`.../ecgcipa`, containing `1.0.0/`). The
+  `--data-path` the pipeline wants is the version directory, and `version:` in the
+  config must match it.
+- [ ] **Use the GitHub REST API to read comments, not a page fetch.**
+
+  ```bash
+  gh issue view <N> --repo vlbthambawita/ECGBench --comments   # if gh is installed
+  # gh is often absent; the API needs no auth for a public repo:
+  curl -s https://api.github.com/repos/vlbthambawita/ECGBench/issues/<N>/comments
+  curl -s https://api.github.com/repos/vlbthambawita/ECGBench/issues/<N>
+  ```
+
+  **A summarising fetch of the issue's HTML page is not good enough** and will not
+  announce that it failed. Fetching `github.com/.../issues/19` returned
+  "Comments: None visible in the provided content" for an issue that had one
+  comment holding the only copy of the data path. The API returns comments as JSON;
+  use it.
+- [ ] **Carry the rest of the comment thread into the PR description.** Credentialed
+  access, a superseded version, a known-bad file, a request to keep something
+  unpublished — anything stated in a comment is a decision you are accountable for
+  having read, and Phase 0's licence and distribution-policy items may depend on it.
+- [ ] **A local copy is not a verified copy.** Whoever downloaded it may have
+  filtered, renamed or partially fetched it. Run the release's own checksums before
+  computing a single figure from it — see the `SHA256SUMS.txt` item in Phase 0,
+  which is the reason that item exists.
+- [ ] Close the issue from the commit (`... and close #<N>`), matching the existing
+  history.
+
+---
+
+**Then check the dataset actually has its own recordings.** If it is a feature,
 annotation or label layer over another dataset's records — PTB-XL+ over PTB-XL, say —
 most of this checklist does not apply and generating splits for it is actively harmful.
 Jump to "Derived and annotation-only datasets" below.
@@ -423,6 +479,7 @@ Integrate it as a **label/feature provider** instead:
 
 ## Common gotchas
 
+- **The GitHub issue's comments hold the local data path, and a page fetch hides them.** The issue body is typically one link to the catalogue page; `Local path: /...` is a comment. Read comments through the REST API (`curl .../issues/<N>/comments`) or `gh issue view --comments` — summarising the issue's HTML page reported "no comments visible" on an issue that had one, with no error, and the path in it was the only copy. See Phase −1.
 - **Slug mismatch.** Config filename, `slug:` field inside the YAML, and `@register("...")` argument must all be identical. A mismatch silently falls back to `GenericSplitter` (or fails to find the config).
 - **Two slug namespaces.** The catalogue slug is dashed (`ptb-xl`), the config slug underscored (`ptbxl`). Naming the Markdown file after the config slug breaks the catalogue and the website; naming the YAML after the catalogue slug breaks `load_config()`.
 - **`has_predefined_splits` is a separate gate.** Filling the `predefined_splits` block is not enough — `engine.py` also requires `has_predefined_splits: true`. Left at `false`, your carefully specified splits are silently discarded in favour of generated folds.
