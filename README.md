@@ -197,6 +197,27 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ecgcipa` | I, II, III, aVR, aVL, aVF, V1-V6 — but the **derived median beat of the same record** spells them AVR/AVL/AVF and adds VCGMAG, X, Y, Z |
 | `ecgdmmld` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — the **opposite spelling to `ecgcipa`**, its sibling release from the same programme; here the median beats agree with the raw records and add VCGMAG, vx, vy, vz |
 | `ecgrdvq` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — same as `ecgdmmld` and again the opposite of `ecgcipa`; its median beats agree too, and add VCGMAG, vx, vy, vz |
+| `echonext` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated anywhere in the release**; inferred from the signals, since Einthoven's `III = II − I` and the Goldberger relations hold while wrong pairings do not |
+
+**One dataset has no physical units at all.** `echonext` ships waveforms its
+publisher median-filtered, percentile-clipped and standardised with an unreleased
+mean and SD, so no scale factor recovers millivolts. Its config declares
+`signal_units: zscore`, and `units=` refuses rather than silently multiplying
+dimensionless numbers by 1000:
+
+```python
+ds = ECGDataset("echonext", split="test", data_path="...", metadata_source="local")
+ds.units                       # 'zscore' -- reported honestly, not 'mV'
+ds[0]["signal"].min()          # -6.829
+
+ECGDataset("echonext", units="uV", ...)
+# UnitConversionError: This dataset's samples are stored as 'zscore', not a
+# physical unit, so they cannot be converted to 'uV'. ...
+```
+
+Every other dataset declares `signal_units: mV` (the default) and is unaffected.
+`amplitude_outlier` validation is skipped for non-mV sources, since its thresholds
+are millivolts.
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -533,9 +554,11 @@ Fold CSVs carry identifiers only — record ID, patient ID, signal path, fold,
 split. For an openly licensed source that is uncontroversial. For a
 **credentialed or restricted** source those identifiers are still data derived
 under a use agreement, and the ECGBench Hub repository is public and ungated, so
-ECGBench does not publish them. `mimic_iv_ecg` is the current example: 800,035
-`study_id`s and 161,352 `subject_id`s stay with the people who signed the
-PhysioNet DUA.
+ECGBench does not publish them. Two datasets are in this category:
+`mimic_iv_ecg`, whose 800,035 `study_id`s and 161,352 `subject_id`s stay with the
+people who signed the PhysioNet DUA, and `echonext`, under the PhysioNet
+*Restricted* Health Data License whose clause 3 forbids sharing access to the data
+at all.
 
 Such a dataset declares this in its config, and the tooling enforces it in both
 directions — `ecgbench upload` refuses to publish it, and `ECGDataset` raises

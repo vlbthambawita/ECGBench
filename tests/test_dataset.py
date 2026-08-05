@@ -346,6 +346,12 @@ class TestShippedLeadNames:
             # and unlike ecgcipa. The medians/ headers agree.
             ("ecgrdvq", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # The release states no lead order at all — there are no headers, just
+            # a (N, 1, 2500, 12) array. Inferred from the signals: Einthoven's
+            # III = II - I and the Goldberger relations hold to a residual SD of
+            # 0.13-0.19 against a 0.92 signal SD, where wrong pairings give 1.06+.
+            ("echonext", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):
@@ -683,3 +689,127 @@ class TestFoldSelection:
         )
         assert set(ds.metadata_df["fold"]) == {2}
         assert tuple(ds[0]["signal"].shape) == (12, 2500)
+
+
+class TestNpySignalFormat:
+    """EchoNext stores records as rows of one shared array per split."""
+
+    def _array(self, tmp_path, n=4, samples=50, leads=12, channel_axis=True):
+        """A stand-in for EchoNext_<split>_waveforms.npy, values encoding position."""
+        import numpy as np
+
+        # value = record*10000 + sample*100 + lead, so a shifted or transposed
+        # read cannot pass by accident.
+        rec = np.arange(n)[:, None, None] * 10000
+        smp = np.arange(samples)[None, :, None] * 100
+        led = np.arange(leads)[None, None, :]
+        data = (rec + smp + led).astype(np.float64)
+        if channel_axis:
+            data = data[:, None]  # (n, 1, samples, leads), the shipped shape
+        path = tmp_path / "EchoNext_test_waveforms.npy"
+        np.save(path, data)
+        return path
+
+    def test_reference_names_a_row_not_just_a_file(self, tmp_path):
+        from ecgbench.dataset import _parse_npy_ref
+
+        path, row = _parse_npy_ref("/data/EchoNext_test_waveforms.npy:417")
+
+        assert path == "/data/EchoNext_test_waveforms.npy"
+        assert row == 417
+
+    def test_reference_without_a_row_is_rejected(self):
+        """A bare path is ambiguous — every record lives in the same file."""
+        from ecgbench.dataset import _parse_npy_ref
+
+        with pytest.raises(ValueError, match="must end in ':<row>'"):
+            _parse_npy_ref("/data/EchoNext_test_waveforms.npy")
+
+    def test_reads_the_named_row_and_transposes_to_leads_first(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        array = self._array(tmp_path)
+        signal = _load_signal(f"{array}:2", "npy")
+
+        assert signal.shape == (12, 50)          # (leads, samples)
+        # Row 2, sample 0, lead 0 -> 20000; sample 3, lead 5 -> 20305.
+        assert signal[0, 0] == 20000
+        assert signal[5, 3] == 20305
+        # A different row is genuinely different data, not a re-read of row 0.
+        assert _load_signal(f"{array}:0", "npy")[0, 0] == 0
+
+    def test_singleton_channel_axis_is_squeezed(self, tmp_path):
+        """The shipped arrays are (N, 1, samples, leads); a plain (N, s, l) works too."""
+        from ecgbench.dataset import _load_signal
+
+        with_axis = self._array(tmp_path, channel_axis=True)
+        plain_dir = tmp_path / "plain"
+        plain_dir.mkdir()
+        plain = self._array(plain_dir, channel_axis=False)
+
+        four_d = _load_signal(f"{with_axis}:1", "npy")
+        three_d = _load_signal(f"{plain}:1", "npy")
+
+        assert four_d.shape == (12, 50)
+        assert three_d.shape == (12, 50)
+        # Same record either way — the channel axis carries no information.
+        assert (four_d == three_d).all()
+
+    def test_a_record_that_is_not_2d_after_squeezing_is_rejected(self, tmp_path):
+        """Better than silently returning something of the wrong rank."""
+        import numpy as np
+
+        from ecgbench.dataset import _load_signal
+
+        path = tmp_path / "EchoNext_odd_waveforms.npy"
+        np.save(path, np.zeros((3, 2, 50, 12)))  # channel axis of 2, not 1
+
+        with pytest.raises(ValueError, match="expected .*samples, leads"):
+            _load_signal(f"{path}:0", "npy")
+
+    def test_window_is_applied_before_materialising(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        array = self._array(tmp_path)
+        signal = _load_signal(f"{array}:1", "npy", window=(10, 5))
+
+        assert signal.shape == (12, 5)
+        # First returned sample is sample 10, not sample 0.
+        assert signal[0, 0] == 10000 + 10 * 100
+
+    def test_window_past_the_end_names_the_record(self, tmp_path):
+        from ecgbench.dataset import WindowOutOfRangeError, _load_signal
+
+        array = self._array(tmp_path, samples=50)
+
+        with pytest.raises(WindowOutOfRangeError, match="50 samples"):
+            _load_signal(f"{array}:0", "npy", window=(40, 20))
+
+    def test_record_length_is_reported_for_error_messages(self, tmp_path):
+        from ecgbench.dataset import _record_length
+
+        array = self._array(tmp_path, samples=50)
+
+        assert _record_length(f"{array}:0", "npy") == 50
+
+
+class TestNonPhysicalUnits:
+    """A source whose publisher standardised the waveforms has no millivolts."""
+
+    def test_zscore_source_refuses_unit_conversion(self):
+        from ecgbench.dataset import UnitConversionError, _resolve_units
+
+        with pytest.raises(UnitConversionError, match="cannot be converted"):
+            _resolve_units("uV", source_units="zscore")
+
+    def test_zscore_source_passes_samples_through_unscaled(self):
+        """units='mV' is the default nobody chose, so it must not claim millivolts."""
+        from ecgbench.dataset import _resolve_units
+
+        assert _resolve_units("mV", source_units="zscore") == 1.0
+
+    def test_millivolt_sources_are_unaffected(self):
+        from ecgbench.dataset import _resolve_units
+
+        assert _resolve_units("mV", source_units="mV") == 1.0
+        assert _resolve_units("uV", source_units="mV") == 1000.0

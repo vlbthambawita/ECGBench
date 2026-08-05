@@ -1,0 +1,37 @@
+{
+  "dataset": "echonext",
+  "dataset_version": "1.1.0",
+  "ecgbench_version": "0.20.0",
+  "digest_version": 1,
+  "publish_fold_csvs": false,
+  "split": {
+    "n_folds": 10,
+    "random_state": null,
+    "record_id_column": "ecg_key",
+    "patient_id_column": "patient_key",
+    "grouped_by_patient": true
+  },
+  "inputs": {
+    "ecgbench_metadata.csv": {
+      "present": true,
+      "sha256": "c32ebad0444658483e92d7f297095782271d372bbb2974b2a8a52bc888867f7e",
+      "bytes": 17375264,
+      "rows": 82543
+    },
+    "echonext_metadata_100k.csv": {
+      "present": true,
+      "sha256": "a1fb9f1a4d5fa2ea7238fe70247a2b8ad8a13d7b3ed9ee3685dd40871fac3c1f",
+      "bytes": 17493749,
+      "rows": 100000
+    }
+  },
+  "records": {
+    "original": 82543,
+    "clean": 82539
+  },
+  "fold_digest": {
+    "original": "1364daf541bb5ee540989c360c68bf6661d44a04dc802cddaeea6f0fd320c605",
+    "clean": "f2b6b3b4edbb67589472990b4ddb73b893aa2fd27e65e09b24ecd3f0dcc5a0b6"
+  },
+  "command": "ecgbench splits --dataset echonext --data-path /path/to/echonext/"
+}

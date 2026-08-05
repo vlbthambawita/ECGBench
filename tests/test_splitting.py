@@ -1,5 +1,6 @@
 """Tests for the splitting framework."""
 
+import itertools
 from pathlib import Path
 
 import pandas as pd
@@ -2292,3 +2293,113 @@ class TestECGRDVQSplitter:
             if (frame.patient_id == "1002").any()
         }
         assert len(folds) == 1
+
+
+class TestEchoNextSplitter:
+    """EchoNext: predefined splits over rows of shared arrays, minus no_split."""
+
+    def _metadata(self, tmp_path):
+        """A stand-in for echonext_metadata_100k.csv, with the leakage hazard in it."""
+        from ecgbench.splitting.strategies.echonext import SOURCE_METADATA
+
+        rows = [
+            # patient, split -- p1's earlier ECG is no_split, its latest is test,
+            # which is exactly the pair that would leak if no_split became train.
+            ("e1", "p1", "no_split", 0),
+            ("e2", "p1", "test", 1),
+            ("e3", "p2", "train", 1),
+            ("e4", "p2", "train", 0),
+            ("e5", "p3", "val", 1),
+            ("e6", "p4", "no_split", 0),
+            ("e7", "p4", "val", 0),
+        ]
+        df = pd.DataFrame(rows, columns=["ecg_key", "patient_key", "split",
+                                         "shd_moderate_or_greater_flag"])
+        df.insert(0, "Unnamed: 0", range(len(df)))
+        df.to_csv(tmp_path / SOURCE_METADATA, index=False)
+        return tmp_path
+
+    def _splitter(self):
+        from ecgbench.splitting.strategies.echonext import EchoNextSplitter
+
+        return EchoNextSplitter()
+
+    def test_no_split_records_are_excluded(self, tmp_path):
+        """Folding them into train would put test patients' ECGs in training."""
+        df = self._splitter().load_metadata(self._metadata(tmp_path), None)
+
+        assert len(df) == 5
+        assert "no_split" not in set(df["split"])
+        assert set(df["ecg_key"]) == {"e2", "e3", "e4", "e5", "e7"}
+
+    def test_the_remaining_splits_are_patient_disjoint(self, tmp_path):
+        """The property excluding no_split buys, and the reason for excluding it."""
+        df = self._splitter().load_metadata(self._metadata(tmp_path), None)
+
+        by_split = df.groupby("split")["patient_key"].agg(set)
+        for a, b in itertools.combinations(by_split.index, 2):
+            assert not (by_split[a] & by_split[b]), f"{a} and {b} share a patient"
+
+    def test_signal_path_carries_the_row_within_its_split(self, tmp_path):
+        """Row index is into that split's array, so it must be taken before filtering."""
+        df = self._splitter().load_metadata(self._metadata(tmp_path), None)
+        paths = dict(zip(df["ecg_key"], df["signal_path"]))
+
+        # e2 is p1's test ECG and the FIRST test row -> row 0 of the test array.
+        assert paths["e2"] == "EchoNext_test_waveforms.npy:0"
+        # e3/e4 are train rows 0 and 1.
+        assert paths["e3"] == "EchoNext_train_waveforms.npy:0"
+        assert paths["e4"] == "EchoNext_train_waveforms.npy:1"
+        # e7 is the SECOND val record in file order (e5 is first), and keeps row 1
+        # even though the no_split row between them was dropped.
+        assert paths["e5"] == "EchoNext_val_waveforms.npy:0"
+        assert paths["e7"] == "EchoNext_val_waveforms.npy:1"
+
+    def test_row_index_is_not_renumbered_by_the_exclusion(self, tmp_path):
+        """The array still contains the no_split rows; only our table drops them."""
+        from ecgbench.splitting.strategies.echonext import SOURCE_METADATA
+
+        # Two no_split rows ahead of a train row: the train row is still train row 0
+        # because rows are numbered within their own split, not globally.
+        pd.DataFrame({
+            "ecg_key": ["a", "b", "c"],
+            "patient_key": ["p1", "p2", "p3"],
+            "split": ["no_split", "no_split", "train"],
+            "shd_moderate_or_greater_flag": [0, 1, 1],
+        }).to_csv(tmp_path / SOURCE_METADATA, index=False)
+
+        df = self._splitter().load_metadata(tmp_path, None)
+
+        assert df["signal_path"].tolist() == ["EchoNext_train_waveforms.npy:0"]
+
+    def test_folds_match_the_configs_mapping(self, tmp_path):
+        from ecgbench.splitting.strategies.echonext import SPLIT_TO_FOLD
+
+        df = self._splitter().load_metadata(self._metadata(tmp_path), None)
+
+        assert SPLIT_TO_FOLD == {"train": 1, "val": 2, "test": 3}
+        assert dict(zip(df["split"], df["fold"])) == {"train": 1, "val": 2, "test": 3}
+        assert 4 not in set(df["fold"])          # no_split has no fold, by design
+
+    def test_normalised_table_is_written_for_the_validator(self, tmp_path):
+        """validate_dataset re-reads metadata_csv from disk and rebuilds paths."""
+        from ecgbench.splitting.strategies.echonext import GENERATED_METADATA
+
+        self._splitter().load_metadata(self._metadata(tmp_path), None)
+
+        written = pd.read_csv(tmp_path / GENERATED_METADATA)
+        assert "signal_path" in written.columns
+        assert len(written) == 5
+        assert written["signal_path"].str.contains(r"\.npy:\d+$").all()
+
+    def test_stratification_is_the_composite_shd_label(self, tmp_path):
+        splitter = self._splitter()
+        df = splitter.load_metadata(self._metadata(tmp_path), None)
+
+        labels = splitter.get_stratification_labels(df, None)
+
+        assert labels.tolist() == [1, 1, 0, 1, 0]
+
+    def test_missing_source_names_the_release(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="physionet.org/content/echonext"):
+            self._splitter().load_metadata(tmp_path, None)

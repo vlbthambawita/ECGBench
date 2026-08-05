@@ -3272,3 +3272,131 @@ class TestEyeTrackingECGLabels:
         assert "eye_tracking_dataset_for_12_lead_ecg_interpretation" not in (
             list_available_configs()
         )
+
+
+class TestEchoNextLabels:
+    """Echo-derived labels where a missing measurement reads as a negative flag."""
+
+    def _table(self, tmp_path):
+        """Rows covering the trap: measured-negative, measured-positive, unmeasured."""
+        from ecgbench.labels.echonext import SOURCE_CSV
+
+        pd.DataFrame({
+            "ecg_key": [1, 2, 3, 4],
+            "patient_key": ["p1", "p2", "p3", "p4"],
+            "split": ["train", "train", "val", "test"],
+            "age_at_ecg": [40, 55, 70, 90],
+            "sex": ["male", "female", "male", "female"],
+            # Measured and low / measured and high / never measured / never measured.
+            "tr_max_velocity_value": [2.0, 4.0, None, None],
+            "tr_max_gte_32_flag": [0, 1, 0, 0],
+            "lvef_value": [60.0, 30.0, 55.0, None],
+            "lvef_lte_45_flag": [0, 1, 0, 0],
+            "aortic_stenosis_value": ["none", "severe", "presumed none", None],
+            "aortic_stenosis_moderate_or_greater_flag": [0, 1, 0, 0],
+            "shd_moderate_or_greater_flag": [0, 1, 0, 0],
+        }).to_csv(tmp_path / SOURCE_CSV, index=False)
+        return tmp_path
+
+    def test_unmeasured_records_get_a_measured_mask(self, tmp_path):
+        """A 0 flag means 'low' or 'never measured'; only the mask separates them."""
+        from ecgbench.labels.echonext import load_labels
+
+        df = load_labels(self._table(tmp_path))
+
+        assert df.loc[1, "tr_max_gte_32_flag_measured"]      # measured, low
+        assert df.loc[2, "tr_max_gte_32_flag_measured"]      # measured, high
+        assert not df.loc[3, "tr_max_gte_32_flag_measured"]  # never measured
+        assert not df.loc[4, "tr_max_gte_32_flag_measured"]
+        # The flag itself is 0 for records 1, 3 and 4 alike — indistinguishable.
+        assert df.loc[[1, 3, 4], "tr_max_gte_32_flag"].tolist() == [0, 0, 0]
+
+    def test_prevalence_changes_once_unmeasured_records_are_masked(self, tmp_path):
+        """The reason the mask exists: 25% of records vs 50% of measured ones."""
+        from ecgbench.labels.echonext import load_labels
+
+        df = load_labels(self._table(tmp_path))
+
+        assert df["tr_max_gte_32_flag"].mean() == 0.25
+        measured = df[df["tr_max_gte_32_flag_measured"]]
+        assert measured["tr_max_gte_32_flag"].mean() == 0.5
+
+    def test_the_composite_flag_gets_no_measured_mask(self, tmp_path):
+        """It is a disjunction of the others, with no single measurement behind it."""
+        from ecgbench.labels.echonext import COMPOSITE_FLAG, load_labels
+
+        df = load_labels(self._table(tmp_path))
+
+        assert COMPOSITE_FLAG in df.columns
+        assert f"{COMPOSITE_FLAG}_measured" not in df.columns
+
+    def test_presumed_none_stays_distinct_from_none(self, tmp_path):
+        """It is the report parser inferring an absence, not measuring one."""
+        from ecgbench.labels.echonext import load_labels
+
+        df = load_labels(self._table(tmp_path))
+        severity = df["aortic_stenosis_value"]
+
+        assert str(severity.dtype) == "category"
+        assert severity.cat.ordered
+        assert severity.loc[1] == "none"
+        assert severity.loc[3] == "presumed none"
+        assert severity.loc[1] != severity.loc[3]
+        # Ordered, so a >= comparison means what it looks like.
+        assert severity.loc[2] > severity.loc[1]
+
+    def test_indexed_by_record_id(self, tmp_path):
+        from ecgbench.labels.echonext import JOIN_COLUMN, load_labels
+
+        df = load_labels(self._table(tmp_path))
+
+        assert df.index.name == JOIN_COLUMN
+        assert df.index.is_unique
+        assert len(df) == 4
+
+    def test_missing_source_names_the_release(self, tmp_path):
+        from ecgbench.labels.echonext import load_labels
+
+        with pytest.raises(LabelSourceMissingError, match="physionet.org/content/echonext"):
+            load_labels(tmp_path)
+
+    # ------------------------------------------------- the README's column order
+
+    def test_tabular_feature_order_is_not_the_readmes(self, tmp_path):
+        """age_at_ecg is column 1 of the array, not column 6 as documented."""
+        from ecgbench.labels.echonext import (
+            README_TABULAR_FEATURE_COLUMNS,
+            TABULAR_FEATURE_COLUMNS,
+        )
+
+        assert TABULAR_FEATURE_COLUMNS != README_TABULAR_FEATURE_COLUMNS
+        assert TABULAR_FEATURE_COLUMNS.index("age_at_ecg") == 1
+        assert README_TABULAR_FEATURE_COLUMNS.index("age_at_ecg") == 6
+        # Same set, different order — this is a shift, not a different feature set.
+        assert set(TABULAR_FEATURE_COLUMNS) == set(README_TABULAR_FEATURE_COLUMNS)
+
+    def test_tabular_features_are_named_in_the_true_order(self, tmp_path):
+        import numpy as np
+
+        from ecgbench.labels.echonext import TABULAR_FEATURE_COLUMNS, load_tabular_features
+
+        # Column j holds value j, so a mislabelled column is visible in the values.
+        np.save(tmp_path / "EchoNext_val_tabular_features.npy",
+                np.tile(np.arange(7, dtype=float), (3, 1)))
+
+        df = load_tabular_features(tmp_path, "val")
+
+        assert list(df.columns) == list(TABULAR_FEATURE_COLUMNS)
+        assert df["age_at_ecg"].iloc[0] == 1.0        # column 1, per the true order
+        assert df["qt_corrected"].iloc[0] == 6.0
+
+    def test_unexpected_column_count_refuses_to_name_the_columns(self, tmp_path):
+        """If a reissue changes the layout, the correction must not be applied blind."""
+        import numpy as np
+
+        from ecgbench.labels.echonext import load_tabular_features
+
+        np.save(tmp_path / "EchoNext_val_tabular_features.npy", np.zeros((3, 9)))
+
+        with pytest.raises(ValueError, match="re-verify"):
+            load_tabular_features(tmp_path, "val")

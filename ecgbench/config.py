@@ -101,6 +101,14 @@ class DatasetConfig:
     #: header gain, so leave at 1.0 there; CSV/numpy sources stored in microvolts
     #: need 0.001, or amplitude_outlier fires on every record.
     signal_unit_scale: float = 1.0
+    #: Physical units the samples carry *after* ``signal_unit_scale``. Almost
+    #: always ``"mV"``, which is the contract the rest of ECGBench assumes.
+    #: ``"zscore"`` marks a source whose waveforms were standardised by its
+    #: publisher and cannot be recovered to millivolts (``echonext``): there
+    #: ``ECGDataset(units=...)`` refuses to convert rather than silently scaling
+    #: dimensionless numbers, and ``amplitude_outlier`` is skipped because an mV
+    #: range means nothing against them.
+    signal_units: str = "mV"
     leads: int = 12
     #: Lead names in the order the files store them, spelled as the source spells
     #: them. Required for ECGDataset(leads=...) — without it nothing knows which
@@ -273,6 +281,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         creators=_parse_creators(raw.get("creators")),
         signal_format=raw.get("signal_format", "wfdb"),
         signal_unit_scale=float(raw.get("signal_unit_scale", 1.0)),
+        signal_units=raw.get("signal_units", "mV"),
         leads=raw.get("leads", 12),
         lead_names=raw.get("lead_names"),
         duration_seconds=raw.get("duration_seconds", 10.0),

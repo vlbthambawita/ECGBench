@@ -45,6 +45,15 @@ class WindowOutOfRangeError(ValueError):
     """The requested sample window does not fit inside the record."""
 
 
+class UnitConversionError(ValueError):
+    """The dataset's samples are not in a physical unit, so units= cannot apply.
+
+    Raised for sources whose publisher standardised the waveforms — see
+    ``DatasetConfig.signal_units``. Scaling them by 1000 would produce a number
+    that looks like microvolts and means nothing.
+    """
+
+
 class SplitsNotPublishedError(RuntimeError):
     """The dataset's splits are deliberately not on the Hub.
 
@@ -81,7 +90,30 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
             return int(wfdb.rdheader(record_path).sig_len)
         except Exception:
             return None
+    if signal_format == "npy":
+        try:
+            path, _ = _parse_npy_ref(record_path)
+            return int(np.load(path, mmap_mode="r").shape[-2])
+        except Exception:
+            return None
     return None
+
+
+def _parse_npy_ref(record_path: str) -> tuple[str, int]:
+    """Split a ``<file>.npy:<row>`` reference into its file and row index.
+
+    Datasets in ``npy`` format do not give each record its own file — they ship
+    one array per split holding every record, so a "path" has to carry the row
+    too. ``EchoNext_test_waveforms.npy:417`` is row 417 of that array.
+    """
+    path, separator, row = str(record_path).rpartition(":")
+    if not separator or not row.lstrip("-").isdigit():
+        raise ValueError(
+            f"npy record path {record_path!r} must end in ':<row>' — records are "
+            "rows of a shared array, so the row index is part of the reference "
+            "(e.g. 'EchoNext_test_waveforms.npy:417')."
+        )
+    return path, int(row)
 
 
 def _load_signal(
@@ -132,10 +164,32 @@ def _load_signal(
         ):
             available = start + (0 if signal.size == 0 else signal.shape[1])
             raise _window_error(record_path, start, length, available)
+    elif signal_format == "npy":
+        # One array per split holding every record, so the reference names a row
+        # rather than a file of its own. Memory-mapped: the window slices before
+        # anything is materialised, so a 17 GB array costs one record's worth of
+        # reads. Stored (..., samples, leads) — transposed from what we return.
+        path, row = _parse_npy_ref(record_path)
+        array = np.load(path, mmap_mode="r")
+        record = array[row]
+        # A leading singleton channel axis is conventional in these releases
+        # (N, 1, samples, leads); squeeze it rather than demanding one shape.
+        while record.ndim > 2 and record.shape[0] == 1:
+            record = record[0]
+        if record.ndim != 2:
+            raise ValueError(
+                f"npy record {record_path!r} has shape {record.shape}; expected "
+                "(samples, leads) after squeezing leading singleton axes."
+            )
+        if start >= record.shape[0] or (
+            length is not None and start + length > record.shape[0]
+        ):
+            raise _window_error(record_path, start, length, int(record.shape[0]))
+        signal = np.asarray(record[start:sampto], dtype=np.float32).T
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv"
+            "Currently supported: wfdb, csv, npy"
         )
 
     if unit_scale != 1.0:
@@ -158,12 +212,30 @@ def _parse_dict_string(value: str) -> dict | str:
 _UNIT_FACTORS = {"mv": 1.0, "uv": 1000.0, "\u00b5v": 1000.0}
 
 
-def _resolve_units(units: str) -> float:
+def _resolve_units(units: str, source_units: str = "mV") -> float:
+    """Factor converting a record from ``source_units`` to the requested units.
+
+    ``source_units`` is the config's ``signal_units``. Anything other than mV
+    cannot be converted at all, so this refuses rather than scaling numbers whose
+    units it does not know \u2014 the failure would otherwise be a silent 1000x.
+    """
     factor = _UNIT_FACTORS.get(str(units).strip().lower())
     if factor is None:
         raise ValueError(
             f"units must be one of 'mV', 'uV' (or '\u00b5V'), got {units!r}"
         )
+    if str(source_units).strip().lower() not in _UNIT_FACTORS:
+        if factor != 1.0:
+            raise UnitConversionError(
+                f"This dataset's samples are stored as {source_units!r}, not a "
+                f"physical unit, so they cannot be converted to {units!r}. Its "
+                "publisher standardised the waveforms and did not release the "
+                "mean and standard deviation, so millivolts are unrecoverable. "
+                "Drop the units= argument to get the values as shipped."
+            )
+        # units="mV" is the default nobody passed on purpose; leave the samples
+        # untouched rather than claiming they are millivolts.
+        return 1.0
     return factor
 
 
@@ -347,8 +419,13 @@ class ECGDataset(_TorchDataset):
         # tensor __getitem__ returns and never touch the files, the fold CSVs, or
         # validation — a record excluded for a bad V6 stays excluded even if you
         # never load V6.
-        self._unit_factor = _resolve_units(units)
-        self.units = "mV" if self._unit_factor == 1.0 else "uV"
+        self._unit_factor = _resolve_units(units, self.config.signal_units)
+        if self.config.signal_units.strip().lower() in _UNIT_FACTORS:
+            self.units = "mV" if self._unit_factor == 1.0 else "uV"
+        else:
+            # Report what the samples actually are, not the mV default nobody
+            # chose. sample["units"] is what a user checks before plotting.
+            self.units = self.config.signal_units
 
         self.lead_names = tuple(self.config.lead_names) if self.config.lead_names else None
         self._lead_index: list[int] | None = None

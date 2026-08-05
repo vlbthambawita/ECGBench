@@ -61,10 +61,27 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
         signal = np.loadtxt(
             record_path, delimiter=",", skiprows=1, dtype=np.float32, ndmin=2
         ).T
+    elif signal_format == "npy":
+        # Records are rows of one shared array per split, so the reference is
+        # "<file>.npy:<row>". Memory-mapped, or validating 100,000 records would
+        # read a 17 GB array per worker. Kept deliberately window-less, like the
+        # rest of this function: validation always sees the whole record.
+        from ecgbench.dataset import _parse_npy_ref
+
+        path, row = _parse_npy_ref(record_path)
+        record = np.load(path, mmap_mode="r")[row]
+        while record.ndim > 2 and record.shape[0] == 1:
+            record = record[0]
+        if record.ndim != 2:
+            raise ValueError(
+                f"npy record {record_path!r} has shape {record.shape}; expected "
+                "(samples, leads) after squeezing leading singleton axes."
+            )
+        signal = np.asarray(record, dtype=np.float32).T
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv"
+            "Currently supported: wfdb, csv, npy"
         )
 
     if unit_scale != 1.0:
@@ -120,10 +137,22 @@ def _validate_single_record(
             issues=all_issues if all_issues else [f"load_error:{e}"],
         )
 
+    # amplitude_outlier thresholds are millivolts, so they mean nothing against a
+    # source whose publisher standardised the waveforms. Skip rather than fail
+    # every record — the config should omit the check, but a stray one here would
+    # otherwise look like a data problem instead of a units mismatch.
+    non_mv = str(config_dict.get("signal_units", "mV")).strip().lower() not in {
+        "mv",
+        "uv",
+        "µv",
+    }
+
     # Run each configured check
     for check_name in check_names:
         if check_name == "corrupt_header":
             continue  # Already handled above
+        if check_name == "amplitude_outlier" and non_mv:
+            continue
         check_fn = CHECK_REGISTRY.get(check_name)
         if check_fn is None:
             logger.warning("Unknown check '%s', skipping", check_name)
@@ -153,6 +182,7 @@ def _config_to_dict(config: DatasetConfig) -> dict:
         "url": config.url,
         "default_sampling_rate": config.default_sampling_rate,
         "signal_unit_scale": config.signal_unit_scale,
+        "signal_units": config.signal_units,
     }
     if config.validation:
         result["validation"] = {

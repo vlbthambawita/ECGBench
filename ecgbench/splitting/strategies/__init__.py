@@ -8,6 +8,7 @@ from . import (  # noqa: F401
     ecgcipa,
     ecgdmmld,
     ecgrdvq,
+    echonext,
     generic,
     incartdb,
     leipzig_heart_center_ecg,
