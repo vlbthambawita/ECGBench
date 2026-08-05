@@ -485,6 +485,32 @@ targets = multi_hot(icd.head(1000), codes, prefix="icd_")
 Only 58.5% of its records carry a diagnosis at all, and the empty ones are empty
 *lists* rather than nulls — see `examples/load_mimic_iv_ecg_ext_icd.py`.
 
+### Datasets with no waveforms at all
+
+A dataset can also lack recordings without annotating anyone else's. The **Eye
+Tracking Dataset for 12-Lead ECG Interpretation** ships ten *printed* ECGs and
+the gaze behaviour of 63 clinicians reading them — 630 sessions, scored against
+16–25 areas of interest per image. There is no sampled signal, no sampling rate,
+and no patient behind a record, so it too gets **no config and no splits**: the
+unit of observation is a reader session, and folds over "records" would be
+partitioning ten pictures. How to split a reader study — by reader or by image —
+depends on the task, so ECGBench ships tables and leaves that choice open.
+
+```python
+from ecgbench.labels.eye_tracking_ecg import load_eye_tracking_ecg
+
+df = load_eye_tracking_ecg("/data/eye-tracking-ecg/1.0.0/")
+
+# Group by aoi_lead, not Label: labels are scoped per image ("V1 NSR" vs "V1 AFib"),
+# and 1/2/3 are leads I/II/III rather than indices.
+leads = df[df.aoi_kind == "lead"]
+leads.groupby("Group")["Hit_time_G"].mean().round(0)   # Consultant 7266 ms, Med 1 11305 ms
+```
+
+Its `-1` "never happened" codes and `0` ages are converted to `NaN` on load —
+being sentinels rather than blanks, they make every column look fully populated.
+See `examples/load_eye_tracking_ecg.py` and the dataset page.
+
 ### Restricted and credentialed datasets
 
 Most datasets' fold CSVs are published to the [HuggingFace

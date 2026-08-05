@@ -3035,3 +3035,240 @@ class TestECGRDVQFiducials:
             for key in out
             if key != "n_annotations"
         )
+
+
+class TestEyeTrackingECGLabels:
+    """A reader study over ten ECG *images* — no waveforms, so no config."""
+
+    #: Two stimuli whose real AOI grids differ, and whose suffixes are unrelated
+    #: to their names ("Atrial fibrillation" -> AFib).
+    NSR = "Normal sinus rhythm"
+    VTACH = "Ventricular tachycardia"
+
+    def _tree(self, tmp_path, table="grid"):
+        """A stand-in for Datasets/<table>_Anonymized.csv, with the real quirks."""
+        from ecgbench.labels.eye_tracking_ecg import AOI_TABLES
+
+        rows = []
+
+        def session(reader, stimulus, group, gender, age, labels):
+            rows.append({
+                "Study_name": "ECG Study", "Respondent_Name": reader,
+                "Gender": gender, "Age": age, "Group": group, "Type": "Stimulus",
+                "Label": stimulus, "Start": 1000, "Duration": 30000,
+                "ParentStimulus": None, "Hit_time_G": None, "Fixations_Count": None,
+                "First_Fixation_Duration": None, "Average_Fixations_Duration": None,
+                "Respondent_ratio_G": None, "Time_spent_G_Percentage": None,
+            })
+            for i, (label, hit, fixations) in enumerate(labels):
+                rows.append({
+                    "Study_name": "ECG Study", "Respondent_Name": reader,
+                    "Gender": gender, "Age": age, "Group": group,
+                    "Type": "Static AOI", "Label": label, "Start": 1000,
+                    "Duration": 30000, "ParentStimulus": stimulus,
+                    "Hit_time_G": hit, "Fixations_Count": fixations,
+                    "First_Fixation_Duration": -1 if fixations == 0 else 30,
+                    "Average_Fixations_Duration": -1 if fixations == 0 else 40,
+                    "Respondent_ratio_G": 0 if hit == -1 else 1,
+                    "Time_spent_G_Percentage": float(i),
+                })
+
+        if table == "long_short":
+            for reader, age in (("Consultant 1", 44), ("Med 1", 0)):
+                for stimulus in (self.NSR, self.VTACH):
+                    session(reader, stimulus, "Consultant", "MALE", age,
+                            [("Long", 100, 5), ("Short", 200, 9)])
+        else:
+            for reader, age in (("Consultant 1", 44), ("Med 1", 0)):
+                # A full-grid image: numbered limb leads, a strip, the footer.
+                session(reader, self.NSR, "Consultant", "MALE", age, [
+                    ("1 NSR", 500, 3),
+                    ("aVR NSR", -1, 0),          # never gazed at
+                    ("V5-3 NSR", 700, 2),
+                    ("Information NSR", 900, 1),
+                ])
+                # VTach reuses one label for two distinct regions, as shipped.
+                session(reader, self.VTACH, "Consultant", "MALE", age, [
+                    ("1 VTach", 400, 4),
+                    ("II-3 VTach", 800, 6),
+                    ("II-3 VTach", 850, 1),
+                ])
+
+        path = tmp_path / AOI_TABLES[table]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_csv(path)
+        return tmp_path
+
+    # --------------------------------------------------------------- decoding
+
+    def test_aoi_area_strips_the_per_image_suffix(self):
+        """Labels are scoped per image, so 'V1 NSR' and 'V1 AFib' are one region."""
+        from ecgbench.labels.eye_tracking_ecg import aoi_area
+
+        assert aoi_area("V1 NSR", self.NSR) == "V1"
+        assert aoi_area("V1 AFib", "Atrial fibrillation") == "V1"
+        assert aoi_area("V5-3 NSR", self.NSR) == "V5-3"
+
+    def test_aoi_area_strips_authoring_copy_suffixes(self):
+        """Three complete-heart-block labels ship as '... copy copy copy'."""
+        from ecgbench.labels.eye_tracking_ecg import aoi_area
+
+        stimulus = "Complete heart block"
+        assert aoi_area("II-2 CompleteHeartBlock copy", stimulus) == "II-2"
+        assert aoi_area("II-4 CompleteHeartBlock copy copy copy", stimulus) == "II-4"
+
+    def test_numbered_areas_are_the_limb_leads(self):
+        """1/2/3 are leads I/II/III — the trap that hides them entirely."""
+        from ecgbench.labels.eye_tracking_ecg import classify_area
+
+        assert classify_area("1") == ("lead", "I")
+        assert classify_area("2") == ("lead", "II")
+        assert classify_area("3") == ("lead", "III")
+
+    def test_classify_area_separates_strips_leads_and_the_footer(self):
+        from ecgbench.labels.eye_tracking_ecg import classify_area
+
+        assert classify_area("V5-3") == ("rhythm_strip", "V5")
+        assert classify_area("II-4") == ("rhythm_strip", "II")
+        assert classify_area("aVR") == ("lead", "aVR")
+        assert classify_area("V3R") == ("lead", "V3R")
+        # The footer is not a trace, so it has no lead.
+        assert classify_area("Information") == ("information", None)
+
+    def test_size_qualifiers_do_not_hide_a_strip_segment(self):
+        """'V1-4 long' is a strip quarter; 'V1 short' is a lead box."""
+        from ecgbench.labels.eye_tracking_ecg import classify_area
+
+        assert classify_area("V1-4 long") == ("rhythm_strip", "V1")
+        assert classify_area("V1 short") == ("lead", "V1")
+        assert classify_area("V5 short") == ("lead", "V5")
+
+    # ---------------------------------------------------------------- loading
+
+    def test_derived_columns_make_cross_image_grouping_possible(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        df = load_aoi_metrics(self._tree(tmp_path))
+
+        assert set(df.columns) >= {"aoi_area", "aoi_kind", "aoi_lead", "aoi_occurrence"}
+        # The stimulus header rows are not AOI rows.
+        assert (df.Type == "Static AOI").all()
+        nsr = df[df.ParentStimulus == self.NSR]
+        assert sorted(set(nsr.aoi_area)) == ["1", "Information", "V5-3", "aVR"]
+        assert set(nsr.aoi_kind) == {"lead", "rhythm_strip", "information"}
+
+    def test_reused_label_is_disambiguated_not_merged(self, tmp_path):
+        """'II-3 VTach' names two regions; a naive key would collide."""
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        df = load_aoi_metrics(self._tree(tmp_path))
+        reused = df[df.Label == "II-3 VTach"]
+
+        assert len(reused) == 4                      # 2 readers x 2 regions
+        assert sorted(reused.aoi_occurrence) == [0, 0, 1, 1]
+        # The two regions kept their own metrics rather than being averaged.
+        first = reused[reused.aoi_occurrence == 0]
+        second = reused[reused.aoi_occurrence == 1]
+        assert set(first.Hit_time_G) == {800}
+        assert set(second.Hit_time_G) == {850}
+        # And the full key is unique, which is what lets callers index on it.
+        key = ["Respondent_Name", "ParentStimulus", "Label", "aoi_occurrence"]
+        assert not df.duplicated(key).any()
+
+    def test_minus_one_sentinels_become_nan(self, tmp_path):
+        """-1 means 'never happened'; averaged as -1 it silently skews everything."""
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        df = load_aoi_metrics(self._tree(tmp_path))
+        never_gazed = df[df.Label == "aVR NSR"]
+
+        assert never_gazed.Hit_time_G.isna().all()
+        assert never_gazed.First_Fixation_Duration.isna().all()
+        assert never_gazed.Average_Fixations_Duration.isna().all()
+        # Rows that did happen are untouched.
+        assert df.loc[df.Label == "1 NSR", "Hit_time_G"].eq(500).all()
+
+    def test_raw_sentinels_are_available_when_asked_for(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        df = load_aoi_metrics(self._tree(tmp_path), sentinels_to_nan=False)
+
+        assert df.loc[df.Label == "aVR NSR", "Hit_time_G"].eq(-1).all()
+
+    def test_zero_age_is_an_anonymisation_artefact_not_a_value(self, tmp_path):
+        """54 of the 63 real readers carry Age 0, so notna() reports 100%."""
+        from ecgbench.labels.eye_tracking_ecg import load_respondents
+
+        readers = load_respondents(self._tree(tmp_path))
+
+        assert len(readers) == 2
+        assert readers.loc["Consultant 1", "Age"] == 44
+        assert pd.isna(readers.loc["Med 1", "Age"])
+
+    def test_sessions_are_the_stimulus_rows(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_sessions
+
+        sessions = load_sessions(self._tree(tmp_path))
+
+        assert len(sessions) == 4                    # 2 readers x 2 images
+        assert set(sessions.stimulus) == {self.NSR, self.VTACH}
+        assert not sessions.duplicated(["Respondent_Name", "stimulus"]).any()
+
+    def test_long_short_table_has_no_lead_structure(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        df = load_aoi_metrics(self._tree(tmp_path, "long_short"), table="long_short")
+
+        assert set(df.aoi_area) == {"Long", "Short"}
+        assert set(df.aoi_kind) == {"region"}
+        assert df.aoi_lead.isna().all()
+
+    def test_full_frame_attaches_the_session_and_the_image(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_eye_tracking_ecg
+
+        df = load_eye_tracking_ecg(self._tree(tmp_path))
+
+        assert (df.session_duration_ms == 30000).all()
+        assert df.loc[df.ParentStimulus == self.NSR, "stimulus_image"].eq(
+            "ECGs/ECG_Images/Normal_Sinus_Rhythm.jpg"
+        ).all()
+
+    # ----------------------------------------------------------------- errors
+
+    def test_missing_source_names_the_release(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        with pytest.raises(LabelSourceMissingError, match="eye-tracking-ecg"):
+            load_aoi_metrics(tmp_path)
+
+    def test_unknown_table_is_rejected(self, tmp_path):
+        from ecgbench.labels.eye_tracking_ecg import load_aoi_metrics
+
+        with pytest.raises(ValueError, match="table must be one of"):
+            load_aoi_metrics(tmp_path, table="heatmap")
+
+    def test_unknown_stimulus_is_rejected(self, tmp_path):
+        """The image filenames are not derivable from the stimulus names."""
+        from ecgbench.labels.eye_tracking_ecg import stimulus_image_path
+
+        with pytest.raises(ValueError, match="Unknown stimulus"):
+            stimulus_image_path(tmp_path, "STEMI")      # the CSV says "ST elevation MI"
+
+    def test_every_stimulus_maps_to_an_image_and_a_suffix(self):
+        """The three per-stimulus tables must agree on the same ten images."""
+        from ecgbench.labels.eye_tracking_ecg import (
+            STIMULUS_AOI_SUFFIXES,
+            STIMULUS_IMAGES,
+        )
+
+        assert len(STIMULUS_IMAGES) == 10
+        assert set(STIMULUS_IMAGES) == set(STIMULUS_AOI_SUFFIXES)
+
+    def test_there_is_deliberately_no_eye_tracking_ecg_config(self):
+        """A config would imply splitting ten pictures into ten folds."""
+        from ecgbench.config import list_available_configs
+
+        assert "eye_tracking_ecg" not in list_available_configs()
+        assert "eye_tracking_dataset_for_12_lead_ecg_interpretation" not in (
+            list_available_configs()
+        )
