@@ -1,10 +1,22 @@
 # ECGBench
 
+[![PyPI](https://img.shields.io/pypi/v/ecgbench?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/ecgbench/)
+[![Python](https://img.shields.io/pypi/pyversions/ecgbench?logo=python&logoColor=white)](https://pypi.org/project/ecgbench/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![HF Datasets](https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace-Fold%20splits-yellow)](https://huggingface.co/datasets/vlbthambawita/ECGBench)
+[![HF Space](https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace-Space-blue)](https://huggingface.co/spaces/vlbthambawita/ECGBench)
+[![Website](https://img.shields.io/badge/Website-ECGBench-6366f1?logo=githubpages&logoColor=white)](https://vlbthambawita.github.io/ECGBench/)
+
 Reproducible ECG benchmark datasets with standardised splits, validation, and Croissant metadata.
 
 ECGBench provides a curated catalogue of 64 publicly available ECG datasets, a config-driven pipeline for generating validated fold splits, and a unified PyTorch `Dataset` class for loading any supported dataset.
 
-**Website:** [vlbthambawita.github.io/ECGBench](https://vlbthambawita.github.io/ECGBench/)
+| | |
+|---|---|
+| **Website** | [vlbthambawita.github.io/ECGBench](https://vlbthambawita.github.io/ECGBench/) |
+| **HuggingFace Space** | [huggingface.co/spaces/vlbthambawita/ECGBench](https://huggingface.co/spaces/vlbthambawita/ECGBench) |
+| **Fold splits (Hub)** | [huggingface.co/datasets/vlbthambawita/ECGBench](https://huggingface.co/datasets/vlbthambawita/ECGBench) |
+| **PyPI** | [pypi.org/project/ecgbench](https://pypi.org/project/ecgbench/) |
 
 ## Installation
 
