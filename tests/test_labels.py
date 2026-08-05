@@ -3400,3 +3400,423 @@ class TestEchoNextLabels:
 
         with pytest.raises(ValueError, match="re-verify"):
             load_tabular_features(tmp_path, "val")
+
+
+class TestSymileMimicLabels:
+    """Symile-MIMIC is a multimodal cohort over MIMIC-IV-ECG's records."""
+
+    #: MIMIC-IV-ECG study_ids. 40870988 appears twice — 12 studies serve two
+    #: admissions each in the real release — and the order is not ascending.
+    STUDY_IDS = [46857043, 40870988, 40870988, 45321834, 46660648]
+    HADM_IDS = [25296721, 22680060, 29914730, 26188372, 24043239]
+
+    def _cohort(self, tmp_path, study_id=None, admittime=None):
+        """A five-row stand-in for symile_mimic_data.csv."""
+        from ecgbench.labels.symile_mimic import SOURCE_CSV
+
+        paths = [f"files/p10/p1000000{i}/s{sid}/{sid}"
+                 for i, sid in enumerate(self.STUDY_IDS)]
+        frame = {
+            "subject_id": [10000001, 14565909, 14565909, 10000004, 10000005],
+            "hadm_id": self.HADM_IDS,
+            "admittime": admittime or [
+                "2186-11-29 03:56:00",
+                # The duplicated study's later admission comes FIRST in file order,
+                # so a "keep the first row" policy would pick the wrong one.
+                "2133-12-19 21:00:00",
+                "2133-12-19 16:14:00",
+                "2150-08-20 16:32:00",
+                "2165-01-04 23:01:00",
+            ],
+            "gender": ["F", "M", "M", "F", "M"],
+            "age": [64, 52, 52, 71, 48],
+            "anchor_age": [64, 52, 52, 71, 48],
+            # The shipped `study_id` is the CXR's, duplicating cxr_study_id.
+            "study_id": [54684191, 54684192, 54684193, 54684194, 54684195],
+            "cxr_study_id": study_id or [54684191, 54684192, 54684193, 54684194, 54684195],
+            "cxr_path": [f"files/p10/s{i}/{i}.jpg" for i in range(5)],
+            "cxr_ViewPosition": ["PA", "AP", "AP", "AP", "PA"],
+            "ecg_study_id": self.STUDY_IDS,
+            "ecg_path": paths,
+            "ecg_time": ["2186-11-28 23:16:00"] * 5,
+            # CheXpert's four states: 1.0, 0.0, -1.0 uncertain, NaN not mentioned.
+            "Atelectasis": [1.0, 0.0, -1.0, None, 1.0],
+            "Cardiomegaly": [None, None, 1.0, 0.0, -1.0],
+            "No Finding": [None, 1.0, None, None, None],
+            "labs_all_nan": [0] * 5,
+        }
+        # All 50 labs, as every shipped file carries them. Two are given real
+        # values — one well covered, one sparse — and the rest are empty.
+        frame.update(self._lab_columns(percentiles=False))
+        pd.DataFrame(frame).to_csv(tmp_path / SOURCE_CSV, index=False)
+        return tmp_path
+
+    def _lab_columns(self, percentiles):
+        """The 50 lab columns (and optionally their percentile twins)."""
+        from ecgbench.labels.symile_mimic import LABS, PERCENTILE_SUFFIX
+
+        columns = {itemid: [None] * 5 for itemid in LABS}
+        columns["51221"] = [35.4, 30.1, 31.0, None, 42.2]
+        columns["50934"] = [None, None, 12.0, None, None]
+        if percentiles:
+            for itemid in LABS:
+                columns[f"{itemid}{PERCENTILE_SUFFIX}"] = [0.6] * 5
+            columns[f"51221{PERCENTILE_SUFFIX}"] = [0.7, 0.3, 0.4, 0.5, 0.9]
+            columns[f"50934{PERCENTILE_SUFFIX}"] = [0.6, 0.6, 0.2, 0.6, 0.6]
+        return columns
+
+    def _split(self, tmp_path, split, retrieval=False):
+        """A stand-in split CSV — no ecg_study_id column, as shipped."""
+        from ecgbench.labels.symile_mimic import SPLIT_CSVS
+
+        paths = [f"files/p10/p1000000{i}/s{sid}/{sid}"
+                 for i, sid in enumerate(self.STUDY_IDS)]
+        frame = {
+            "subject_id": [10000001, 14565909, 14565909, 10000004, 10000005],
+            "hadm_id": self.HADM_IDS,
+            "cxr_path": [f"files/p10/s{i}/{i}.jpg" for i in range(5)],
+            "Atelectasis": [1.0, 0.0, -1.0, None, 1.0],
+            "ecg_path": paths,
+            **self._lab_columns(percentiles=True),
+        }
+        if retrieval:
+            # Two queries x 2 candidates, positives deliberately NOT first in file
+            # order so the sort has something to do.
+            frame = {k: [v[0], v[1], v[0], v[1]] for k, v in frame.items()}
+            frame["hadm_id"] = [self.HADM_IDS[0], self.HADM_IDS[1]] * 2
+            frame["label_hadm_id"] = [self.HADM_IDS[1], self.HADM_IDS[0],
+                                      self.HADM_IDS[0], self.HADM_IDS[1]]
+            frame["label"] = [0, 0, 1, 1]
+        pd.DataFrame(frame).to_csv(tmp_path / SPLIT_CSVS[split], index=False)
+        return tmp_path
+
+    # -- the cohort table ----------------------------------------------------
+
+    def test_indexed_by_the_admission_which_is_the_row_unit(self, tmp_path):
+        """hadm_id is unique across all 11,622 rows; ecg_study_id is not."""
+        from ecgbench.labels.symile_mimic import ROW_KEY, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+
+        assert df.index.name == ROW_KEY
+        assert list(df.index) == self.HADM_IDS
+        assert ROW_KEY not in df.columns
+        assert df.loc[25296721, "ecg_study_id"] == 46857043
+
+    def test_the_ambiguous_study_id_column_is_dropped(self, tmp_path):
+        """The shipped 'study_id' is the CXR's; joining MIMIC on it matches nothing."""
+        from ecgbench.labels.symile_mimic import load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+
+        assert "study_id" not in df.columns          # the trap is gone
+        assert "cxr_study_id" in df.columns          # nothing was lost
+        assert "ecg_study_id" in df.columns          # the real key stays
+
+    def test_a_disagreeing_study_id_is_kept_not_discarded(self, tmp_path, caplog):
+        """Dropping it is only safe while it duplicates cxr_study_id exactly."""
+        from ecgbench.labels.symile_mimic import load_cohort
+
+        path = self._cohort(tmp_path, study_id=[1, 2, 3, 4, 5])
+        with caplog.at_level("WARNING"):
+            df = load_cohort(path)
+
+        assert "study_id" in df.columns
+        assert "disagree" in caplog.text
+
+    def test_column_subset_keeps_the_twin_needed_to_drop_the_trap(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_cohort
+
+        df = load_cohort(self._cohort(tmp_path), columns=["study_id", "ecg_study_id"])
+
+        # Asking for study_id yields the ECG key and no misleading column.
+        assert list(df.columns) == ["ecg_study_id"]
+
+    # -- keying by the host dataset's record id -------------------------------
+
+    def test_by_study_id_indexes_by_the_host_key(self, tmp_path):
+        from ecgbench.labels.symile_mimic import JOIN_COLUMN, by_study_id, load_cohort
+
+        df = by_study_id(load_cohort(self._cohort(tmp_path)))
+
+        assert df.index.name == JOIN_COLUMN
+        assert df.index.is_unique
+        assert "ecg_study_id" not in df.columns      # consumed by the index
+        assert "hadm_id" in df.columns               # and nothing lost
+
+    def test_duplicate_studies_resolve_to_the_earliest_admission(self, tmp_path):
+        """Not the first row: the later admission comes first in file order here."""
+        from ecgbench.labels.symile_mimic import by_study_id, load_cohort
+
+        df = by_study_id(load_cohort(self._cohort(tmp_path)))
+
+        assert len(df) == 4                                  # one of five dropped
+        assert df.loc[40870988, "hadm_id"] == 29914730        # the 16:14 admission
+        assert df.loc[40870988, "admittime"] == "2133-12-19 16:14:00"
+
+    def test_duplicate_studies_fall_back_to_lowest_hadm_id(self, tmp_path):
+        """Split CSVs drop admittime, so the tiebreak must still be deterministic."""
+        from ecgbench.labels.symile_mimic import by_study_id, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path)).drop(columns="admittime")
+        keyed = by_study_id(df)
+
+        assert len(keyed) == 4
+        assert keyed.loc[40870988, "hadm_id"] == 22680060      # the lower id
+
+    def test_duplicate_studies_can_be_refused_instead(self, tmp_path):
+        from ecgbench.labels.symile_mimic import by_study_id, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+
+        with pytest.raises(ValueError, match=r"more than one admission.*40870988"):
+            by_study_id(df, on_duplicate="raise")
+        # keep_all is the escape hatch for inspecting them.
+        assert len(by_study_id(df, on_duplicate="keep_all")) == 5
+        with pytest.raises(ValueError, match="on_duplicate must be"):
+            by_study_id(df, on_duplicate="first")
+
+    def test_prefix_reaches_the_demoted_row_key(self, tmp_path):
+        """hadm_id was an index name, so add_prefix never touched it."""
+        from ecgbench.labels.symile_mimic import by_study_id, load_cohort
+
+        df = by_study_id(load_cohort(self._cohort(tmp_path), prefix="sym_"), prefix="sym_")
+
+        assert "sym_hadm_id" in df.columns
+        assert "hadm_id" not in df.columns
+        assert df.index.name == "study_id"            # the key itself is not prefixed
+
+    # -- the release's own splits --------------------------------------------
+
+    def test_split_recovers_the_study_id_from_the_ecg_path(self, tmp_path):
+        """Split CSVs drop ecg_study_id; the path's last segment is the record name."""
+        from ecgbench.labels.symile_mimic import ECG_STUDY_COLUMN, load_split
+
+        df = load_split(self._split(tmp_path, "train"), "train")
+
+        assert list(df[ECG_STUDY_COLUMN]) == self.STUDY_IDS
+        assert df.index.name == "hadm_id"
+
+    def test_a_non_numeric_path_stem_refuses_to_guess(self, tmp_path):
+        """A layout change must not silently produce keys that join to nothing."""
+        from ecgbench.labels.symile_mimic import SPLIT_CSVS, load_split
+
+        path = self._split(tmp_path, "train")
+        frame = pd.read_csv(path / SPLIT_CSVS["train"])
+        frame.loc[0, "ecg_path"] = "files/p10/p10000001/s46857043/46857043.dat"
+        frame.to_csv(path / SPLIT_CSVS["train"], index=False)
+
+        with pytest.raises(ValueError, match="do not end in a numeric"):
+            load_split(path, "train")
+
+    def test_retrieval_splits_group_candidates_positive_first(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_split, retrieval_queries
+
+        df = load_split(self._split(tmp_path, "test", retrieval=True), "test")
+
+        assert list(df.index.names) == ["label_hadm_id", "hadm_id"]
+        # Within each query the positive candidate sorts first.
+        for query in df.index.get_level_values(0).unique():
+            assert df.loc[query, "label"].iloc[0] == 1
+        # One row per query, which is what the real 464 test admissions are.
+        queries = retrieval_queries(df)
+        assert len(queries) == 2
+        assert queries.index.name == "hadm_id"
+        assert set(queries["label"]) == {1}
+
+    def test_unknown_split_is_refused(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_split
+
+        with pytest.raises(ValueError, match="split must be one of"):
+            load_split(tmp_path, "validation")
+
+    def test_missing_source_names_the_release(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_cohort, load_split
+
+        with pytest.raises(LabelSourceMissingError, match="symile-mimic"):
+            load_cohort(tmp_path)
+        with pytest.raises(LabelSourceMissingError, match="credentialed"):
+            load_split(tmp_path, "train")
+
+    # -- labs ----------------------------------------------------------------
+
+    def test_labs_frame_kinds(self, tmp_path):
+        from ecgbench.labels.symile_mimic import LABS, labs_frame, load_split
+
+        df = load_split(self._split(tmp_path, "train"), "train")
+
+        values = labs_frame(df, "value")
+        assert values.shape == (5, len(LABS))
+        assert values["51221"].iloc[0] == 35.4
+        # Missing labs are genuine NaNs, so notna() is the missingness indicator.
+        missing = labs_frame(df, "missingness")
+        assert missing["51221"].tolist() == [1, 1, 1, 0, 1]
+        assert missing["50934"].sum() == 1
+        assert labs_frame(df, "percentile")["51221"].iloc[0] == 0.7
+        # Names are opt-in; itemids are the default so the join key is visible.
+        assert labs_frame(df, "value", names=True).columns[0] == LABS["51221"]
+
+    def test_percentiles_are_absent_from_the_cohort_table(self, tmp_path):
+        """They are derived per split from the train ECDF, so only split CSVs have them."""
+        from ecgbench.labels.symile_mimic import labs_frame, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+
+        assert labs_frame(df, "value").shape[1] == 50
+        with pytest.raises(ValueError, match="percentiles are derived per split"):
+            labs_frame(df, "percentile")
+        with pytest.raises(ValueError, match="kind must be one of"):
+            labs_frame(df, "zscore")
+
+    # -- CheXpert ------------------------------------------------------------
+
+    def test_uncertain_is_not_swept_into_not_mentioned(self, tmp_path):
+        """The bug this guards: fill NaN after mapping -1 to NaN loses `uncertain`."""
+        from ecgbench.labels.symile_mimic import chexpert_targets, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+        targets = chexpert_targets(df)      # uncertain="nan", not_mentioned="negative"
+
+        # Row 2 is -1.0 (uncertain) and must stay NaN; row 3 was NaN (not
+        # mentioned) and becomes 0.0.
+        assert pd.isna(targets["Atelectasis"].loc[29914730])
+        assert targets["Atelectasis"].loc[26188372] == 0.0
+        assert targets["Atelectasis"].loc[25296721] == 1.0
+        assert int(targets["Atelectasis"].isna().sum()) == 1
+
+    def test_both_ambiguous_states_are_choices(self, tmp_path):
+        from ecgbench.labels.symile_mimic import chexpert_targets, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path))
+
+        as_neg = chexpert_targets(df, uncertain="negative")
+        assert as_neg["Atelectasis"].loc[29914730] == 0.0
+        as_pos = chexpert_targets(df, uncertain="positive")
+        assert as_pos["Atelectasis"].loc[29914730] == 1.0
+        # keep/nan returns the four shipped states untouched.
+        raw = chexpert_targets(df, uncertain="keep", not_mentioned="nan")
+        assert raw["Atelectasis"].tolist()[:3] == [1.0, 0.0, -1.0]
+        assert pd.isna(raw["Atelectasis"].loc[26188372])
+        with pytest.raises(ValueError, match="uncertain must be"):
+            chexpert_targets(df, uncertain="drop")
+        with pytest.raises(ValueError, match="not_mentioned must be"):
+            chexpert_targets(df, not_mentioned="positive")
+
+    def test_only_the_findings_present_are_returned(self, tmp_path):
+        """The cohort table has all 14; the split CSVs carry only 6."""
+        from ecgbench.labels.symile_mimic import chexpert_targets, load_cohort, load_split
+
+        cohort = chexpert_targets(load_cohort(self._cohort(tmp_path)))
+        assert list(cohort.columns) == ["Atelectasis", "Cardiomegaly", "No Finding"]
+
+        split = chexpert_targets(load_split(self._split(tmp_path, "train"), "train"))
+        assert list(split.columns) == ["Atelectasis"]
+
+    def test_a_frame_with_no_findings_says_where_they_live(self, tmp_path):
+        from ecgbench.labels.symile_mimic import chexpert_targets, load_cohort
+
+        df = load_cohort(self._cohort(tmp_path), columns=["ecg_study_id"])
+
+        with pytest.raises(ValueError, match="load_cohort.. carries all 14"):
+            chexpert_targets(df)
+
+    def test_every_helper_accepts_the_prefix(self, tmp_path):
+        """The prefix cannot be inferred: the 50 labs and their percentile twins
+        share suffixes, so a suffix match on a prefixed frame is ambiguous."""
+        from ecgbench.labels.symile_mimic import (
+            chexpert_targets,
+            labs_frame,
+            load_split,
+            retrieval_queries,
+        )
+
+        df = load_split(self._split(tmp_path, "train"), "train", prefix="sym_")
+
+        assert labs_frame(df, "value", prefix="sym_").shape == (5, 50)
+        assert chexpert_targets(df, prefix="sym_").shape == (5, 1)
+        with pytest.raises(ValueError, match="prefix= matching"):
+            labs_frame(df, "value")
+
+        retr = load_split(self._split(tmp_path, "test", retrieval=True), "test",
+                          prefix="sym_")
+        assert len(retrieval_queries(retr, prefix="sym_")) == 2
+
+    # -- the preprocessed tensors --------------------------------------------
+
+    def _tensors(self, tmp_path, split="test"):
+        directory = tmp_path / "data_npy" / split
+        directory.mkdir(parents=True)
+        # Value (i, lead) encodes the row and the lead, so a shifted or transposed
+        # read cannot pass by accident.
+        ecg = np.stack([
+            np.tile(np.arange(12, dtype=np.float32) + i * 100, (5000, 1))[None]
+            for i in range(4)
+        ])
+        np.save(directory / f"ecg_{split}.npy", ecg)
+        np.save(directory / f"hadm_id_{split}.npy", np.array(self.HADM_IDS[:4]))
+        if split == "test":
+            np.save(directory / f"label_{split}.npy", np.array([1, 0, 1, 0]))
+        return tmp_path
+
+    def test_tensors_come_with_the_row_keys_they_are_aligned_to(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_split_tensors
+
+        array, index = load_split_tensors(self._tensors(tmp_path), "test", "ecg")
+
+        assert array.shape == (4, 1, 5000, 12)
+        assert list(index) == self.HADM_IDS[:4]
+        assert index.name == "hadm_id"
+        # Row 2 is the third record: its leads run 200..211.
+        assert array[2, 0, 0, 0] == 200.0
+
+    def test_leads_first_reorients_without_reordering_leads(self, tmp_path):
+        from ecgbench.labels.symile_mimic import as_leads_first, load_split_tensors
+
+        array, _ = load_split_tensors(self._tensors(tmp_path), "test", "ecg")
+
+        batch = as_leads_first(array)
+        assert batch.shape == (4, 12, 5000)
+        # Lead 4 of record 0 is aVF in MIMIC-IV-ECG's order, value 4.
+        assert batch[0, 4, 0] == 4.0
+        assert as_leads_first(array[0]).shape == (12, 5000)
+        with pytest.raises(ValueError, match="Expected"):
+            as_leads_first(np.zeros((5000, 12)))
+
+    def test_label_tensors_exist_for_retrieval_splits_only(self, tmp_path):
+        from ecgbench.labels.symile_mimic import load_split_tensors
+
+        path = self._tensors(tmp_path)
+        labels, _ = load_split_tensors(path, "test", "label")
+        assert labels.tolist() == [1, 0, 1, 0]
+
+        self._tensors(tmp_path, "train")
+        with pytest.raises(ValueError, match="not.*a retrieval split"):
+            load_split_tensors(path, "train", "label")
+        with pytest.raises(ValueError, match="modality must be one of"):
+            load_split_tensors(path, "test", "waveform")
+
+    def test_inconsistent_row_counts_are_refused(self, tmp_path):
+        """A truncated copy must not produce a silently misaligned join."""
+        from ecgbench.labels.symile_mimic import load_split_tensors
+
+        path = self._tensors(tmp_path)
+        np.save(path / "data_npy" / "test" / "hadm_id_test.npy", np.array(self.HADM_IDS))
+
+        with pytest.raises(ValueError, match="alignment cannot be trusted"):
+            load_split_tensors(path, "test", "ecg")
+
+    # -- the rule this whole module exists to keep --------------------------
+
+    def test_there_is_deliberately_no_symile_mimic_config(self):
+        """A config would let `ecgbench splits` build a second partition of MIMIC-IV-ECG."""
+        from ecgbench.config import list_available_configs
+
+        available = list_available_configs()
+        assert "symile_mimic" not in available
+        assert "symile" not in available
+
+    def test_it_is_not_registered_as_a_label_loader(self):
+        """_custom_loaders maps *config* slugs to loaders, and there is no config."""
+        from ecgbench.labels import _custom_loaders
+
+        assert "symile_mimic" not in _custom_loaders()

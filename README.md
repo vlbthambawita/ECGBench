@@ -472,11 +472,13 @@ first, then lead selection, then units, then `transform`.
 
 ### Derived datasets (annotations for another dataset's records)
 
-Some releases contain no recordings of their own — they annotate someone else's.
-There are two: **PTB-XL+** (3 feature tables, 2 statement tables, derived median
-beats and 283,326 fiducial-point files, all keyed by PTB-XL's `ecg_id`) and
-**MIMIC-IV-ECG-Ext-ICD** (ICD-10-CM discharge diagnoses for all 800,035
-MIMIC-IV-ECG studies, keyed by `study_id`).
+Some releases contain no recordings of their own — they annotate, or re-cut,
+someone else's. There are three: **PTB-XL+** (3 feature tables, 2 statement
+tables, derived median beats and 283,326 fiducial-point files, all keyed by
+PTB-XL's `ecg_id`), **MIMIC-IV-ECG-Ext-ICD** (ICD-10-CM discharge diagnoses for
+all 800,035 MIMIC-IV-ECG studies, keyed by `study_id`) and **Symile-MIMIC** (a
+multimodal cohort pairing 11,610 of those same MIMIC-IV-ECG studies with a chest
+X-ray and 50 blood labs).
 
 Those get **no config and no splits**, deliberately. Their records are the host
 dataset's, so generating folds would create a second ECGBench partition of the
@@ -517,6 +519,31 @@ targets = multi_hot(icd.head(1000), codes, prefix="icd_")
 
 Only 58.5% of its records carry a diagnosis at all, and the empty ones are empty
 *lists* rather than nulls — see `examples/load_mimic_iv_ecg_ext_icd.py`.
+
+Symile-MIMIC is the same shape with one difference: it is a **cohort**, not a
+layer over the whole host. It covers 11,610 of MIMIC-IV-ECG's 800,035 studies, so
+a partial join is the correct result rather than a broken one.
+
+```python
+from ecgbench.labels.symile_mimic import by_study_id, chexpert_targets, load_cohort
+
+host = ECGDataset("mimic_iv_ecg", split="train", fold_numbers=[1],
+                  data_path="/data/mimic-iv-ecg/1.0/", metadata_source="local")
+cohort = load_cohort("/data/symile-mimic/1.0.0/", prefix="sym_")   # (11622, 92)
+# Rows are admissions, so 12 ECG studies appear twice; the default policy keeps
+# the earliest admittime, and on_duplicate="raise" refuses instead.
+keyed = by_study_id(cohort, prefix="sym_")                        # (11610, 92)
+joined = keyed.reindex(host.metadata_df["study_id"].values)       # 1,135 of 78,655
+targets = chexpert_targets(joined, uncertain="nan", prefix="sym_")  # 14 CXR findings
+```
+
+Two traps of its own: the column literally named `study_id` is the **CXR's**, not
+the ECG's (the loader drops it), and the CheXpert labels have four states — −1.0
+means *uncertain* and NaN means *not mentioned*, so `chexpert_targets()` makes you
+resolve both. The shipped `data_npy` ECG tensors are min-max normalised to
+[−1, 1] with the scale discarded, so they are not millivolts and cannot be
+converted back — read MIMIC-IV-ECG for those. See
+`examples/load_symile_mimic.py`.
 
 ### Datasets with no waveforms at all
 
