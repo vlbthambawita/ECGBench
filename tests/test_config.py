@@ -393,6 +393,36 @@ def test_config_creators():
     assert "PTB" in config.creators[0].name
 
 
+def test_load_challenge2020_config():
+    """Challenge 2020: the six-cohort meta-dataset that Challenge 2021 contains."""
+    config = load_config("challenge2020")
+    assert config.slug == "challenge2020"
+    assert config.version == "1.0.2"
+    assert config.signal_format == "wfdb"
+    # Every header declares a gain of 1000/mV, so wfdb already yields millivolts.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Standard order and standard capitalisation in all 43,101 records.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    # All three rates are declared, but each record exists at exactly ONE of
+    # them, so there is a single path column keyed on the nominal 500 Hz.
+    assert config.sampling_rates == [257, 500, 1000]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    # No metadata ships: Challenge2020Splitter generates this from the headers.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # No patient identifiers are published anywhere in this release.
+    assert config.patient_id_column is None
+    # Records run from 5 s to 1800 s, so any entry here would fail thousands.
+    assert config.validation.expected_samples == {}
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    assert config.has_predefined_splits is False
+    # CC BY 4.0, so the fold CSVs are published like Challenge 2021's.
+    assert config.publish_fold_csvs is True
+
+
 def test_load_challenge2021_config():
     """Challenge 2021: the eight-cohort meta-dataset with per-record sampling rates."""
     config = load_config("challenge2021")

@@ -306,6 +306,129 @@ class TestChallenge2021Labels:
         assert reversed_.loc[0, "stratify_dx"] == "164889003"
 
 
+class TestChallenge2020Labels:
+    """The packaged 2020 SNOMED table, and the duplicate-code defect it exposes."""
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        """No metadata file ships, so labels do not depend on a prior pipeline run."""
+        from ecgbench.config import load_config
+
+        spec = load_config("challenge2020").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers are the source
+        assert spec.join_column == "record_name"
+
+    def test_packaged_mapping_covers_the_challenge_classes(self):
+        """111 codes, 27 scored, no duplicate code or abbreviation.
+
+        No code table ships with the dataset, so this file is the only mapping
+        from SNOMED codes to names. A duplicate code would silently drop a class.
+        """
+        from ecgbench.labels.challenge2020 import load_dx_mapping
+
+        mapping = load_dx_mapping()
+        assert len(mapping) == 111
+        assert mapping.index.is_unique
+        assert mapping["abbreviation"].is_unique
+        assert int(mapping["scored"].sum()) == 27
+        # Spot-check both halves of the table.
+        assert mapping.loc["164889003", "abbreviation"] == "AF"
+        assert bool(mapping.loc["164889003", "scored"]) is True
+        assert bool(mapping.loc["164951009", "scored"]) is False  # abQRS, unscored
+
+    def test_scored_subset_is_2020s_not_2021s(self):
+        """The two challenges scored different class sets — do not share a table.
+
+        2021's 30 scored classes are 2020's 27 plus three: PRWP and CLBBB, which
+        do not occur in the 2020 release at all, and BBB, which does (137
+        records) but was unscored that year. Nothing was scored in 2020 and
+        dropped in 2021. Loading the wrong table silently changes the task.
+        """
+        from ecgbench.labels.challenge2020 import load_dx_mapping as load_2020
+        from ecgbench.labels.challenge2021 import load_dx_mapping as load_2021
+
+        m2020, m2021 = load_2020(), load_2021()
+        scored_2020 = set(m2020.index[m2020["scored"]])
+        scored_2021 = set(m2021.index[m2021["scored"]])
+
+        assert len(scored_2020) == 27
+        assert len(scored_2021) == 30
+        assert not scored_2020 - scored_2021
+        # PRWP, BBB, CLBBB
+        assert scored_2021 - scored_2020 == {"365413008", "6374002", "733534002"}
+        # BBB is in the 2020 table, just not scored there.
+        assert bool(m2020.loc["6374002", "scored"]) is False
+        # Every 2020 code is in the (larger) 2021 table, but not vice versa.
+        assert set(m2020.index) < set(m2021.index)
+
+    def test_repeated_codes_in_one_dx_field_are_deduplicated(self):
+        """631 shipped records list a code twice; counting entries breaks the totals.
+
+        This is the defect that makes v1.0.2 look as though it disagrees with the
+        official dx_mapping table. 284470004 (PAC) is the code that does it.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.challenge2020 import attach_dx_columns
+
+        df = attach_dx_columns(
+            pd.DataFrame({"dx": ["251146004,284470004,284470004", "284470004,284470004,284470004"]})
+        )
+
+        assert df.loc[0, "dx"] == "251146004,284470004"
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "dx_abbreviations"] == "LQRSV,PAC"
+        # A code repeated three times collapses to one, and does not become
+        # "the rarest code" by virtue of being counted three times.
+        assert df.loc[1, "dx"] == "284470004"
+        assert df.loc[1, "n_dx"] == 1
+
+    def test_deduplication_preserves_first_occurrence_order(self):
+        """#Dx order is not meaningful, but it must at least be stable."""
+        import pandas as pd
+
+        from ecgbench.labels.challenge2020 import attach_dx_columns
+
+        df = attach_dx_columns(pd.DataFrame({"dx": ["427084000,111975006,427084000"]}))
+
+        assert df.loc[0, "dx"] == "427084000,111975006"
+
+    def test_unknown_codes_are_kept_rather_than_dropped(self):
+        """A code absent from the table must surface, not vanish silently."""
+        import pandas as pd
+
+        from ecgbench.labels.challenge2020 import UNMAPPED, attach_dx_columns
+
+        df = attach_dx_columns(
+            pd.DataFrame({"dx": ["164889003,999999999", "164889003", "164889003"]})
+        )
+
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "dx_abbreviations"] == f"AF,{UNMAPPED}"
+        assert df.loc[0, "scored_dx"] == "AF"  # unknown codes are never "scored"
+        assert df.loc[0, "stratify_dx"] == "999999999"
+        assert df.loc[0, "stratify_dx_abbreviation"] == UNMAPPED
+
+    def test_stratify_reduction_breaks_ties_deterministically(self):
+        """Equally rare codes must resolve to the lowest numeric code, not scan order."""
+        import pandas as pd
+
+        from ecgbench.labels.challenge2020 import attach_dx_columns
+
+        forward = attach_dx_columns(pd.DataFrame({"dx": ["164889003,164890007"]}))
+        reversed_ = attach_dx_columns(pd.DataFrame({"dx": ["164890007,164889003"]}))
+
+        assert forward.loc[0, "stratify_dx"] == "164889003"
+        assert reversed_.loc[0, "stratify_dx"] == "164889003"
+
+    def test_age_sentinels_are_documented_and_not_silently_dropped(self):
+        """300 means 'over 89' and -1 means nothing; both must stay distinguishable
+        from a genuinely absent age, so the loader keeps all three states."""
+        from ecgbench.labels.challenge2020 import AGE_SENTINELS
+
+        assert AGE_SENTINELS == ("-1", "300")
+
+
 class TestINCARTDBLabels:
     """Three comment lines per header, one of which is optional in half the records."""
 

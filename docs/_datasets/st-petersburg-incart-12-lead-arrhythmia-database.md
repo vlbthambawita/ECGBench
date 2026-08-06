@@ -22,15 +22,18 @@ related:
   - slug: "physionet-cinc-challenge-2020"
     relation: "subset_of"
     shares_records: true
-    verified: false
+    verified: true
     note: >
       INCART is one of the six source cohorts of the 2020 challenge training set, as it
-      is of the 2021 one. The 2021 overlap is verified against the files (see that
-      relationship, declared there); this one follows from the challenge descriptions
-      plus the arithmetic that the 2021 release minus its Chapman and Ningbo cohorts
-      leaves exactly the 43,101 records of the 2020 training set. Not checked against a
-      2020 download, hence unverified. Do not evaluate on INCART after training on
-      either challenge year.
+      is of the 2021 one: 74 of INCART's 75 records appear there as
+      `st_petersburg_incart`, renamed `I0001`-`I0075` where the number is INCART's own
+      (`I0004` ≡ `I04`); `I36` is the one absent. Verified from the files — those 74
+      `.mat` files are bit-identical to their Challenge 2021 counterparts (compared via
+      both releases' published `SHA256SUMS.txt`), and 20 of 20 of those were matched
+      against INCART at correlation ≥ 0.99999 over all 462,600 samples. Do not evaluate
+      on INCART after training on either challenge year. Note also that INCART's ~32
+      patients contributed several recordings each, and neither challenge publishes
+      that grouping.
 
 sections:
   - type: description

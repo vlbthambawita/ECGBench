@@ -2,6 +2,7 @@
 
 from . import (  # noqa: F401
     brugada_huca,
+    challenge2020,
     challenge2021,
     chapman,
     ecg_arrhythmia,

@@ -705,6 +705,146 @@ class TestChallenge2021Splitter:
             )
 
 
+class TestChallenge2020Splitter:
+    """Challenge 2020 is Challenge 2021's six-cohort subset, with a label defect."""
+
+    def _header(self, name, dx, fs=500, nsamp=5000, age="54", sex="Female"):
+        return (
+            f"{name} 12 {fs} {nsamp}\n"
+            + "".join(
+                f"{name}.mat 16x1+24 1000.0(0)/mV 16 0 0 0 0 {lead}\n"
+                for lead in ("I", "II", "III", "aVR", "aVL", "aVF",
+                             "V1", "V2", "V3", "V4", "V5", "V6")
+            )
+            + f"# Age: {age}\n# Sex: {sex}\n# Dx: {dx}\n"
+            "# Rx: Unknown\n# Hx: Unknown\n# Sx: Unknown\n"
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: {cohort: [(name, dx), ...]} under training/<cohort>/g1/."""
+        for cohort, items in records.items():
+            d = tmp_path / "training" / cohort / "g1"
+            d.mkdir(parents=True, exist_ok=True)
+            for name, dx in items:
+                (d / f"{name}.hea").write_text(self._header(name, dx), encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="challenge2020", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={500: "signal_path"}, default_sampling_rate=500,
+            label_column="dx", leads=12,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.challenge2020 import Challenge2020Splitter
+
+        assert isinstance(get_splitter("challenge2020"), Challenge2020Splitter)
+
+    def test_builds_source_and_signal_path_and_caches_csv(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {
+            "ptb-xl": [("HR00001", "164889003")],
+            "georgia": [("E00001", "426783006")],
+        })
+        df = get_splitter("challenge2020").load_metadata(tree, config)
+
+        assert set(df["source"]) == {"ptb-xl", "georgia"}
+        # Paths are relative to data_path and point at the .mat, not the .hea.
+        paths = dict(zip(df["record_name"], df["signal_path"]))
+        assert paths["HR00001"] == "training/ptb-xl/g1/HR00001.mat"
+        assert paths["E00001"] == "training/georgia/g1/E00001.mat"
+        # Written to disk because validate_dataset re-reads it rather than
+        # reusing this frame.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_repeated_dx_codes_do_not_inflate_the_metadata(self, sample_config, tmp_path):
+        """628 Georgia records ship a repeated code; the splitter must see one.
+
+        Left in, the duplicates change n_dx, the multi-hot target width and the
+        code frequencies the stratification reduction is computed from.
+        """
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {
+            "georgia": [("E00015", "251146004,284470004,284470004")],
+        })
+        row = get_splitter("challenge2020").load_metadata(tree, config).iloc[0]
+
+        assert row["dx"] == "251146004,284470004"
+        assert row["n_dx"] == 2
+        assert row["dx_abbreviations"] == "LQRSV,PAC"
+
+    def test_sex_is_normalised_across_cohorts(self, sample_config, tmp_path):
+        """St Petersburg spells sex M/F; everyone else spells it out."""
+        config = self._config(sample_config)
+        d = tmp_path / "training" / "st_petersburg_incart" / "g1"
+        d.mkdir(parents=True)
+        (d / "I0001.hea").write_text(
+            self._header("I0001", "426783006", fs=257, nsamp=462600, sex="F"),
+            encoding="utf-8",
+        )
+        d2 = tmp_path / "training" / "ptb-xl" / "g1"
+        d2.mkdir(parents=True)
+        (d2 / "HR00001.hea").write_text(
+            self._header("HR00001", "426783006", sex="Female"), encoding="utf-8"
+        )
+        df = get_splitter("challenge2020").load_metadata(tmp_path, config)
+
+        assert set(df["sex"]) == {"Female"}
+
+    def test_stratification_takes_the_rarest_code_not_the_first(
+        self, sample_config, tmp_path
+    ):
+        """The reduction must not depend on #Dx ordering, which is meaningless here."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {"ptb-xl": (
+            [(f"HR{i:05d}", "426783006") for i in range(12)]
+            + [("HR99999", "426783006,164889003")]
+        )})
+        df = get_splitter("challenge2020").load_metadata(tree, config)
+
+        strat = dict(zip(df["record_name"], df["stratify_dx_abbreviation"]))
+        assert strat["HR99999"] == "AF"     # rarest, though NSR is listed first
+        assert strat["HR00000"] == "NSR"
+
+    def test_rare_classes_pool_into_other(self, sample_config, tmp_path):
+        from ecgbench.splitting.strategies.challenge2020 import OTHER
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, {"ptb-xl": (
+            [(f"HR{i:05d}", "426783006") for i in range(12)]
+            + [("HR99999", "164889003")]
+        )})
+        splitter = get_splitter("challenge2020")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(tree, config), config
+        )
+        counts = labels.value_counts().to_dict()
+
+        assert counts["NSR"] == 12
+        assert counts[OTHER] == 1   # the single AF record
+        assert "AF" not in counts
+
+    def test_stratification_needs_load_metadata_first(self, sample_config, tmp_path):
+        import pandas as pd
+
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("challenge2020").get_stratification_labels(
+                pd.DataFrame({"record_name": ["A0001"]}), self._config(sample_config)
+            )
+
+    def test_missing_training_tree_raises(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="training"):
+            get_splitter("challenge2020").load_metadata(
+                tmp_path, self._config(sample_config)
+            )
+
+
 class TestINCARTDBSplitter:
     """INCART's binding constraint is patient grouping: 75 records, 32 patients."""
 

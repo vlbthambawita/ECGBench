@@ -94,6 +94,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     per-dataset module cannot take the whole package down.
     """
     from ecgbench.labels import (
+        challenge2020,
         challenge2021,
         ecgcipa,
         ecgdmmld,
@@ -116,6 +117,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "ludb": ludb.load_labels,
         "mhd_effect_ecg_mri": mhd_effect_ecg_mri.load_labels,
         "norwegian_athlete_ecg": norwegian_athlete_ecg.load_labels,
+        "challenge2020": challenge2020.load_labels,
         "challenge2021": challenge2021.load_labels,
         "incartdb": incartdb.load_labels,
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,

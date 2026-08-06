@@ -21,19 +21,20 @@ patients_class: "count-na"
 
 related:
   - slug: "physionet-cinc-challenge-2020"
-    relation: "sibling_release"
+    relation: "contains"
     shares_records: true
-    verified: false
+    verified: true
     note: >
-      The 2021 challenge reuses the whole 2020 training set and adds the Chapman-Shaoxing
-      and Ningbo cohorts on top. The arithmetic supports that exactly: removing those two
-      cohorts from this release leaves 88,253 − 10,247 − 34,905 = **43,101** records
-      across the same six cohorts the 2020 challenge used, which is precisely the
-      published size of the 2020 public training set. Every 2020 training record should
-      therefore be assumed present here. Treat results across the two years as sharing
-      records, and never use one year's training set to evaluate a model trained on the
-      other. `verified: false` because the count agreement was checked against the 2020
-      challenge description, not against a 2020 download.
+      The 2021 challenge reuses the **whole** 2020 training set and adds the
+      Chapman-Shaoxing and Ningbo cohorts on top (88,253 − 10,247 − 34,905 = 43,101).
+      Verified from the files, not from the arithmetic: all 43,101 of the 2020 record
+      names appear here and none is unique to 2020, and all 43,101 `.mat` waveform
+      files are bit-identical, compared via the two releases' own published
+      `SHA256SUMS.txt`. Only 705 of the 43,101 headers differ, all in the comment
+      block — 631 `#Dx` lists that 2021 deduplicated and numerically sorted, and 74
+      `st_petersburg_incart` `#Sex` fields that 2021 spelled out. Never use one year's
+      training set to evaluate a model trained on the other; they are the same
+      recordings.
 
   - slug: "ptb-xl"
     relation: "contains"

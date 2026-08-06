@@ -320,6 +320,11 @@ class TestShippedLeadNames:
             # Identical across all 88,253 records of all eight source cohorts.
             ("challenge2021", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Identical across all 43,101 records of all six source cohorts —
+            # unsurprising, since every one of them is a byte-for-byte copy of a
+            # challenge2021 record.
+            ("challenge2020", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
             # Uppercase limb leads, like ptbxl — identical in all 75 records.
             ("incartdb", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),

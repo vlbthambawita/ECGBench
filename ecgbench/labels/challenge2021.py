@@ -45,19 +45,30 @@ from __future__ import annotations
 
 import functools
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+
+from ecgbench.labels._challenge_headers import RECORDS_DIR, parse_header
+from ecgbench.labels._challenge_headers import scan_headers as _scan_headers
 
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
 logger = logging.getLogger(__name__)
 
-#: Directory (relative to the dataset root) holding the eight source cohorts.
-RECORDS_DIR = "training"
+#: Re-exported from the shared scanner: the 2020 and 2021 releases have the same
+#: header layout, so ``parse_header`` and ``RECORDS_DIR`` live in one place.
+__all__ = [
+    "RECORDS_DIR",
+    "UNMAPPED",
+    "attach_dx_columns",
+    "load_dx_mapping",
+    "load_labels",
+    "parse_header",
+    "scan_headers",
+]
 
 #: Challenge code table packaged with ECGBench, since none ships with the data.
 MAPPING_CSV = Path(__file__).parent.parent / "data" / "challenge2021_dx_mapping.csv"
@@ -81,83 +92,12 @@ def load_dx_mapping() -> pd.DataFrame:
     return df
 
 
-def parse_header(hea_path: Path) -> dict[str, object]:
-    """Parse the fields ECGBench needs out of one WFDB header.
-
-    Headers here are under a kilobyte, so a text parse is far cheaper than a
-    ``wfdb.rdheader`` call per record across 88k records.
-    """
-    with open(hea_path, encoding="utf-8", errors="replace") as f:
-        lines = f.read().splitlines()
-
-    record: dict[str, object] = {
-        "record_name": hea_path.stem,
-        "n_leads": None,
-        "sampling_rate": None,
-        "n_samples": None,
-        "age": "",
-        "sex": "",
-        "dx": "",
-    }
-
-    if lines:
-        # Record line: <name> <n_sig> <fs> <n_samples>
-        parts = lines[0].split()
-        for key, index in (("n_leads", 1), ("sampling_rate", 2), ("n_samples", 3)):
-            if len(parts) > index:
-                try:
-                    record[key] = int(float(parts[index]))
-                except ValueError:
-                    pass  # corrupt header — validation flags it via corrupt_header
-
-    for line in lines:
-        if not line.startswith("#"):
-            continue
-        key, _, value = line[1:].partition(":")
-        key = key.strip().lower()
-        value = value.strip()
-        if value.lower() in ("unknown", "nan", "n/a"):
-            value = ""
-        if key in ("age", "sex", "dx"):
-            record[key] = value.replace(" ", "") if key == "dx" else value
-
-    return record
-
-
 def scan_headers(data_path: Path | str) -> pd.DataFrame:
-    """Parse every record header under ``training/`` into one frame.
+    """Parse every Challenge 2021 record header under ``training/`` into one frame.
 
-    Adds ``source`` (the cohort directory) and ``signal_path`` (relative to
-    ``data_path``, so it resolves identically for the splitter, the validation
-    engine and ``ECGDataset``).
+    Thin wrapper over the shared scanner, which the 2020 release uses too.
     """
-    from ecgbench.labels import LabelSourceMissingError
-
-    data_path = Path(data_path)
-    records_root = data_path / RECORDS_DIR
-    if not records_root.is_dir():
-        raise LabelSourceMissingError(
-            f"Expected the record tree at {records_root}. Challenge 2021 labels live "
-            "in the WFDB headers, so point data_path at the dataset root — the "
-            "directory holding training/ and RECORDS."
-        )
-
-    hea_files = sorted(records_root.rglob("*.hea"))
-    if not hea_files:
-        raise LabelSourceMissingError(f"No .hea headers found under {records_root}")
-    logger.info("Parsing %d WFDB headers under %s", len(hea_files), records_root)
-
-    # Header reads are I/O bound and independent — threads are enough.
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        rows = list(pool.map(parse_header, hea_files))
-
-    for row, hea in zip(rows, hea_files, strict=True):
-        row["source"] = hea.relative_to(records_root).parts[0]
-        row["signal_path"] = str(hea.with_suffix(".mat").relative_to(data_path))
-
-    df = pd.DataFrame(rows).sort_values("record_name").reset_index(drop=True)
-    logger.info("Parsed %d headers from %d source cohorts", len(df), df["source"].nunique())
-    return df
+    return _scan_headers(data_path, release="Challenge 2021")
 
 
 def _rarest_code(codes: list[str], frequency: dict[str, int]) -> str:

@@ -188,6 +188,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ludb` | i, ii, iii, avr, avl, avf, v1-v6 (**lowercase**) |
 | `ptbdb` | i, ii, iii, avr, avl, avf, v1-v6, **vx, vy, vz** (15 signals) |
 | `challenge2021` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all eight cohorts) |
+| `challenge2020` | I, II, III, aVR, aVL, aVF, V1-V6 (identical in all six cohorts) |
 | `incartdb` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) |
 | `brugada_huca` | I, II, III, aVR, aVL, aVF, V1-V6 |
 | `leipzig_heart_center_ecg` | I, II, III, aVR, aVL, aVF, V1-V6, **then 2-8 intracardiac channels in six different orders** |
@@ -280,13 +281,23 @@ NaN; read the CSV yourself and a mean P-wave axis comes out meaningless. See
 `examples/load_mimic_iv_ecg.py`. Its 659-record open demo is a separate config,
 `mimic_iv_ecg_demo`, which has no labels at all.
 
-`challenge2021` is the one dataset where **sampling rate varies per record**
-(257/500/1000 Hz), because it concatenates eight source cohorts. Rate is therefore
-a label to filter on, not a `sampling_rate=` argument, and record length spans 5 s
-to 1800 s so batching needs a `window=` too. It also **contains** PTB-XL,
-PTBDB, INCART, CPSC-2018, Chapman-Shaoxing and Ningbo — its `source` label says
-which cohort each record came from, and evaluating on any of those after training
-on it is testing on training data. See `examples/load_challenge2021.py`.
+`challenge2021` and `challenge2020` are the datasets where **sampling rate varies
+per record** (257/500/1000 Hz), because each concatenates several source cohorts.
+Rate is therefore a label to filter on, not a `sampling_rate=` argument, and record
+length spans 5 s to 1800 s so batching needs a `window=` too. `challenge2021`
+**contains** PTB-XL, PTBDB, INCART, CPSC-2018, Chapman-Shaoxing and Ningbo;
+`challenge2020` contains the first four. Their `source` label says which cohort each
+record came from, and evaluating on any of those after training is testing on
+training data. See `examples/load_challenge2021.py` and
+`examples/load_challenge2020.py`.
+
+**The two challenge years are the same recordings.** All 43,101 `challenge2020`
+records are in `challenge2021`, bit-identical — verified against both releases'
+published `SHA256SUMS.txt`. They are separate configs because the label encodings
+differ: 2020 scored 27 classes and 2021 scored 30, and 631 of the 2020 headers list
+a SNOMED code twice inside their own `#Dx` field (`ecgbench.labels.challenge2020`
+deduplicates them, which is what makes the shipped data reproduce the official code
+table). Never train on one year and evaluate on the other.
 
 `norwegian_athlete_ecg` is the smallest dataset here — 28 records, one per elite
 Norwegian endurance athlete — and the only one whose **amplitudes are not
