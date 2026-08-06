@@ -116,6 +116,17 @@ class DatasetConfig:
     #: order. Matching is case-insensitive, so PTB-XL's "AVR" and Chapman's "aVR"
     #: both answer to either.
     lead_names: list[str] | None = None
+    #: Lead order for records that store a *different* number of leads from
+    #: ``lead_names``, as ``{n_stored_leads: [names...]}``. Almost always None:
+    #: nearly every release uses one layout throughout. ``zzu_pecg`` does not —
+    #: 1,856 of its 14,190 records hold 9 leads rather than 12, dropping V2, V4
+    #: and V6, so position 7 is V3 there and V2 here. Without this map,
+    #: ``leads=["V2"]`` would resolve to index 7 and silently return V3 for
+    #: those records; with it, ``ECGDataset`` re-resolves the requested names
+    #: against the record's own layout and raises if a requested lead is not in
+    #: it. A record whose lead count matches neither ``lead_names`` nor a key
+    #: here is an error rather than a guess.
+    alternate_lead_names: dict[int, list[str]] | None = None
     duration_seconds: float = 10.0
     sampling_rates: list[int] = field(default_factory=lambda: [500])
     default_sampling_rate: int = 500
@@ -284,6 +295,13 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         signal_units=raw.get("signal_units", "mV"),
         leads=raw.get("leads", 12),
         lead_names=raw.get("lead_names"),
+        # YAML mapping keys arrive as ints already, but a quoted "9:" would not,
+        # and the lookup is by signal.shape[0].
+        alternate_lead_names=(
+            {int(k): list(v) for k, v in raw["alternate_lead_names"].items()}
+            if raw.get("alternate_lead_names")
+            else None
+        ),
         duration_seconds=raw.get("duration_seconds", 10.0),
         sampling_rates=raw.get("sampling_rates", [500]),
         default_sampling_rate=raw.get("default_sampling_rate", 500),

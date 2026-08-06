@@ -562,14 +562,66 @@ class ECGDataset(_TorchDataset):
 
         self.lead_names = tuple(self.config.lead_names) if self.config.lead_names else None
         self._lead_index: list[int] | None = None
+        # What the user asked for, kept so a record storing a different layout can
+        # be re-resolved against it at read time. See _lead_index_for().
+        self._requested_leads: list[str] | None = None
+        self._declared_n_leads = len(self.config.lead_names) if self.config.lead_names else None
+        self._alt_lead_index: dict[int, list[int]] = {}
         if leads is not None:
             self._lead_index, names = _resolve_leads(
                 leads, self.config.lead_names, self.config.slug
             )
+            self._requested_leads = list(leads)
+            # The resolved *names* are the same whatever layout a record uses —
+            # that is the point of selecting by name — so this stays valid even
+            # when the indices differ per record.
             self.lead_names = tuple(names)
 
         # Labels: loaded once and aligned to this split, never per __getitem__.
         self.labels_df = self._load_labels() if labels else None
+
+    def _lead_index_for(self, n_stored: int, record_id: Any) -> list[int]:
+        """Row indices for the requested leads in a record storing ``n_stored`` of them.
+
+        Almost always the indices resolved once in ``__init__``. The exception is a
+        release that does not use one layout throughout: ``zzu_pecg`` stores 12
+        leads for 12,334 records and 9 for the other 1,856, dropping V2, V4 and V6,
+        so position 7 is V2 in the first layout and V3 in the second. Taking the
+        declared indices there would return a different physical lead without any
+        error, which is the failure this method exists to prevent.
+
+        A dataset that declares no ``alternate_lead_names`` is asserting that it
+        uses one layout throughout, so the declared indices are used as before and
+        an out-of-range one is caught by the caller's "too few leads" check. Once a
+        dataset declares even one alternate it is asserting that layout *varies*,
+        and then a count matching none of them raises: guessing which layout a
+        record uses is exactly the guess that produces silently crossed leads.
+        """
+        assert self._lead_index is not None  # only called when selection is active
+        alternates = self.config.alternate_lead_names or {}
+        if not alternates or self._declared_n_leads is None:
+            return self._lead_index
+        if n_stored == self._declared_n_leads:
+            return self._lead_index
+
+        cached = self._alt_lead_index.get(n_stored)
+        if cached is not None:
+            return cached
+
+        layout = alternates.get(n_stored)
+        if layout is None:
+            raise ValueError(
+                f"Record {record_id!r} stores {n_stored} leads, but "
+                f"'{self.config.slug}' declares {self._declared_n_leads} "
+                f"({list(self.config.lead_names or [])}) and its "
+                f"alternate_lead_names covers only {sorted(alternates)}. This "
+                "dataset is known to use more than one lead layout, so selecting "
+                "by name refuses to assume one — add the layout to the YAML."
+            )
+        assert self._requested_leads is not None
+        index, _ = _resolve_leads(self._requested_leads, layout, self.config.slug)
+        self._alt_lead_index[n_stored] = index
+        return index
 
     def _load_metadata(self, fold_numbers: list[int] | None) -> pd.DataFrame:
         """Load fold CSV metadata from HuggingFace Hub or local disk."""
@@ -776,13 +828,16 @@ class ECGDataset(_TorchDataset):
         )
 
         if self._lead_index is not None:
-            if signal.shape[0] <= max(self._lead_index):
+            lead_index = self._lead_index_for(
+                signal.shape[0], row.get(self.config.record_id_column)
+            )
+            if signal.shape[0] <= max(lead_index):
                 raise ValueError(
                     f"Record {row.get(self.config.record_id_column)!r} has "
                     f"{signal.shape[0]} leads, too few for the requested "
                     f"{list(self.lead_names)}"
                 )
-            signal = signal[self._lead_index]
+            signal = signal[lead_index]
 
         signal_tensor = torch.from_numpy(signal).float()
         if self._unit_factor != 1.0:

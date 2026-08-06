@@ -3353,3 +3353,210 @@ class TestCODETestSplitter:
         labels = splitter.get_stratification_labels(df, config)
         assert labels.name == "stratify_class"
         assert list(labels) == ["AF", "NONE", "RBBB"]
+
+
+class TestSamiTropSplitter:
+    """SaMi-Trop: a row reference into one array, with no key to check it against."""
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="sami_trop", signal_format="hdf5",
+            metadata_csv="ecgbench_metadata.csv", record_id_column="exam_id",
+            patient_id_column=None, signal_path_columns={400: "signal_path"},
+            default_sampling_rate=400, sampling_rates=[400],
+        )
+
+    def _hdf5(self, tmp_path, n_records=3, n_samples=4096, n_leads=12):
+        h5py = pytest.importorskip("h5py")
+
+        with h5py.File(tmp_path / "exams.hdf5", "w") as handle:
+            handle.create_dataset(
+                "tracings", data=np.zeros((n_records, n_samples, n_leads), dtype=np.float32)
+            )
+        return tmp_path
+
+    def test_registered_under_its_config_slug(self):
+        from ecgbench.splitting.strategies.sami_trop import SamiTropSplitter
+
+        assert isinstance(get_splitter("sami_trop"), SamiTropSplitter)
+
+    def test_paths_name_a_row_of_the_single_array(self, tmp_path, sample_config):
+        from ecgbench.splitting.strategies.sami_trop import build_signal_paths
+
+        root = self._hdf5(tmp_path, n_records=3)
+        rows = pd.Series([0, 1, 2], index=pd.Index([77, 11, 42], name="exam_id"))
+        paths = build_signal_paths(root, rows, self._config(sample_config))
+
+        assert list(paths) == [
+            "exams.hdf5:tracings:0",
+            "exams.hdf5:tracings:1",
+            "exams.hdf5:tracings:2",
+        ]
+        # Keyed by exam_id in the CSV's order, not sorted — the row IS the join.
+        assert list(paths.index) == [77, 11, 42]
+
+    def test_a_row_count_mismatch_raises_because_the_join_is_positional(
+        self, tmp_path, sample_config
+    ):
+        """The array is the only check available on a keyless positional join.
+
+        CODE-15% can verify its mapping against a per-part exam_id dataset;
+        SaMi-Trop has none, so if the array and the CSV disagree on length there
+        is nothing to fall back on and every record would be mislabelled.
+        """
+        from ecgbench.splitting.strategies.sami_trop import build_signal_paths
+
+        root = self._hdf5(tmp_path, n_records=2)
+        rows = pd.Series([0, 1, 2], index=pd.Index([1, 2, 3], name="exam_id"))
+        with pytest.raises(ValueError, match="row position|2 records"):
+            build_signal_paths(root, rows, self._config(sample_config))
+
+    def test_a_missing_archive_says_where_it_comes_from(self, tmp_path, sample_config):
+        from ecgbench.splitting.strategies.sami_trop import build_signal_paths
+
+        rows = pd.Series([0], index=pd.Index([1], name="exam_id"))
+        with pytest.raises(FileNotFoundError, match="exams.zip"):
+            build_signal_paths(tmp_path, rows, self._config(sample_config))
+
+
+class TestIKEMSplitter:
+    """IKEM: keyed across three parts, with shipped waveform hashes to lean on."""
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ikem", signal_format="hdf5",
+            metadata_csv="ecgbench_metadata.csv", record_id_column="exam_id",
+            patient_id_column="patient_id", signal_path_columns={500: "signal_path"},
+            leads=8,
+        )
+
+    def _parts(self, tmp_path, parts):
+        """parts: {filename: (exam_ids, hashes)}."""
+        h5py = pytest.importorskip("h5py")
+
+        for name, (exam_ids, hashes) in parts.items():
+            with h5py.File(tmp_path / name, "w") as handle:
+                handle.create_dataset(
+                    "tracings", data=np.zeros((len(exam_ids), 4096, 8), dtype=np.int16)
+                )
+                handle.create_dataset("exam_id", data=np.array(exam_ids, dtype=np.int32))
+                handle.create_dataset(
+                    "hashes", data=np.array([h.encode() for h in hashes], dtype="S40")
+                )
+        return tmp_path
+
+    def test_registered_under_its_config_slug(self):
+        from ecgbench.splitting.strategies.ikem import IKEMSplitter
+
+        assert isinstance(get_splitter("ikem"), IKEMSplitter)
+
+    def test_rows_come_from_each_parts_own_exam_id_dataset(self, tmp_path, sample_config):
+        """exams.csv has no trace_file column, so every part is scanned.
+
+        Keying on exam_id rather than position also means the row order inside a
+        part does not have to match anything — which is exactly where CODE-15%
+        would break if it used positions.
+        """
+        from ecgbench.splitting.strategies.ikem import build_signal_paths
+
+        root = self._parts(tmp_path, {
+            "exams_part_1.hdf5": ([5, 1], ["a" * 40, "b" * 40]),
+            "exams_part_2.hdf5": ([9], ["c" * 40]),
+        })
+        ids = pd.Index([1, 5, 9], name="exam_id")
+        paths = build_signal_paths(root, ids, self._config(sample_config))
+
+        # exam 5 is row 0 of part 1 and exam 1 is row 1, despite the id order.
+        assert paths[5] == "exams_part_1.hdf5:tracings:0"
+        assert paths[1] == "exams_part_1.hdf5:tracings:1"
+        assert paths[9] == "exams_part_2.hdf5:tracings:0"
+
+    def test_duplicate_waveform_hashes_mean_a_corrupted_copy(self, tmp_path, sample_config):
+        """All 98,130 published hashes are distinct, so a repeat is not the data.
+
+        This is a 1-D read that catches duplicated rows without touching any of
+        the 6.6 GB of tracings.
+        """
+        from ecgbench.splitting.strategies.ikem import build_signal_paths
+
+        root = self._parts(tmp_path, {
+            "exams_part_1.hdf5": ([1, 2], ["a" * 40, "a" * 40]),
+        })
+        with pytest.raises(ValueError, match="same waveform SHA-1|duplicated rows"):
+            build_signal_paths(root, pd.Index([1, 2], name="exam_id"), self._config(sample_config))
+
+    def test_records_only_in_the_csv_are_reported_not_dropped(self, tmp_path, sample_config):
+        from ecgbench.splitting.strategies.ikem import build_signal_paths
+
+        root = self._parts(tmp_path, {"exams_part_1.hdf5": ([1], ["a" * 40])})
+        with pytest.raises(ValueError, match="disagree about which records"):
+            build_signal_paths(
+                root, pd.Index([1, 2, 3], name="exam_id"), self._config(sample_config)
+            )
+
+    def test_an_exam_id_in_two_parts_raises(self, tmp_path, sample_config):
+        """The parts are meant to be disjoint; overlap would make the row ambiguous."""
+        from ecgbench.splitting.strategies.ikem import build_signal_paths
+
+        root = self._parts(tmp_path, {
+            "exams_part_1.hdf5": ([1], ["a" * 40]),
+            "exams_part_2.hdf5": ([1], ["b" * 40]),
+        })
+        with pytest.raises(ValueError, match="more than one part"):
+            build_signal_paths(root, pd.Index([1], name="exam_id"), self._config(sample_config))
+
+
+class TestZZUPediatricSplitter:
+    """ZZU-pECG: a metadata table that has to be normalised onto disk."""
+
+    def test_registered_under_its_config_slug(self):
+        from ecgbench.splitting.strategies.zzu_pecg import ZZUPediatricSplitter
+
+        assert isinstance(get_splitter("zzu_pecg"), ZZUPediatricSplitter)
+
+    def test_an_incomplete_split_zip_is_one_error_not_fourteen_thousand(
+        self, tmp_path, sample_config
+    ):
+        """The waveforms ship as Child_ecg.zip + Child_ecg.z01 and must be joined.
+
+        Unzipping only the .zip yields a partial tree. Without this check every
+        absent record surfaces later as a separate ``corrupt_header`` failure,
+        which reads as a data-quality problem rather than a missing download.
+        """
+        from dataclasses import replace
+
+        from ecgbench.splitting.strategies.zzu_pecg import ZZUPediatricSplitter
+
+        config = replace(sample_config, slug="zzu_pecg", record_id_column="ECG_ID",
+                         patient_id_column="Patient_ID")
+        df = pd.DataFrame({"signal_path": ["Child_ecg/P00/P00001/P00001_E01"]})
+        missing = ZZUPediatricSplitter._missing_signals(tmp_path, df, config)
+        assert missing == ["Child_ecg/P00/P00001/P00001_E01"]
+
+        (tmp_path / "Child_ecg" / "P00" / "P00001").mkdir(parents=True)
+        (tmp_path / "Child_ecg" / "P00" / "P00001" / "P00001_E01.hea").write_text("x")
+        assert ZZUPediatricSplitter._missing_signals(tmp_path, df, config) == []
+
+    def test_stratification_needs_the_disease_group_column(self, sample_config):
+        """The ECG findings are multi-label with 99 codes, which cannot partition
+        ten ways, so the folds use the ICD-10 disease group instead."""
+        from dataclasses import replace
+
+        from ecgbench.splitting.strategies.zzu_pecg import (
+            STRATIFY_COLUMN,
+            ZZUPediatricSplitter,
+        )
+
+        config = replace(sample_config, slug="zzu_pecg")
+        splitter = ZZUPediatricSplitter()
+        with pytest.raises(ValueError, match=STRATIFY_COLUMN):
+            splitter.get_stratification_labels(pd.DataFrame({"ECG_ID": ["a"]}), config)
+
+        labels = splitter.get_stratification_labels(
+            pd.DataFrame({STRATIFY_COLUMN: ["NONE", "Kawasaki disease"]}), config
+        )
+        assert list(labels) == ["NONE", "Kawasaki disease"]

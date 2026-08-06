@@ -14,6 +14,7 @@ from . import (  # noqa: F401
     ecgrdvq,
     echonext,
     generic,
+    ikem,
     incartdb,
     leipzig_heart_center_ecg,
     ludb,
@@ -24,7 +25,9 @@ from . import (  # noqa: F401
     norwegian_athlete_ecg,
     ptbdb,
     ptbxl,
+    sami_trop,
     sph,
     staffiii,
     wctecgdb,
+    zzu_pecg,
 )

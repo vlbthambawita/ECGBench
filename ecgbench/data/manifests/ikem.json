@@ -1,0 +1,31 @@
+{
+  "dataset": "ikem",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "digest_version": 1,
+  "publish_fold_csvs": false,
+  "split": {
+    "n_folds": 10,
+    "random_state": 42,
+    "record_id_column": "exam_id",
+    "patient_id_column": "patient_id",
+    "grouped_by_patient": true
+  },
+  "inputs": {
+    "ecgbench_metadata.csv": {
+      "present": true,
+      "sha256": "75c4880075564d435861e8fe868d1fad8e5b9f80131f9ec0fcad24abc40d1b24",
+      "bytes": 16728381,
+      "rows": 98130
+    }
+  },
+  "records": {
+    "original": 98130,
+    "clean": 96096
+  },
+  "fold_digest": {
+    "original": "e7274f2270a4eef7c80ccdca0202f0b84622e3a93aea84a1c5b38d3518e103c3",
+    "clean": "7787f0ec1a6310cf72908d2a8f45c08da314ca5b9aa4f7a64386de549cfa536b"
+  },
+  "command": "ecgbench splits --dataset ikem --data-path /path/to/ikem/"
+}

@@ -217,6 +217,12 @@ class TestLeadSelectionAndUnits:
         ds.lead_names = tuple(self.STORED)
         ds._lead_index = None
         ds.window = None
+        # Read-time lead-layout state. This helper bypasses __init__, so every new
+        # attribute __getitem__ touches has to be set here or it raises
+        # AttributeError — see TestAlternateLeadLayouts for what these do.
+        ds._requested_leads = None
+        ds._declared_n_leads = len(self.STORED)
+        ds._alt_lead_index = {}
         for key, value in kwargs.items():
             setattr(ds, key, value)
         return ds
@@ -375,6 +381,18 @@ class TestShippedLeadNames:
             # aVL, aVF, aVR — the release's own documented order, confirmed
             # against all 827 arrays. Same cohort as code15, different order.
             ("code_test", ["I", "II", "III", "aVL", "aVF", "aVR"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Standard, and checked rather than assumed for the same reason as
+            # code15 — the third TNMG release, and the other two disagree with
+            # each other. Derived from the arrays over 400 records: channels 2-5
+            # match II-I, -(I+II)/2, I-II/2 and II-I/2 to under 0.3% relative
+            # error, where every other assignment is off by more than 33%.
+            ("sami_trop", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Uppercase limb leads like ptbxl, identical in all 12,334 twelve-lead
+            # headers. The other 1,856 records store a 9-lead subset — see
+            # TestAlternateLeadLayouts, which is where that is pinned.
+            ("zzu_pecg", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
@@ -1069,3 +1087,166 @@ class TestNonPhysicalUnits:
 
         assert _resolve_units("mV", source_units="mV") == 1.0
         assert _resolve_units("uV", source_units="mV") == 1000.0
+
+
+class TestAlternateLeadLayouts:
+    """A release whose records do not all store the same leads.
+
+    ZZU-pECG is the only such dataset in the catalogue: 12,334 records hold 12
+    leads and 1,856 hold 9, dropping V2, V4 and V6. The 9-lead layout is not a
+    prefix of the 12-lead one, so stored position 7 is V2 in one and V3 in the
+    other. Selecting leads by index — which is what a single ``lead_names`` list
+    amounts to — silently returns V3 where V2 was asked for, for 13% of the
+    release. These tests pin the behaviour that prevents it.
+    """
+
+    def _ds(self, root, config, **kwargs):
+        from dataclasses import replace
+
+        from ecgbench.dataset import ECGDataset
+
+        from .conftest import NINE_LEAD_LAYOUT, TWELVE_LEAD_LAYOUT
+
+        config = replace(
+            config,
+            signal_format="wfdb",
+            leads=12,
+            lead_names=list(TWELVE_LEAD_LAYOUT),
+            alternate_lead_names=kwargs.pop(
+                "alternate_lead_names", {9: list(NINE_LEAD_LAYOUT)}
+            ),
+        )
+        return ECGDataset(
+            config,
+            split="train",
+            version="clean",
+            data_path=root,
+            metadata_source="local",
+            **kwargs,
+        )
+
+    def test_unselected_reads_return_each_record_its_own_lead_count(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """Without leads=, nothing is re-indexed and both layouts load as stored."""
+        ds = self._ds(tmp_mixed_lead_dataset, sample_config)
+        assert tuple(ds[0]["signal"].shape) == (12, 5000)  # rec_0, 12-lead
+        assert tuple(ds[2]["signal"].shape) == (9, 5000)  # rec_2, 9-lead
+
+    def test_a_shared_lead_resolves_to_the_same_physical_lead_in_both_layouts(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """V5 is position 10 in the 12-lead layout and position 8 in the 9-lead one.
+
+        The fixture encodes each lead's canonical index in its samples, so this
+        asserts the *physical* lead rather than merely a shape.
+        """
+        from .conftest import CANONICAL_LEAD_INDEX
+
+        ds = self._ds(tmp_mixed_lead_dataset, sample_config, leads=["V5"])
+        assert ds.lead_names == ("V5",)
+        twelve = ds[0]["signal"]
+        nine = ds[2]["signal"]
+        assert tuple(twelve.shape) == (1, 5000)
+        assert tuple(nine.shape) == (1, 5000)
+        expected = CANONICAL_LEAD_INDEX["V5"]
+        assert twelve[0, 0].item() == pytest.approx(expected, abs=1e-3)
+        # The point: same value from a record that stores V5 four positions
+        # earlier. An index-based selection would return V3 (8.0) here.
+        assert nine[0, 0].item() == pytest.approx(expected, abs=1e-3)
+
+    def test_a_lead_absent_from_the_reduced_layout_raises_rather_than_substituting(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """V2 does not exist in a 9-lead record, and position 7 there holds V3.
+
+        This is the bug the mechanism exists for: before it, ``leads=["V2"]``
+        returned V3's samples for these records with no error at all, because
+        index 7 is a valid index into a 9-row signal.
+        """
+        from .conftest import CANONICAL_LEAD_INDEX
+
+        ds = self._ds(tmp_mixed_lead_dataset, sample_config, leads=["V2"])
+        # Fine for a record that has V2.
+        assert ds[0]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V2"], abs=1e-3
+        )
+        with pytest.raises(ValueError, match="not in 'test_dataset'|V2"):
+            ds[2]["signal"]
+
+    def test_a_lead_count_covered_by_no_declared_layout_refuses_to_guess(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """Once a dataset declares that layout varies, an unknown count is an error.
+
+        The map here covers 10 leads, not the 9 the fixture's reduced records
+        hold, so there is no layout to resolve against and guessing is exactly
+        what must not happen.
+        """
+        ds = self._ds(
+            tmp_mixed_lead_dataset,
+            sample_config,
+            alternate_lead_names={10: ["I", "II", "III", "AVR", "AVL", "AVF",
+                                       "V1", "V2", "V3", "V4"]},
+            leads=["I"],
+        )
+        assert ds[0]["signal"].shape[0] == 1  # the 12-lead record is unaffected
+        with pytest.raises(ValueError, match="alternate_lead_names covers only"):
+            ds[2]["signal"]
+
+    def test_declaring_no_alternates_keeps_the_original_behaviour(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """A dataset with no alternate_lead_names asserts one layout throughout.
+
+        Every other dataset in the catalogue is in this case, so the declared
+        indices must still be used unchanged — the out-of-range check is what
+        guards them, exactly as before.
+        """
+        ds = self._ds(
+            tmp_mixed_lead_dataset, sample_config, alternate_lead_names=None, leads=["I"]
+        )
+        # Position 0 is lead I in both layouts, so this resolves for both.
+        assert ds[0]["signal"].shape[0] == 1
+        assert ds[2]["signal"].shape[0] == 1
+        # And a lead beyond the reduced record's rows still raises the old error.
+        ds = self._ds(
+            tmp_mixed_lead_dataset, sample_config, alternate_lead_names=None, leads=["V6"]
+        )
+        with pytest.raises(ValueError, match="too few for the requested"):
+            ds[2]["signal"]
+
+    def test_zzu_pecg_declares_the_layout_its_reduced_records_use(self):
+        """The shipped config must carry the map, or the guard never engages."""
+        from ecgbench.config import load_config
+
+        config = load_config("zzu_pecg")
+        assert config.alternate_lead_names is not None
+        nine = config.alternate_lead_names[9]
+        assert len(nine) == 9
+        # The three dropped leads, and the reason position 7 differs.
+        assert set(config.lead_names) - set(nine) == {"V2", "V4", "V6"}
+        assert config.lead_names[7] == "V2"
+        assert nine[7] == "V3"
+
+    def test_ikem_stores_eight_leads_precordial_first_with_ii_before_i(self):
+        """The most unusual lead order in the catalogue, and it is not a typo.
+
+        IKEM keeps only the 8 independent leads and stores them V1-V6, II, I.
+        Derived from the arrays: ch0-ch5 show the banded correlation structure of
+        a precordial sweep with net QRS dominance running -377 counts (rS, V1) to
+        +408 (dominant R, V6), no channel matches any augmented-lead identity,
+        and taking ch7 as I puts the frontal QRS axis at a median +51 deg where
+        the swap gives +1 deg.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("ikem")
+        assert config.lead_names == ["V1", "V2", "V3", "V4", "V5", "V6", "II", "I"]
+        assert config.leads == 8
+        # No augmented lead is stored, so nothing here can be indexed as one.
+        assert not {"III", "aVR", "aVL", "aVF"} & set(config.lead_names)
+        # The habit-driven index is wrong: signal[0] is V1, not lead I.
+        assert config.lead_names[0] != "I"
+        # And it has no alternate layout — all 98,130 records store the same 8.
+        assert config.alternate_lead_names is None

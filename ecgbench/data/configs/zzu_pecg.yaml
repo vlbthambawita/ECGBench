@@ -1,0 +1,241 @@
+# ECGBench Config: ZZU-pECG (Zhengzhou University Pediatric ECG Database)
+# =======================================================================
+# 14,190 ECGs from 11,643 hospitalised children at the First Affiliated Hospital
+# of Zhengzhou University, 2018-2024. WFDB, 500 Hz, 5-120 s.
+# https://doi.org/10.6084/m9.figshare.27078763
+#
+# THE ONLY DATASET IN THE CATALOGUE WITH TWO LEAD LAYOUTS. 12,334 records store
+# the standard 12 leads; the other 1,856 store 9, dropping V2, V4 and V6. The
+# 9-lead layout is NOT a prefix of the 12-lead one — stored position 7 is V2 in
+# a 12-lead record and V3 in a 9-lead one — so index-based lead selection crosses
+# leads silently for 13% of the release. `alternate_lead_names` below is what
+# makes ECGDataset(leads=["V2"]) refuse those records instead of handing back V3;
+# `n_leads` is exposed by the label loader for filtering.
+#
+# RECORD LENGTH VARIES BY A FACTOR OF 24, from 2,500 samples (5 s) to 60,000
+# (120 s) across 67 distinct lengths, with 15,000 (30 s) the mode. So
+# expected_samples is deliberately EMPTY — see the validation block — and any
+# window= must fit the 5 s shortest record.
+#
+# AMPLITUDES HAVE A HARD RAIL AT ABOUT 26.6 mV that 11.8% of records touch, and
+# the excursions are sustained rather than spikes (a median 2.1% of samples above
+# 10 mV, up to 41%). They are genuine saturation, not artefact of the gain
+# fields: the release's own baseline quality index is measurably worse for them
+# (median basSQI 0.961 against 0.983, r = -0.36 against peak amplitude). See
+# amplitude_range_mv.
+#
+# PER-RECORD, PER-LEAD FLOAT GAINS. Headers carry gains like
+# `42444.15189873418(-13120)/mV` that differ per lead and per record, so the raw
+# int16 values mean nothing on their own. wfdb applies them, hence
+# signal_unit_scale 1.0 — do not "fix" this to 0.001.
+#
+# CHECKSUMS. All five published files match the md5s figshare lists:
+# AttributesDictionary.csv ffbbb7ebd8ad4425b3a859739eb65eb1, ECGCode.csv
+# 7612c5af0e01e052eb85792c5e362f12, DiseaseCode.csv
+# 0bff597c23397c0d05a937fe09807ad4, Child_ecg.zip d7bb207d0f559c5f697bd7e442975718,
+# Child_ecg.z01 4782e8c17b478745853db85210ce46aa. The counts agree with the data
+# descriptor exactly: 14,190 records, 11,643 patients, 12,334 twelve-lead, 1,856
+# nine-lead, 500 Hz, 5-120 s. The one figure that does NOT agree is the number of
+# records with a cardiovascular diagnosis — see the labels note.
+
+name: "ZZU pECG (Zhengzhou University Pediatric ECG Database)"
+slug: "zzu_pecg"
+version: "1.0.0"
+url: "https://doi.org/10.6084/m9.figshare.27078763"
+# figshare serves six files including a two-part split zip (Child_ecg.zip +
+# Child_ecg.z01), which one URL cannot express — and the splitter generates
+# metadata_csv anyway, so this must stay null. Pass --data-path.
+download_url: null
+license: "CC BY 4.0"
+description: >
+  14,190 paediatric ECGs from 11,643 hospitalised children at the First
+  Affiliated Hospital of Zhengzhou University, China, recorded between 2018 and
+  2024 at 500 Hz. Ages run from 1 day to 15.0 years (median 8.6 years), which
+  makes this the only genuinely paediatric 12-lead resource in the catalogue —
+  age-appropriate ECG interpretation differs substantially from adult
+  interpretation, so adult-trained models should not be assumed to transfer.
+  Records are 5-120 s long and store either 12 leads (12,334) or 9 (1,856,
+  without V2/V4/V6). Labels are unusually rich for an open release: every record
+  carries one or more ECG findings coded in both the AHA and Chinese
+  vocabularies with human-readable descriptions, a list of ICD-10 discharge
+  diagnoses, and three per-lead signal-quality indices. 3,716 records carry one
+  of the 19 studied cardiovascular ICD-10 codes, grouped as congenital heart
+  disease, myocarditis, cardiomyopathy or Kawasaki disease.
+citation: >
+  Tan, J., Fan, H., Luo, J., Zhou, Y., Wang, N., Wang, X., Liu, G., Liu, C.,
+  Wang, Z. A pediatric ECG database with disease diagnosis covering 11643
+  children. Scientific Data 12 (2025).
+doi: "10.1038/s41597-025-05225-z"
+
+creators:
+  - type: Organization
+    name: "First Affiliated Hospital of Zhengzhou University"
+  - type: Organization
+    name: "Zhengzhou University"
+  - type: Organization
+    name: "Southeast University"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# wfdb applies the per-record, per-lead header gains and returns millivolts.
+signal_unit_scale: 1.0
+leads: 12
+# As the headers spell them — uppercase AVR/AVL/AVF, like PTB-XL. Matching is
+# case-insensitive, so leads=["aVR"] works too.
+lead_names: ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+# The 1,856 nine-lead records. V2, V4 and V6 are absent, so requesting one of
+# them raises for these records rather than returning the neighbouring lead.
+alternate_lead_names:
+  9: ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V3", "V5"]
+# NOMINAL ONLY — the mode, 15,000 samples at 500 Hz. Real durations run 5-120 s
+# across 67 distinct lengths; use the label loader's duration_seconds per record.
+duration_seconds: 30.0
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# Generated by ZZUPediatricSplitter on first run. AttributesDictionary.csv cannot
+# be used directly: its Filename column omits the Child_ecg/ prefix, Age is
+# "572d", Gender is "'Female'", and the code columns are ;-packed. The dataset
+# root must be writable, because validate_dataset re-reads this file from disk
+# and rebuilds paths from the raw column.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "ECG_ID"
+# 11,643 patients over 14,190 records; 1,691 patients contributed more than one
+# (up to 19), covering 4,238 records. Grouping is required.
+patient_id_column: "Patient_ID"
+
+signal_path_columns:
+  500: "signal_path"  # e.g. Child_ecg/P00/P00001/P00001_E01
+
+# --- Labels ---
+# Multi-label ECG findings, normalised to the AHA vocabulary. See the labels note.
+label_column: "aha_codes"
+label_format: "comma_separated"
+
+stratification:
+  # ZZUPediatricSplitter stratifies on primary_disease_group from the label
+  # loader: a rarest-wins reduction of the ICD-10 disease groups — NONE
+  # (10,474), Congenital heart disease (2,745), Myocarditis (630), Kawasaki
+  # disease (194), Cardiomyopathy (147).
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The release defines none.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # Declared for documentation; nothing in CHECK_REGISTRY reads it, which is just
+  # as well here — 1,856 records legitimately have 9.
+  expected_leads: 12
+  # DELIBERATELY EMPTY. Record length genuinely varies (2,500-60,000 samples over
+  # 67 distinct values), so there is no value truncated_signal could check
+  # against: any single number would fail thousands of valid records. Per-record
+  # length is exposed as n_samples/duration_seconds by the label loader.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # +-20 mV, not the usual +-10. Measured over a random 1,200 records: the median
+  # per-record peak is 2.97 mV, but a hard rail sits at ~26.6 mV and exclusion
+  # rates barely move across the range — +-5 mV: 26.2%, +-10: 18.8%, +-15: 16.4%,
+  # +-20: 14.8%, +-25: 11.8%, +-30: 0%. Almost every offender is railed rather
+  # than merely large, so tightening the bound buys little and costs legitimate
+  # paediatric high-voltage records — "left ventricular high voltage" is the
+  # second commonest finding in the release (2,789 records), and genuine
+  # paediatric QRS amplitudes are larger than adult ones. +-20 mV flags the
+  # saturated recordings, which the release's own basSQI independently agrees are
+  # the poor-quality ones.
+  amplitude_range_mv: [-20.0, 20.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/zzu_pecg.py. Every label column is a packed
+# string and two dictionary files have to be joined, so there is no declarative
+# form of this.
+#
+# THE TWO CODE COLUMNS ARE PARALLEL AND COMPLEMENTARY. AHA_code and CHN_code
+# hold the same findings in the same order, each giving its own vocabulary's code
+# where one exists and the plain-English DESCRIPTION where it does not —
+# ECGCode.csv has no AHA code for 14 of its 105 findings and no CHN code for 29.
+# So 6,473 of the AHA_code entries are prose, and reading the column as a code
+# vocabulary invents 15 phantom codes. The loader normalises both and exposes
+# `ecg_findings` as the canonical description regardless of vocabulary.
+#
+# THE DIAGNOSIS COUNT DISAGREES WITH THE PAPER. 3,716 records (2,597 patients)
+# carry at least one of the 19 real ICD-10 codes in DiseaseCode.csv; the data
+# descriptor says 3,516. The loader's derivation is stated exactly in its
+# docstring so the difference is checkable. DiseaseCode.csv's 20th row is a
+# placeholder ("See attribute dictionary file") rather than a code and is ignored.
+labels:
+  # Named even though the loader is a module (as ecgdmmld and echonext do): it is
+  # the primary source, and manifest.py checksums it, which is what lets a user
+  # confirm their copy against figshare's published md5. The two dictionary files
+  # are read as well but are 3 kB of static vocabulary.
+  source_csv: "AttributesDictionary.csv"
+  join_column: "ECG_ID"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "ZZU-pECG"
+    - "paediatric"
+    - "pediatric"
+    - "children"
+    - "China"
+    - "congenital heart disease"
+    - "Kawasaki disease"
+    - "myocarditis"
+    - "signal quality"
+    - "12-lead"
+    - "WFDB"
+  rai_data_collection: >
+    Twelve- and nine-lead ECGs recorded in routine inpatient care at the First
+    Affiliated Hospital of Zhengzhou University, a large tertiary hospital in
+    Henan province, China, between 2018 and 2024. All subjects are hospitalised
+    children aged 1 day to 15 years. ECG findings were coded in both the AHA and
+    the Chinese national vocabularies with reference to the recording and the
+    reporting cardiologist's interpretation; ICD-10 codes are the discharge
+    diagnoses from the hospital record, so they describe the admission rather
+    than the tracing. Three signal-quality indices (pSQI, basSQI, bSQI) were
+    computed per lead by the depositors and ship with each record.
+  rai_data_biases: >
+    A single-centre inpatient paediatric cohort from one Chinese province, so the
+    case mix reflects what is admitted to a tertiary children's service — 3,716
+    records carry a studied cardiovascular diagnosis and congenital heart disease
+    dominates it (2,787 records) — and it is not a screening or general
+    population sample. Nothing here is healthy-control data. Boys outnumber girls
+    8,131 to 6,059. The age distribution is wide but uneven, with a median of 8.6
+    years and 546 records under one year, and paediatric ECG norms change so
+    quickly with age that a model ignoring age will mislearn: findings such as
+    right-axis dominance and T-wave inversion in the right precordial leads are
+    normal in infants and abnormal in adolescents. 1,856 records (13.1%) lack V2,
+    V4 and V6 entirely, and those reduced-lead records carry a studied diagnosis
+    at a much higher rate (933 of 1,856, 50.3%) than the 12-lead ones (2,783 of
+    12,334, 22.6%), so dropping them is not a neutral filter — it would
+    preferentially discard sick children. Roughly 12-15% of records contain
+    sustained saturated segments that hit a ~26.6 mV rail and are excluded from
+    the `clean` version. ICD-10 discharge diagnoses are admission-level, so a
+    record can carry a diagnosis whose ECG signature is absent from that
+    particular tracing. The count of diagnosed records recomputed here (3,716)
+    exceeds the 3,516 the data descriptor reports.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. Patients are identified only
+    by surrogate keys (P00001 style) and records by that key plus an exam number,
+    which is what makes patient-grouped folds possible. Age is published in days
+    and sex is retained. Acquisition timestamps are given to the second — an
+    exact date and time of an ECG at a named hospital is a re-identification
+    vector when combined with age in days, and it is the field here that would
+    not survive a strict de-identification standard. ICD-10 discharge diagnoses
+    are clinical information about identifiable-in-principle minors, which
+    warrants more care than an adult cohort of the same size. No names, no
+    medical record numbers, no free-text reports and no clinician identifiers
+    ship. ECGBench republishes only record and patient surrogate keys in its fold
+    tables, never the diagnoses or the waveforms.

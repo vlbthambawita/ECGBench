@@ -793,12 +793,16 @@ def test_load_ningbo_iva_config():
 def test_the_hdf5_and_2000hz_facts_are_intentional():
     """Guard the configs that broke a catalogue-wide assumption.
 
-    ``ningbo_iva`` is still the only 2000 Hz dataset. hdf5 is no longer a
-    one-dataset branch: ``sph`` reads a 2-D ``(leads, samples)`` array per file,
-    while ``code15`` and ``code_test`` read a **row of a shared 3-D**
-    ``(records, samples, leads)`` array and get transposed. The two shapes go
-    through the same ``signal_format``, so this list is the reminder that adding
-    a fourth means deciding which of the two layouts it is.
+    ``ningbo_iva`` is still the only 2000 Hz dataset. hdf5 is now the second
+    commonest format: ``sph`` reads a 2-D ``(leads, samples)`` array per file,
+    while ``code15``, ``code_test``, ``sami_trop`` and ``ikem`` read a **row of a
+    shared 3-D** ``(records, samples, leads)`` array and get transposed. The two
+    shapes go through the same ``signal_format``, so this list is the reminder
+    that adding another means deciding which of the two layouts it is.
+
+    ``ikem`` is also the only one whose 3-D array is not 12 leads wide — it
+    stores 8 — so a reader that hardcoded 12 anywhere would pass on the other
+    four and fail here.
     """
     by_format: dict[str, list[str]] = {}
     fastest: list[str] = []
@@ -808,8 +812,14 @@ def test_the_hdf5_and_2000hz_facts_are_intentional():
         if config.default_sampling_rate >= 2000:
             fastest.append(slug)
 
-    assert sorted(by_format["hdf5"]) == ["code15", "code_test", "sph"]
+    assert sorted(by_format["hdf5"]) == [
+        "code15", "code_test", "ikem", "sami_trop", "sph",
+    ]
     assert fastest == ["ningbo_iva"]
+    # Every hdf5 dataset but sph reads a row of a shared 3-D array, and all of
+    # them declare 12 leads except ikem, which stores only the 8 independent ones.
+    assert load_config("ikem").leads == 8
+    assert {load_config(s).leads for s in by_format["hdf5"]} == {8, 12}
 
 
 def test_load_code15_config():
@@ -904,4 +914,164 @@ def test_load_code_test_config():
     assert config.labels.source_csv is None
     assert config.labels.join_column == "record_id"
     # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_load_sami_trop_config():
+    """SaMi-Trop: one keyless HDF5 array, one record per patient, no diagnoses."""
+    config = load_config("sami_trop")
+    assert config.slug == "sami_trop"
+    assert config.version == "1.0.0"
+    # A single (1631, 4096, 12) `tracings` array, so a record names a row —
+    # "exams.hdf5:tracings:417". Needs h5py.
+    assert config.signal_format == "hdf5"
+    # Already millivolts: median per-record peak 4.3 mV, median precordial
+    # peak-to-peak 1.7 mV.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Standard — checked from the arrays, because the sibling code_test release
+    # from the same network is not standard.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [400]
+    assert config.default_sampling_rate == 400
+    assert config.duration_seconds == 10.24
+    assert config.signal_path_columns == {400: "signal_path"}
+    # The HDF5 has no exam_id dataset, so the row reference has to be generated
+    # and written to disk for the validation engine to see it.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "exam_id"
+    # THE UNUSUAL BIT: one recording per patient — the release is each patient's
+    # first exam — so there is genuinely nothing to group on. Every other
+    # patient-level dataset in the catalogue sets this.
+    assert config.patient_id_column is None
+    # No diagnostic vocabulary ships at all; this names the stratification
+    # reduction instead.
+    assert config.label_column == "stratify_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    # Uniform: the array is one rectangular block.
+    assert config.validation.expected_samples == {400: 4096}
+    # Same telehealth network and instruments as code15, so deliberately the
+    # same range — +-10 would exclude 11.0% of the release, +-20 excludes 0.9%.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    assert config.validation.amplitude_range_mv == (
+        load_config("code15").validation.amplitude_range_mv
+    )
+    # Module loader: the positional join has to be validated in one place.
+    assert config.labels is not None
+    assert config.labels.source_csv == "exams.csv"
+    assert config.labels.join_column == "exam_id"
+    # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_load_ikem_config():
+    """IKEM: eight leads in an unusual order, microvolts, and not published."""
+    config = load_config("ikem")
+    assert config.slug == "ikem"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "hdf5"
+    # int16 MICROVOLTS. The release says "a granularity of 4.88 microvolts",
+    # which would make the median lead p2p 7.7 mV — about 5x physiologic. At
+    # 1 uV/count the median per-record peak is 1.93 mV, matching sph's 1.74.
+    assert config.signal_unit_scale == 0.001
+    # EIGHT, not twelve: only the independent leads are stored. III/aVR/aVL/aVF
+    # are exact linear combinations and ECGBench does not synthesise them.
+    assert config.leads == 8
+    # THE MOST UNUSUAL LEAD ORDER IN THE CATALOGUE: precordial first, and II
+    # before I. Derived from the arrays — the frontal QRS axis is +51 deg
+    # (median) under this assignment and +1 deg under the swap.
+    assert config.lead_names == ["V1", "V2", "V3", "V4", "V5", "V6", "II", "I"]
+    assert len(config.lead_names) == config.leads
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    # 4,096 samples at 500 Hz. NOT the "10 seconds" the release claims, which
+    # would be 5,000 samples; verified against the cart's own ventricular_rate.
+    assert config.duration_seconds == 8.192
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "exam_id"
+    # 88.6% of records share a patient with another record; one patient has 96.
+    assert config.patient_id_column == "patient_id"
+    # No diagnoses ship, so this is a banded rate measurement.
+    assert config.label_column == "stratify_class"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    assert config.validation.expected_leads == 8
+    # Storage length is uniform even though 48 records are zero-padded from
+    # 2,500 real samples, because the arrays are rectangular.
+    assert config.validation.expected_samples == {500: 4096}
+    # Clean single-hospital data, so the ECGBench-usual range fits: +-10 mV
+    # excludes 2.9%, where the two TNMG telehealth cohorts needed +-20.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    assert config.labels is not None
+    assert config.labels.source_csv == "exams.csv"
+    assert config.labels.join_column == "exam_id"
+
+
+def test_ikem_fold_csvs_are_not_published():
+    """CC BY-NC-ND 4.0: NoDerivatives, so the identifiers stay unpublished.
+
+    The second dataset in the catalogue to be withheld, and the first withheld
+    by its licence rather than by a data use agreement. The reason string is
+    what ``ecgbench upload`` and ``ECGDataset`` quote back at a user, so it has
+    to carry the regeneration command.
+    """
+    config = load_config("ikem")
+    assert config.publish_fold_csvs is False
+    assert config.no_publish_reason
+    assert "CC BY-NC-ND" in config.no_publish_reason
+    assert "ecgbench splits --dataset ikem" in config.no_publish_reason
+    assert "verify_splits" in config.no_publish_reason
+    # The licence field must say so too, not repeat Zenodo's vaguer "other-at".
+    assert config.license == "CC BY-NC-ND 4.0"
+
+
+def test_load_zzu_pecg_config():
+    """ZZU-pECG: paediatric, variable length, and two lead layouts."""
+    config = load_config("zzu_pecg")
+    assert config.slug == "zzu_pecg"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Per-record, per-lead float gains in the headers, which wfdb applies.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Uppercase limb leads, as the headers spell them.
+    assert config.lead_names == ["I", "II", "III", "AVR", "AVL", "AVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    # THE ONLY DATASET WITH A SECOND LAYOUT: 1,856 of 14,190 records store 9
+    # leads without V2/V4/V6, so stored position 7 is V2 here and V3 there.
+    assert config.alternate_lead_names == {
+        9: ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V3", "V5"]
+    }
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "ECG_ID"
+    # 1,691 patients hold more than one record, up to 19.
+    assert config.patient_id_column == "Patient_ID"
+    assert config.label_column == "aha_codes"
+    assert config.label_format == "comma_separated"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    # DELIBERATELY EMPTY: lengths run 2,500-60,000 samples over 67 distinct
+    # values, so any single expectation would fail thousands of valid records.
+    # An omitted rate disables truncated_signal rather than making it fire.
+    assert config.validation.expected_samples == {}
+    # A hard rail at ~26.6 mV that 11.8% of records touch, and paediatric high
+    # voltage is genuinely large — "left ventricular high voltage" is the second
+    # commonest finding here.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    assert config.labels is not None
+    assert config.labels.source_csv == "AttributesDictionary.csv"
+    assert config.labels.join_column == "ECG_ID"
+    # CC BY 4.0 on figshare: the fold CSVs are publishable.
     assert config.publish_fold_csvs is True

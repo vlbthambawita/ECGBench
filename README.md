@@ -217,6 +217,32 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ningbo_iva` | **aVF, aVL, aVR, I, II, III**, V1-V6 — the columns are sorted **alphabetically**, so `signal[0]` is aVF and lead I is `signal[3]` |
 | `code15` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, but **checked** rather than assumed, because its own sibling release below is not |
 | `code_test` | I, II, III, **aVL, aVF, aVR**, V1-V6 — the **same cohort as `code15` at the same rate, permuted differently**. `signal[3]` is aVR in one and aVL in the other, so anything stacking the two must select by name |
+| `sami_trop` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, and **checked** for the same reason: it is the third release from the same telehealth network and the other two disagree with each other |
+| `ikem` | **V1-V6, then II, then I** — 8 signals, no III/aVR/aVL/aVF (exact linear combinations of II and I, and simply not stored). `signal[0]` is V1 and `signal[6]` is **II**, not I. The most unusual order in the catalogue, and the release names none of it — derived from the arrays |
+| `zzu_pecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — **but 1,856 of 14,190 records store only 9 leads**, dropping V2/V4/V6, so `signal[7]` is V2 in one layout and V3 in the other. See below |
+
+**One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
+12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
+the full one — it drops V2, V4 and V6, so stored position 7 is V2 in one and V3 in the
+other. A single `lead_names` list would therefore return the wrong physical lead for
+13% of the release without any error. The config declares the second layout in
+`alternate_lead_names`, and `ECGDataset` re-resolves the requested **names** against
+whatever layout each record actually uses:
+
+```python
+# Present in both layouts -> the same physical leads for every record.
+ds = ECGDataset("zzu_pecg", split="train", data_path="...",
+                window=(0, 2500), leads=["I", "II", "V1", "V5"])
+
+# Absent from the 9-lead layout -> refuses, rather than returning V3.
+ds = ECGDataset("zzu_pecg", split="train", data_path="...", leads=["V2"])
+ds[i]   # ValueError: Lead 'V2' is not in 'zzu_pecg'. Available: [... 'V1', 'V3', 'V5']
+```
+
+A dataset that declares no `alternate_lead_names` — every other one — is asserting a
+single layout, and behaves exactly as before. Note that batching `zzu_pecg` needs
+`leads=` as well as `window=`: a batch mixing 9- and 12-lead records cannot be
+stacked.
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -696,12 +722,15 @@ automatically. **Some are deliberately not**, and those you generate yourself.
 Fold CSVs carry identifiers only — record ID, patient ID, signal path, fold,
 split. For an openly licensed source that is uncontroversial. For a
 **credentialed or restricted** source those identifiers are still data derived
-under a use agreement, and the ECGBench Hub repository is public and ungated, so
-ECGBench does not publish them. Two datasets are in this category:
-`mimic_iv_ecg`, whose 800,035 `study_id`s and 161,352 `subject_id`s stay with the
-people who signed the PhysioNet DUA, and `echonext`, under the PhysioNet
-*Restricted* Health Data License whose clause 3 forbids sharing access to the data
-at all.
+under a use agreement — or material a licence forbids redistributing — and the
+ECGBench Hub repository is public and ungated, so ECGBench does not publish them.
+Three datasets are in this category: `mimic_iv_ecg`, whose 800,035 `study_id`s and
+161,352 `subject_id`s stay with the people who signed the PhysioNet DUA;
+`echonext`, under the PhysioNet *Restricted* Health Data License whose clause 3
+forbids sharing access to the data at all; and `ikem`, which ships a `LICENSE` file
+that is verbatim **CC BY-NC-ND 4.0** — the NoDerivatives term makes republishing a
+derived fold table legally unclear, so it is the first dataset here withheld by
+licence rather than by an access agreement.
 
 Such a dataset declares this in its config, and the tooling enforces it in both
 directions — `ecgbench upload` refuses to publish it, and `ECGDataset` raises

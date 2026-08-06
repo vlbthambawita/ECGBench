@@ -4931,3 +4931,457 @@ class TestCODETestLabels:
 
         with pytest.raises(LabelSourceMissingError, match="data/"):
             ct_labels(tmp_path, self._config(sample_config))
+
+
+class TestSamiTropLabels:
+    """SaMi-Trop: no diagnoses, complete mortality follow-up, positional join."""
+
+    COLUMNS = "exam_id,age,is_male,normal_ecg,death,timey,nn_predicted_age"
+
+    def _exams(self, tmp_path, rows):
+        lines = [self.COLUMNS]
+        for row in rows:
+            r = {
+                "exam_id": 1, "age": 60, "is_male": "True", "normal_ecg": "False",
+                "death": "False", "timey": 2.0, "nn_predicted_age": 61.0, **row,
+            }
+            lines.append(",".join(str(r[c]) for c in self.COLUMNS.split(",")))
+        (tmp_path / "exams.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="sami_trop", record_id_column="exam_id",
+            patient_id_column=None, label_column="stratify_class",
+        )
+
+    def test_the_source_is_named_so_the_manifest_can_checksum_it(self):
+        from ecgbench.config import load_config
+        from ecgbench.labels.sami_trop import EXAMS_CSV
+
+        spec = load_config("sami_trop").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == EXAMS_CSV == "exams.csv"
+        assert spec.join_column == "exam_id"
+
+    def test_row_position_is_exposed_because_it_is_the_join(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """exams.hdf5 carries no identifier, so the row number IS the key.
+
+        It is returned as a column rather than left implicit, because the
+        splitter builds ``exams.hdf5:tracings:<row>`` from it.
+        """
+        import ecgbench.labels.sami_trop as mod
+
+        monkeypatch.setattr(mod, "N_RECORDS", 3)
+        root = self._exams(tmp_path, [{"exam_id": 77}, {"exam_id": 11}, {"exam_id": 42}])
+        df = mod.load_labels(root, self._config(sample_config))
+
+        # Not sorted: the row is the CSV's own order, which is what the waveform
+        # array uses. Sorting the frame here would corrupt every signal path.
+        assert list(df.index) == [77, 11, 42]
+        assert list(df["row"]) == [0, 1, 2]
+
+    def test_a_wrong_row_count_is_refused_rather_than_partially_joined(
+        self, tmp_path, sample_config
+    ):
+        """A positional join against a file of the wrong length mislabels everything.
+
+        There is no partial-match state to warn about — every row after the first
+        discrepancy is confidently wrong — so this must raise.
+        """
+        from ecgbench.labels.sami_trop import load_labels as sami_labels
+
+        root = self._exams(tmp_path, [{"exam_id": 1}, {"exam_id": 2}])
+        with pytest.raises(ValueError, match="row position|1631"):
+            sami_labels(root, self._config(sample_config))
+
+    def test_mortality_comes_first_in_the_stratification(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """Death wins over normal_ecg, so the 3 dead-and-normal records go to DEATH.
+
+        The alternative — a death x normal_ecg cross — has a cell of 3 records in
+        the real release, which cannot be spread over 10 folds at all.
+        """
+        import ecgbench.labels.sami_trop as mod
+
+        monkeypatch.setattr(mod, "N_RECORDS", 4)
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "death": "True", "normal_ecg": "True"},
+            {"exam_id": 2, "death": "True", "normal_ecg": "False"},
+            {"exam_id": 3, "death": "False", "normal_ecg": "True"},
+            {"exam_id": 4, "death": "False", "normal_ecg": "False"},
+        ])
+        df = mod.load_labels(root, self._config(sample_config))
+
+        assert list(df["stratify_class"]) == [
+            mod.STRATIFY_DEATH,      # dead AND normal -> DEATH, not a 4th class
+            mod.STRATIFY_DEATH,
+            mod.STRATIFY_NORMAL,
+            mod.STRATIFY_ABNORMAL_ALIVE,
+        ]
+
+    def test_follow_up_is_complete_so_death_is_a_plain_bool(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """Unlike CODE-15%, every SaMi-Trop record has an outcome.
+
+        CODE-15% needs a nullable boolean and a has_followup flag because 112,132
+        of its records have neither. Here all 1,631 do, so the simpler type is
+        correct and a NaN would be a bug rather than a third state.
+        """
+        import ecgbench.labels.sami_trop as mod
+
+        monkeypatch.setattr(mod, "N_RECORDS", 2)
+        root = self._exams(tmp_path, [{"exam_id": 1}, {"exam_id": 2, "death": "True"}])
+        df = mod.load_labels(root, self._config(sample_config))
+
+        assert df["death"].dtype == bool
+        assert df["death"].notna().all()
+        assert "has_followup" not in df.columns
+
+
+class TestIKEMLabels:
+    """IKEM: -1 means missing in every numeric column, and no diagnoses ship."""
+
+    COLUMNS = (
+        "exam_id,acquisition_date,patient_id,age,is_male,weight,height,"
+        "ventricular_rate,atrial_rate"
+    )
+
+    def _exams(self, tmp_path, rows):
+        lines = [self.COLUMNS]
+        for row in rows:
+            r = {
+                "exam_id": 1, "acquisition_date": "03-21-2016", "patient_id": "abc",
+                "age": 66, "is_male": 1, "weight": -1, "height": -1,
+                "ventricular_rate": 70, "atrial_rate": 70, **row,
+            }
+            lines.append(",".join(str(r[c]) for c in self.COLUMNS.split(",")))
+        (tmp_path / "exams.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="ikem", record_id_column="exam_id",
+            patient_id_column="patient_id", label_column="stratify_class",
+        )
+
+    def test_this_release_ships_no_diagnoses(self, tmp_path, sample_config):
+        """The paper's diagnostic labels are not part of the Zenodo release.
+
+        Worth an explicit test: the dataset looks like a classification corpus —
+        98,130 hospital ECGs — and is not one. Nothing in the loader may invent a
+        diagnosis column.
+        """
+        from ecgbench.labels.ikem import load_labels as ikem_labels
+
+        root = self._exams(tmp_path, [{"exam_id": 1}])
+        df = ikem_labels(root, self._config(sample_config))
+        assert not [c for c in df.columns if "diagnos" in c.lower() or c == "dx"]
+
+    def test_minus_one_becomes_nan_in_every_numeric_column(self, tmp_path, sample_config):
+        """Read literally, IKEM's mean weight is about -76 kg.
+
+        89.6% of weights and 89.3% of heights are -1, so this is the difference
+        between a usable column and a wrong one — and ``notna()`` reports the
+        source as 100% complete either way.
+        """
+        from ecgbench.labels.ikem import SENTINEL_COLUMNS
+        from ecgbench.labels.ikem import load_labels as ikem_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "age": -1, "weight": -1, "height": -1,
+             "ventricular_rate": -1, "atrial_rate": -1, "is_male": -1},
+            {"exam_id": 2, "age": 40, "weight": 70, "height": 175,
+             "ventricular_rate": 80, "atrial_rate": 80, "is_male": 0},
+        ])
+        df = ikem_labels(root, self._config(sample_config))
+
+        for column in SENTINEL_COLUMNS:
+            assert column in df.columns
+            assert not (df[column].astype(float) == -1).any(), column
+        first = df.loc[1]
+        assert pd.isna(first["age"]) and pd.isna(first["weight"])
+        assert pd.isna(first["ventricular_rate"])
+        # Unknown sex stays unknown rather than becoming female.
+        assert pd.isna(first["is_male"]) and pd.isna(first["sex"])
+        assert df.loc[2, "sex"] == "F"
+        assert list(df["has_weight"]) == [False, True]
+
+    def test_the_date_is_month_first_and_parsing_it_wrongly_is_silent(
+        self, tmp_path, sample_config
+    ):
+        """MM-DD-YYYY. Day-first inference would swap the first 12 days of a month.
+
+        It also sorts wrongly as a string: string min/max over the real column
+        reports 2018-2021 where the true range is 2004-2022.
+        """
+        from ecgbench.labels.ikem import load_labels as ikem_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "acquisition_date": "03-21-2016"},
+            {"exam_id": 2, "acquisition_date": "07-04-2019"},
+        ])
+        df = ikem_labels(root, self._config(sample_config))
+
+        assert str(df.loc[1, "acquisition_date"].date()) == "2016-03-21"
+        # 07-04 is 4 July, not 7 April.
+        assert str(df.loc[2, "acquisition_date"].date()) == "2019-07-04"
+        assert list(df["acquisition_year"]) == [2016, 2019]
+
+    def test_rate_bands_have_three_classes_and_absorb_the_unmeasurable(
+        self, tmp_path, sample_config
+    ):
+        """Only 7 real records have no usable rate, which is too few for a class.
+
+        A 7-member class cannot be spread over 10 folds, so those records join
+        NORMAL. A rate band is a measurement, not a rhythm diagnosis.
+        """
+        from ecgbench.labels.ikem import (
+            STRATIFY_BRADY,
+            STRATIFY_NORMAL,
+            STRATIFY_TACHY,
+        )
+        from ecgbench.labels.ikem import load_labels as ikem_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "ventricular_rate": 45},
+            {"exam_id": 2, "ventricular_rate": 75},
+            {"exam_id": 3, "ventricular_rate": 140},
+            {"exam_id": 4, "ventricular_rate": -1},
+            {"exam_id": 5, "ventricular_rate": 0},
+        ])
+        df = ikem_labels(root, self._config(sample_config))
+
+        assert list(df["stratify_class"]) == [
+            STRATIFY_BRADY, STRATIFY_NORMAL, STRATIFY_TACHY,
+            STRATIFY_NORMAL,  # sentinel
+            STRATIFY_NORMAL,  # a literal 0 bpm is not bradycardia, it is unmeasured
+        ]
+
+    def test_real_lengths_are_optional_so_metadata_only_copies_still_load(
+        self, tmp_path, sample_config
+    ):
+        """The true pre-padding length lives in the HDF5, not the CSV.
+
+        With no parts present the column is simply absent rather than an error —
+        ``load_labels`` must not require 6.6 GB of waveforms to read a CSV.
+        """
+        from ecgbench.labels.ikem import load_labels as ikem_labels
+        from ecgbench.labels.ikem import read_real_lengths
+
+        root = self._exams(tmp_path, [{"exam_id": 1}])
+        assert read_real_lengths(root).empty
+        df = ikem_labels(root, self._config(sample_config))
+        assert "real_length_samples" not in df.columns
+        # The uniform stored length is still known without opening anything.
+        assert df.loc[1, "n_samples"] == 4096
+        assert df.loc[1, "duration_seconds"] == pytest.approx(8.192)
+
+
+class TestZZUPediatricLabels:
+    """ZZU-pECG: packed code columns that mix codes with prose."""
+
+    #: Two findings with an AHA code, one with none (so AHA is 'N/A').
+    ECG_CODE_CSV = (
+        "Description,AHA(Category&Code),CHN(Category&Code)\n"
+        "Sinus tachycardia,C21,C13\n"
+        '"Atrial premature complexes, nonconducted",D31,D22\n'
+        "Left ventricular high voltage,N/A,J106\n"
+        "Atrial reciprocal beats,N/A,D23\n"
+    )
+    DISEASE_CODE_CSV = (
+        "Disease Type,Disease Category,ICD-10 Code,ICD-10 Description\n"
+        "Myocarditis,Acute myocarditis,I40.9,Acute myocarditis\n"
+        '"Congenital \nheart disease",Ventricular septal defect,Q21.0,VSD\n'
+        "Kawasaki disease,Kawasaki disease,M30.3,Kawasaki\n"
+        "Other diseases(OD),Other,See attribute dictionary file,Other\n"
+    )
+    COLUMNS = (
+        "Filename,ECG_ID,Patient_ID,Age,Gender,Acquisition_date,Sampling_point,"
+        "Lead,AHA_code,CHN_code,ICD-10 code,pSQI,basSQI,bSQI"
+    )
+
+    def _tree(self, tmp_path, rows):
+        (tmp_path / "ECGCode.csv").write_text(self.ECG_CODE_CSV, encoding="utf-8")
+        (tmp_path / "DiseaseCode.csv").write_text(self.DISEASE_CODE_CSV, encoding="utf-8")
+        lines = [self.COLUMNS]
+        for row in rows:
+            r = {
+                "Filename": "P00/P00001/P00001_E01", "ECG_ID": "P00001_E01",
+                "Patient_ID": "P00001", "Age": "572d", "Gender": "'Female'",
+                "Acquisition_date": "2017-11-22 10:46:08", "Sampling_point": 15000,
+                "Lead": 12, "AHA_code": "'C21'", "CHN_code": "'C13'",
+                "ICD-10 code": "'Q21.0'",
+                "pSQI": "'I':0.288;'II':0.323", "basSQI": "'I':0.98;'II':0.99",
+                "bSQI": "'I':1.000;'II':1.000", **row,
+            }
+            lines.append(",".join(f'"{r[c]}"' for c in self.COLUMNS.split(",")))
+        (tmp_path / "AttributesDictionary.csv").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="zzu_pecg", record_id_column="ECG_ID",
+            patient_id_column="Patient_ID", label_column="aha_codes",
+            label_format="comma_separated",
+        )
+
+    def test_a_finding_with_no_aha_code_keeps_its_description(
+        self, tmp_path, sample_config
+    ):
+        """ECGCode.csv has no AHA code for 14 of its 105 findings.
+
+        The dataset writes the prose description in the AHA column for exactly
+        those, so 6,473 real entries are not codes. Reading the column as a code
+        vocabulary invents 15 phantom "codes"; the CHN column names the same
+        finding properly, and ``ecg_findings`` carries the description either way.
+        """
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [{
+            "AHA_code": "'Left ventricular high voltage';'C21'",
+            "CHN_code": "'J106';'C13'",
+        }])
+        df = zzu_labels(root, self._config(sample_config))
+        row = df.loc["P00001_E01"]
+
+        # No AHA code exists, so the description is the only identifier available.
+        assert row["aha_codes"] == "Left ventricular high voltage,C21"
+        # CHN does have one for it.
+        assert row["chn_codes"] == "J106,C13"
+        assert row["ecg_findings"] == "Left ventricular high voltage;Sinus tachycardia"
+        assert row["n_findings"] == 2
+
+    def test_modifiers_are_stripped_into_a_base_code(self, tmp_path, sample_config):
+        """AHA writes L145+Modifier362, CHN writes L121+Depression, and
+        J(111+112+113) is a composite. Grouping needs the base code."""
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [{
+            "AHA_code": "'C21+Modifier310'", "CHN_code": "'J(111+112+113)';'C13+Frequent'",
+        }])
+        row = zzu_labels(root, self._config(sample_config)).loc["P00001_E01"]
+
+        assert row["aha_codes"] == "C21+Modifier310"
+        assert row["aha_base_codes"] == "C21"
+        assert row["chn_base_codes"] == "J(111+112+113),C13"
+
+    def test_a_comma_in_a_code_would_break_the_label_column_and_is_refused(
+        self, tmp_path, sample_config
+    ):
+        """label_format is comma_separated, so an embedded comma splits one code
+        into two bogus ones. Descriptions do contain commas — the fallback path
+        is what could introduce one — so this is asserted, not assumed."""
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [{
+            # This description HAS an AHA code (D31), so it normalises safely...
+            "AHA_code": "'Atrial premature complexes, nonconducted'",
+            "CHN_code": "'D22'",
+        }])
+        assert zzu_labels(root, self._config(sample_config)).loc[
+            "P00001_E01", "aha_codes"
+        ] == "D31"
+
+        # ...but one that does not would carry its comma into the list.
+        root = self._tree(tmp_path, [{
+            "AHA_code": "'Torsades, unspecified'", "CHN_code": "'D22'",
+        }])
+        with pytest.raises(ValueError, match="comma|','"):
+            zzu_labels(root, self._config(sample_config))
+
+    def test_age_is_days_and_the_neonatal_range_survives(self, tmp_path, sample_config):
+        """Ages run from 1 day. Rounding to years would collapse every infant."""
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [{"ECG_ID": "a", "Age": "1d"}])
+        row = zzu_labels(root, self._config(sample_config)).loc["a"]
+        assert row["age_days"] == 1
+        assert row["age_years"] == pytest.approx(1 / 365.25)
+        assert row["sex"] == "F"  # "'Female'" -> F, quotes and all
+
+    def test_the_placeholder_disease_row_is_not_treated_as_an_icd_code(
+        self, tmp_path, sample_config
+    ):
+        """DiseaseCode.csv's 20th row is "See attribute dictionary file".
+
+        Matching it as a code would label nothing but would add a phantom group
+        to the vocabulary.
+        """
+        from ecgbench.labels.zzu_pecg import NO_DISEASE
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [
+            {"ECG_ID": "a", "ICD-10 code": "'Q21.0';'J18.9'"},
+            {"ECG_ID": "b", "ICD-10 code": "'J18.9'"},
+            {"ECG_ID": "c", "ICD-10 code": "'See attribute dictionary file'"},
+        ])
+        df = zzu_labels(root, self._config(sample_config))
+
+        assert df.loc["a", "disease_groups"] == "Congenital heart disease"
+        # The embedded newline in the source's "Congenital \nheart disease" is
+        # collapsed, or it would land in a CSV cell verbatim.
+        assert "\n" not in df.loc["a", "disease_groups"]
+        assert df.loc["b", "disease_groups"] == ""
+        assert df.loc["b", "primary_disease_group"] == NO_DISEASE
+        assert df.loc["c", "primary_disease_group"] == NO_DISEASE
+
+    def test_sqi_nulls_mark_the_leads_a_reduced_record_lacks(
+        self, tmp_path, sample_config
+    ):
+        """The 9-lead records carry Null for V2/V4/V6, which must not be 0.0."""
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+        from ecgbench.labels.zzu_pecg import parse_sqi
+
+        parsed = parse_sqi("'I':0.288;'V2':Null;'V5':0.238")
+        assert parsed["I"] == pytest.approx(0.288)
+        assert np.isnan(parsed["V2"])
+
+        root = self._tree(tmp_path, [{
+            "Lead": 9, "pSQI": "'I':0.30;'V2':Null;'V5':0.50",
+        }])
+        row = zzu_labels(root, self._config(sample_config)).loc["P00001_E01"]
+        assert row["n_leads"] == 9
+        # Mean over present leads only: (0.30 + 0.50) / 2, not / 3.
+        assert row["psqi_mean"] == pytest.approx(0.40)
+        assert row["psqi_by_lead"] == "'I':0.30;'V2':Null;'V5':0.50"
+
+    def test_the_signal_path_gets_the_directory_the_csv_omits(
+        self, tmp_path, sample_config
+    ):
+        """Filename is "P00/P00001/P00001_E01"; the files are under Child_ecg/.
+
+        The prefix has to reach the metadata CSV on disk, because
+        ``validate_dataset`` rebuilds paths from the raw column and never sees an
+        in-memory fix-up. This is the bug Chapman shipped with for months.
+        """
+        from ecgbench.labels.zzu_pecg import SIGNAL_SUBDIR
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [{}])
+        path = zzu_labels(root, self._config(sample_config)).loc[
+            "P00001_E01", "signal_path"
+        ]
+        assert path == f"{SIGNAL_SUBDIR}/P00/P00001/P00001_E01"
+        assert path.startswith("Child_ecg/")
+
+    def test_duration_is_per_record_because_lengths_vary_by_a_factor_of_24(
+        self, tmp_path, sample_config
+    ):
+        """2,500 to 60,000 samples over 67 distinct lengths, so no config value
+        could describe it and expected_samples is deliberately empty."""
+        from ecgbench.labels.zzu_pecg import load_labels as zzu_labels
+
+        root = self._tree(tmp_path, [
+            {"ECG_ID": "short", "Sampling_point": 2500},
+            {"ECG_ID": "long", "Sampling_point": 60000},
+        ])
+        df = zzu_labels(root, self._config(sample_config))
+        assert df.loc["short", "duration_seconds"] == pytest.approx(5.0)
+        assert df.loc["long", "duration_seconds"] == pytest.approx(120.0)

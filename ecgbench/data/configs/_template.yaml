@@ -32,6 +32,17 @@ lead_names: []                    # [REQUIRED for ECGDataset(leads=...)] Lead na
                                   # spells them. Read one record and copy what you see —
                                   # do not assume the standard order. MIMIC-IV-ECG stores
                                   # aVF before aVL, and PTB-XL spells them AVR/AVL/AVF.
+alternate_lead_names: {}          # Only if records DON'T all store the same leads.
+                                  # Maps stored lead count -> lead order, e.g.
+                                  #   9: ["I","II","III","AVR","AVL","AVF","V1","V3","V5"]
+                                  # Almost always empty. zzu_pecg is the one case:
+                                  # 1,856 of its records hold 9 leads instead of 12,
+                                  # and the 9-lead layout is NOT a prefix of the
+                                  # 12-lead one, so position 7 is V3 there and V2
+                                  # here. Without this, leads=["V2"] silently returns
+                                  # V3 for those records. With it, ECGDataset
+                                  # re-resolves the requested names per record and
+                                  # raises if a lead is absent from that layout.
 duration_seconds: 10              # Nominal recording duration in seconds
 sampling_rates: [500]             # Available sampling rates in Hz
 default_sampling_rate: 500        # Which rate to use by default

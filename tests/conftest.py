@@ -503,3 +503,65 @@ def tmp_wfdb_signal_dataset(tmp_path) -> Path:
 
     _write_fold_tree(tmp_path, paths, record_ids)
     return tmp_path
+
+
+#: Canonical index of each lead name, so a fixture signal's value identifies the
+#: physical lead it holds regardless of which position stores it.
+CANONICAL_LEAD_INDEX = {
+    "I": 0, "II": 1, "III": 2, "AVR": 3, "AVL": 4, "AVF": 5,
+    "V1": 6, "V2": 7, "V3": 8, "V4": 9, "V5": 10, "V6": 11,
+}
+
+TWELVE_LEAD_LAYOUT = ["I", "II", "III", "AVR", "AVL", "AVF",
+                      "V1", "V2", "V3", "V4", "V5", "V6"]
+#: ZZU-pECG's reduced layout: V2, V4 and V6 are absent, so position 7 is V3.
+NINE_LEAD_LAYOUT = ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V3", "V5"]
+
+
+@pytest.fixture
+def tmp_mixed_lead_dataset(tmp_path) -> Path:
+    """A wfdb dataset where records store DIFFERENT lead counts, as ZZU-pECG does.
+
+    Four records: two with the 12-lead layout and two with the 9-lead one that
+    drops V2/V4/V6. Every sample's value is ``CANONICAL_LEAD_INDEX[name] +
+    sample/10000``, so a returned row identifies which *physical* lead it holds
+    — which is the only way to catch an index-based selection quietly handing
+    back V3 where V2 was asked for.
+
+    Fold layout puts records 0-2 in train (two 12-lead, one 9-lead), so one
+    ``ECGDataset`` spans both layouts. Five records, because ``_write_fold_tree``
+    deals round-robin over five folds and an empty fold CSV is unreadable.
+    """
+    wfdb = pytest.importorskip("wfdb")
+
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    layouts = [
+        TWELVE_LEAD_LAYOUT,
+        TWELVE_LEAD_LAYOUT,
+        NINE_LEAD_LAYOUT,
+        TWELVE_LEAD_LAYOUT,
+        NINE_LEAD_LAYOUT,
+    ]
+    for r, layout in enumerate(layouts):
+        rid = f"rec_{r}"
+        signal = np.empty((5000, len(layout)), dtype=np.float64)
+        for position, name in enumerate(layout):
+            signal[:, position] = CANONICAL_LEAD_INDEX[name] + np.arange(5000) / 10_000.0
+        wfdb.wrsamp(
+            rid,
+            fs=500,
+            units=["mV"] * len(layout),
+            sig_name=list(layout),
+            p_signal=signal,
+            fmt=["16"] * len(layout),
+            adc_gain=[1000.0] * len(layout),
+            baseline=[0] * len(layout),
+            write_dir=str(records),
+        )
+        record_ids.append(rid)
+        paths.append(f"records/{rid}")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path

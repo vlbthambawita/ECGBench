@@ -1,0 +1,264 @@
+# ECGBench Config: IKEM (Institute for Clinical and Experimental Medicine, Prague)
+# ================================================================================
+# 98,130 ECGs from 30,290 patients at IKEM, Prague, released on Zenodo in the
+# CODE-15% file format (exams.csv + exams_part_N.hdf5 with a 3-D `tracings`
+# array). https://doi.org/10.5281/zenodo.8393007
+#
+# THREE PUBLISHED FACTS ABOUT THIS RELEASE ARE WRONG OR INCOMPLETE, and each was
+# measured from the files rather than taken from the description.
+#
+# 1. IT IS 8.192 SECONDS, NOT 10. The description says "sampled at a rate of 500
+#    Hz for a duration of 10 seconds each", which would be 5,000 samples; the
+#    arrays hold 4,096. The rate is genuinely 500 Hz — exams.csv carries a
+#    per-record `ventricular_rate` measured by the acquisition cart, and R-peak
+#    detection at 500 Hz reproduces it with a median bias of 0.0 bpm, a median
+#    absolute error of 0.5 bpm and 88.7% of records within 5 bpm, while assuming
+#    400 Hz gives a bias of -14.3 bpm. So 4,096 / 500 = 8.192 s.
+#
+# 2. THE SAMPLES ARE MICROVOLTS, NOT 4.88 uV COUNTS. The description says "16-bit
+#    integers with a granularity of 4.88 microvolts" (which is 160 mV / 32768, a
+#    plausible hardware LSB). Applying it makes the median lead-II peak-to-peak
+#    7.7 mV and the median per-record peak 9.5 mV — roughly 5x physiologic. At
+#    1 uV/count the same figures are 1.58 mV and 1.93 mV, which match the other
+#    hospital cohort in this catalogue (SPH, 1.74 mV) almost exactly. The stored
+#    integers also have a GCD of 1, so they carry genuine 1-count resolution
+#    rather than being rescaled multiples of a coarser step. Hence 0.001.
+#
+# 3. THE 8 STORED LEADS ARE NOT IN THE ORDER YOU WOULD GUESS. The description
+#    says only that "8 reduced leads are expanded back to the original 12". They
+#    are V1-V6 first and the limb leads LAST, with II BEFORE I:
+#      * ch0-ch5 are precordial. Their mean within-record correlation matrix is
+#        banded — adjacent pairs 0.59-0.70, ch0 vs ch5 -0.18 — which is the V1
+#        to V6 spatial progression, and the net QRS dominance runs from -377
+#        counts at ch0 (rS, i.e. V1) to +408 at ch5 (dominant R, i.e. V6).
+#      * No channel is a derived augmented lead: tested against II-I, -(I+II)/2,
+#        I-II/2 and II-I/2, the best relative error was 0.49, where a true match
+#        in SaMi-Trop comes in under 0.003.
+#      * ch6 = II and ch7 = I, not the reverse. Taking ch7 as I puts the frontal
+#        QRS axis at a median +51 deg (IQR 14-91), with derived III positive and
+#        aVF positive in 82.1% of records — a textbook adult distribution.
+#        Swapping them gives a median axis of +1 deg with aVF positive in only
+#        50.4%, and a negative median III. The same net-dominance statistic on a
+#        cohort with explicitly named leads (ZZU-pECG) has net(II) > net(I) and
+#        net(V1) < 0 < net(V6), matching the assignment kept here.
+#    Anything stacking IKEM with another dataset MUST select leads by name.
+#
+# DISTRIBUTION. The shipped LICENSE file is the full text of CC BY-NC-ND 4.0, so
+# fold CSVs are NOT published — see publish_fold_csvs below.
+#
+# CHECKSUMS. All five files match the md5s Zenodo publishes and the shipped
+# zenodo_md5sums.txt (verified with `md5sum -c`). Integrity is unusually well
+# served here: each part carries a `hashes` dataset holding the SHA-1 of every
+# record's raw int16 bytes, and all 98,130 are distinct — this release contains
+# no duplicate recordings at all, unlike CODE-15%.
+
+name: "IKEM Dataset (Institute for Clinical and Experimental Medicine, Prague)"
+slug: "ikem"
+version: "1.0.0"
+url: "https://doi.org/10.5281/zenodo.8393007"
+# Zenodo serves five separate files (exams.csv plus three ~3 GB HDF5 parts and a
+# LICENSE), which one URL cannot express — and the splitter generates
+# metadata_csv anyway, so this must stay null. Pass --data-path.
+download_url: null
+# The shipped LICENSE file is verbatim CC BY-NC-ND 4.0. Zenodo's own metadata
+# field says only "other-at" (Other, Attribution), which is less specific and
+# less restrictive; the licence text that travels with the data governs.
+license: "CC BY-NC-ND 4.0"
+description: >
+  98,130 twelve-lead ECGs from 30,290 patients recorded at the Institute for
+  Clinical and Experimental Medicine (IKEM) in Prague, Czech Republic, mostly in
+  2017-2018 with a tail running 2004-2022. Each recording is 4,096 samples at
+  500 Hz (8.192 s), stored as int16 microvolts. Only 8 of the 12 leads are kept —
+  V1-V6, II and I, in that order — because the other four are exact linear
+  combinations of II and I and can be recomputed; ECGBench returns the 8 stored
+  leads as they are. The release ships demographics and two cart-measured rates
+  rather than diagnoses: age, sex, weight, height, ventricular rate and atrial
+  rate, with -1 used as a missing-value sentinel throughout. Patients repeat
+  heavily — 19,078 of the 30,290 contributed more than one recording and one
+  contributed 96, covering 86,918 of the 98,130 records — so folds are grouped on
+  patient_id.
+citation: >
+  Seják, M., Sido, J., Žahour, D. Automatic ECG classification using
+  discrete wavelet transform and a deep neural network. Knowledge-Based Systems
+  277, 111014 (2023).
+doi: "10.1016/j.knosys.2023.111014"
+
+creators:
+  - type: Organization
+    name: "Institute for Clinical and Experimental Medicine (IKEM), Prague"
+  - type: Organization
+    name: "University of West Bohemia"
+
+# --- Signal Properties ---
+signal_format: "hdf5"
+# int16 microvolts. NOT the 4.88 uV the release states — see note 2 above.
+signal_unit_scale: 0.001
+# EIGHT, not twelve. The release stores only the independent leads; III, aVR,
+# aVL and aVF are exact linear combinations of II and I and are not stored.
+# ECGBench does not synthesise them, so `signal` has 8 rows here.
+leads: 8
+# V1-V6, then II, then I. Verified from the arrays — see note 3 above. This is
+# the most unusual lead order in the catalogue; select by name, never by index.
+lead_names: ["V1", "V2", "V3", "V4", "V5", "V6", "II", "I"]
+# 4,096 samples at 500 Hz. Storage length is uniform because the array is one
+# rectangular block, but 48 records carry only 2,500 real samples (5.0 s) and are
+# zero-padded into it. The true length ships as the parts' `real_lengths`
+# dataset and is exposed as `real_length_samples` by the label loader.
+duration_seconds: 8.192
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# Generated by IKEMSplitter on first run: exams.csv plus the exam_id -> (part,
+# row) resolution the release leaves implicit. The dataset root must be
+# writable, because validate_dataset re-reads this file from disk.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "exam_id"
+# 30,290 patients over 98,130 records, 19,078 of them with more than one (up to
+# 96). Grouping is mandatory: without it 88.6% of records could put the same
+# patient in both train and test. patient_id is a 40-character SHA-1 surrogate.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  500: "signal_path"  # e.g. exams_part_1.hdf5:tracings:417
+
+# --- Labels ---
+# This release ships NO DIAGNOSES — see the labels note below. This column names
+# the rate band the folds are stratified on, which is a measurement, not a
+# diagnosis. Do not train on it.
+label_column: "stratify_class"
+label_format: "single"
+
+stratification:
+  # IKEMSplitter stratifies on stratify_class from the label loader: the cart's
+  # ventricular_rate banded into BRADY (12,387), NORMAL (76,426) and TACHY
+  # (9,317).
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The release defines none.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # EIGHT. Note that nothing in CHECK_REGISTRY actually reads this field today,
+  # so it documents the layout rather than enforcing it.
+  expected_leads: 8
+  # Storage length is uniform at 4,096 for all 98,130 records, so this check can
+  # and should run. It says nothing about the 48 zero-padded short records —
+  # that is what real_length_samples is for.
+  expected_samples:
+    500: 4096
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The ECGBench-usual +-10 mV is right here, unlike the two TNMG telehealth
+  # cohorts that needed +-20. This is clean single-hospital data: the median
+  # per-record peak is 1.93 mV and measured exclusion rates over 6,000 records
+  # are +-5 mV: 6.9%, +-10: 2.9%, +-15: 1.9%, +-20: 1.1%. +-10 mV lands in the
+  # 1-3% band the rest of the catalogue sits at and still catches the genuinely
+  # saturated records — the worst peak exactly hits 32.767 mV, which is int16
+  # full scale, i.e. a railed ADC. Expect ~0.5% to fail missing_leads as well:
+  # a lead recorded as exactly zero throughout.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ikem.py. Sentinel handling alone justifies it.
+#
+# NO DIAGNOSES SHIP. This is the important thing to know before choosing the
+# dataset: exams.csv carries demographics and two cart-measured rates, and
+# nothing else. The paper trains on IKEM diagnostic labels that are not part of
+# this release. What you get is age, sex, weight, height, ventricular_rate,
+# atrial_rate and acquisition_date — usable for age/sex estimation, rate
+# regression and self-supervised pretraining, not for diagnosis classification.
+#
+# -1 IS A MISSING-VALUE SENTINEL IN EVERY NUMERIC COLUMN, and it is not rare:
+# weight 89.6% and height 89.3% are absent, age 9.0%, atrial_rate 0.4%, sex 0.4%,
+# ventricular_rate 0.006%. Read literally, the cohort's mean weight is negative.
+# The loader converts every -1 to NaN and exposes has_* flags.
+labels:
+  # Named even though the loader is a module (as mimic_iv_ecg and echonext do):
+  # it is the real single source, and manifest.py checksums it. That matters more
+  # here than anywhere else — IKEM's split is distributed as a recipe rather than
+  # as fold CSVs, so the reference manifest is the only way a user can prove
+  # their regeneration is the canonical partition, and it needs a digest of a
+  # file whose md5 Zenodo publishes.
+  source_csv: "exams.csv"
+  join_column: "exam_id"
+
+# --- Distribution policy ---
+# The shipped LICENSE is CC BY-NC-ND 4.0. NoDerivatives means adapted material
+# may not be distributed, and a fold table is a partition of the release's own
+# identifiers — 98,130 exam_ids and 30,290 patient SHA-1s — published to a
+# public, ungated, commercially operated repository. That is not clearly
+# permitted, and publication is irreversible, so ECGBench distributes the split
+# as a recipe instead. This is the second such dataset after mimic_iv_ecg, and
+# the first restricted by licence rather than by a data use agreement.
+publish_fold_csvs: false
+no_publish_reason: >
+  The IKEM release ships under CC BY-NC-ND 4.0 (see the LICENSE file inside the
+  Zenodo record), whose NoDerivatives term makes republishing a derived fold
+  table on a public repository legally unclear, so ECGBench does not publish
+  IKEM's identifiers. Fold assignment is a pure function of exams.csv and a
+  fixed seed, so regenerate the identical split from your own copy with:
+  ecgbench splits --dataset ikem --data-path /path/to/IKEM_dataset_v1.0.0/
+  then confirm it is the canonical partition with
+  ecgbench.manifest.verify_splits("ikem", "output/ikem").
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "IKEM"
+    - "Prague"
+    - "Czech Republic"
+    - "8-lead"
+    - "reduced lead set"
+    - "age estimation"
+    - "HDF5"
+  rai_data_collection: >
+    Twelve-lead ECGs recorded in routine clinical care at the Institute for
+    Clinical and Experimental Medicine (IKEM) in Prague, a national tertiary
+    referral centre for cardiology, transplantation and diabetology. Acquisition
+    dates run from 2004 to 2022 but are overwhelmingly concentrated in 2017
+    (57,179 records) and 2018 (33,355). Recordings were exported from the
+    hospital's ECG management system, reduced from 12 leads to the 8 independent
+    ones, resampled or cropped to 4,096 samples at 500 Hz, and zero-padded where
+    shorter. Demographics and the acquisition cart's own automatic ventricular
+    and atrial rate measurements accompany each record; no cardiologist
+    interpretation or diagnosis is included in the release.
+  rai_data_biases: >
+    A single-centre tertiary-referral cohort from one Czech hospital, so the
+    case mix is skewed towards cardiology, heart transplantation and diabetes
+    rather than a general population, and findings may not transfer to
+    primary-care or non-European cohorts. Men are over-represented: 64,026
+    records against 33,728 for women, with sex missing for 376. Acquisition is
+    concentrated in a two-year window, so hardware and practice variation is
+    small and the 2004-2016 tail is only 190 records. Missingness is severe and
+    non-random for body metrics — weight is absent for 89.6% of records and
+    height for 89.3% — and it is encoded as -1 rather than as a blank, so any
+    analysis that does not treat the sentinel explicitly will compute negative
+    means. Age is absent for 9.0%, and among the values present 546 records give
+    age 0 and 21 give 100 or more, which should be treated with suspicion. The
+    release ships no diagnostic labels at all, so it cannot support diagnosis
+    classification without a separate source of ground truth. Because 19,078
+    patients contributed more than one recording — covering 88.6% of the release
+    — any split ignoring patient identity leaks heavily; ECGBench's folds are
+    grouped on patient_id.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. Patient identity is published
+    only as a 40-character SHA-1 surrogate, which is what makes patient-grouped
+    folds possible, and record identifiers are sequential integers. Age in whole
+    years, sex, weight and height are retained, as is the acquisition date to the
+    day — a date of service at a named hospital is a re-identification vector
+    when combined with the other attributes, and it is the one field here that
+    would not survive a strict de-identification standard. No names, no national
+    identifiers, no free-text reports and no clinician identifiers ship. ECGBench
+    does not republish IKEM's record or patient identifiers at all; see
+    no_publish_reason.
