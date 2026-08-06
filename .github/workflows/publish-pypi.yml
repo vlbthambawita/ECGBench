@@ -69,4 +69,7 @@ jobs:
           # without hitting the recursive-workflow block, so no PAT is needed.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh workflow run deploy-pages.yml --ref main
+        # Pass the tag explicitly. The dispatched run builds a branch ref, so it
+        # cannot read the tag from GITHUB_REF, and inferring it from git is
+        # ambiguous when several tags share one commit.
+        run: gh workflow run deploy-pages.yml --ref main -f "version_tag=${GITHUB_REF#refs/tags/}"

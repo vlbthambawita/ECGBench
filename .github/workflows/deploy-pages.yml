@@ -22,6 +22,11 @@ on:
     # github-pages -> Deployment branches and tags: add a tag rule "v*", then
     # restore a tags: trigger here.
   workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag to stamp in _version.json (leave blank to infer from git)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -56,15 +61,24 @@ jobs:
         # Jekyll excludes _*-prefixed files, hence writing it after the build.
         # actions/jekyll-build-pages@v1 runs in a container and produces _site/
         # as root, so reclaim ownership first.
+        env:
+          INPUT_VERSION_TAG: ${{ inputs.version_tag }}
         run: |
           sudo chown -R "$(id -u):$(id -g)" _site
 
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [ "$TAG" = "$GITHUB_REF" ]; then
-            # Not a tag push (e.g. a docs/** change): show the latest release
-            # reachable from HEAD rather than "dev".
+          # Three sources, most trustworthy first.
+          TAG="$INPUT_VERSION_TAG"
+          if [ -z "$TAG" ]; then
+            # Highest semver tag reachable from HEAD. NOT `git describe`: when
+            # two tags share a commit (v0.48.0 and v0.50.0 both sat on e1a4f67)
+            # describe returns whichever it likes — it picked the older one, so
+            # the badge disagreed with PyPI even though both tags were present.
+            TAG="$(git tag --sort=-v:refname --merged HEAD 2>/dev/null | grep -m1 '^v[0-9]' || echo '')"
+          fi
+          if [ -z "$TAG" ]; then
             TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
           fi
+          echo "Stamping tag: ${TAG:-<none>}"
 
           cat > _site/_version.json <<EOF
           {

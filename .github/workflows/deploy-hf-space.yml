@@ -61,7 +61,10 @@ jobs:
           if [[ "$TAG" == refs/* ]]; then
             # Not a tag push: show the latest release reachable from HEAD rather
             # than "dev", so a docs-only change does not blank the version badge.
-            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
+            # Highest semver reachable, not `git describe` — describe picks
+            # arbitrarily when two tags share a commit and can report the older
+            # one (v0.48.0 vs v0.50.0 on e1a4f67).
+            TAG="$(git tag --sort=-v:refname --merged HEAD 2>/dev/null | grep -m1 '^v[0-9]' || echo '')"
           fi
           SHA="${GITHUB_SHA:0:12}"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
