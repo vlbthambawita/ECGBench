@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from ecgbench.validation.checks import CHECK_REGISTRY
+from ecgbench.validation.checks import CHECK_REGISTRY, check_name_for_issue
 
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
@@ -40,10 +40,15 @@ class ValidationResult:
     original_df: pd.DataFrame  # all records, with 'is_valid' and 'quality_issues' columns
     clean_df: pd.DataFrame  # only valid records, quality columns dropped
     record_validations: list[RecordValidation]
-    summary: dict[str, int]  # check_name -> failed_count
+    summary: dict[str, int]  # check_name -> number of RECORDS that failed it
     total_records: int
     valid_records: int
     excluded_records: int
+    # check_name -> number of individual issues. Differs from `summary` for the
+    # per-lead checks, which emit one issue per affected lead: a record with 7
+    # bad leads is 1 record and 7 issues. Defaulted so callers that build a
+    # stub result (see cli/splits.py --skip-validation) need not supply it.
+    issue_summary: dict[str, int] = field(default_factory=dict)
 
 
 def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) -> np.ndarray:
@@ -207,6 +212,31 @@ def _config_to_dict(config: DatasetConfig) -> dict:
     return result
 
 
+def summarise_validations(
+    validations: list[RecordValidation],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Aggregate per-record validations into (records_failed, issues) per check.
+
+    Kept separate from :func:`validate_dataset` so the aggregation is testable
+    without touching signal files, and so a report can be rebuilt from stored
+    per-record issues without re-reading a single record.
+
+    A record is counted once per check no matter how many of its leads failed
+    that check; the second dict keeps the raw issue count.
+    """
+    records: dict[str, int] = {}
+    issues: dict[str, int] = {}
+    for v in validations:
+        seen: set[str] = set()
+        for issue in v.issues:
+            name = check_name_for_issue(issue)
+            issues[name] = issues.get(name, 0) + 1
+            seen.add(name)
+        for name in seen:
+            records[name] = records.get(name, 0) + 1
+    return records, issues
+
+
 def validate_dataset(
     data_path: Path,
     config: DatasetConfig,
@@ -312,12 +342,8 @@ def validate_dataset(
         lambda rid: ";".join(validation_map[rid].issues) if rid in validation_map else ""
     )
 
-    # Compute summary
-    summary: dict[str, int] = {}
-    for v in validations:
-        for issue in v.issues:
-            check_name = issue.split(":")[0].split("_lead_")[0]
-            summary[check_name] = summary.get(check_name, 0) + 1
+    # Compute summaries: records failed per check, and raw issue counts per check
+    summary, issue_summary = summarise_validations(validations)
 
     original_df = df.copy()
     clean_df = df[df["is_valid"]].drop(columns=["is_valid", "quality_issues"]).reset_index(
@@ -341,4 +367,5 @@ def validate_dataset(
         total_records=total,
         valid_records=valid,
         excluded_records=total - valid,
+        issue_summary=issue_summary,
     )

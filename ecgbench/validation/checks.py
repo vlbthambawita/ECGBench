@@ -88,6 +88,34 @@ def check_amplitude_outlier(signal: np.ndarray, config: DatasetConfig) -> list[s
     return issues
 
 
+# Issue-string prefixes that do not match the registry key of the check that
+# emits them. Anything not listed here is assumed to be "<check_name>:<detail>".
+# A per-lead check whose prefix is missing from this table aggregates under a
+# fabricated check name — that was issue #55, where `missing_lead_3` summarised
+# as a check called "missing".
+_ISSUE_PREFIX_TO_CHECK: tuple[tuple[str, str], ...] = (
+    ("missing_lead_", "missing_leads"),
+    ("flat_line_lead_", "flat_line"),
+    ("truncated:", "truncated_signal"),
+)
+
+
+def check_name_for_issue(issue: str) -> str:
+    """Map an issue string back to the name of the check that produced it.
+
+    The single source of truth for that mapping — the check functions above use
+    four different naming conventions, and the engine's summary, the validation
+    report and any backfill must all agree on how to undo them.
+
+    Engine-generated issues (``corrupt_header:``, ``load_error:``) and the
+    synthetic ``<check>_error:`` strings fall through to the generic rule.
+    """
+    for prefix, name in _ISSUE_PREFIX_TO_CHECK:
+        if issue.startswith(prefix):
+            return name
+    return issue.split(":", 1)[0]
+
+
 # Registry of all checks. corrupt_header is handled specially in the engine.
 CHECK_REGISTRY: dict[str, Callable] = {
     "missing_leads": check_missing_leads,

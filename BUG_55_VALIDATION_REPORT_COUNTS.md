@@ -1,8 +1,9 @@
 # Bug #55 — `validation_report.json` miscounts quality-check failures
 
 **Issue:** https://github.com/vlbthambawita/ECGBench/issues/55
-**Status:** open, not fixed. This document is the analysis and the fix procedure; no code
-has been changed.
+**Status:** **FIXED** on 2026-08-06 — code, tests, all 23 local reports and the 12
+published Hub reports. See §7 for what was done and how it deviated from the plan below.
+The analysis in §1–§6 is kept as written for the record.
 **Affected artefact:** `output/<slug>/validation_report.json` → `quality_checks[]`
 (and its upstream, `ValidationResult.summary`).
 **Blast radius:** every dataset ever validated. 14 of the 23 reports currently in
@@ -413,3 +414,86 @@ network call — correct, leave it alone; its report is corrected locally only.
   raising on a missing `issue_summary`. The `.get(..., default)` in Step 4 covers it,
   but keep the test.
 - **Do not change the issue strings** as part of this fix — see §4 for why.
+
+---
+
+## 7. Resolution (2026-08-06)
+
+### Code
+
+| File | Change |
+|---|---|
+| `ecgbench/validation/checks.py` | New `check_name_for_issue()` + `_ISSUE_PREFIX_TO_CHECK` — the single source of truth for issue-string → check-name. |
+| `ecgbench/validation/engine.py` | New `summarise_validations()` returning `(records_failed, issues)`; `validate_dataset` now calls it instead of the inline string surgery. `ValidationResult` gained `issue_summary` (appended last, defaulted, so the `--skip-validation` stub and existing fixtures still construct). `summary`'s comment now says *records*. |
+| `ecgbench/validation/report.py` | New `build_quality_checks()` + `describe_check()` (the latter also names a crashing check, `<name>_error`). `generate_report` delegates to them; the old `startswith` rescan is gone, so report generation is O(records) rather than O(records × checks). |
+| `ecgbench/validation/__init__.py` | Re-exports `check_name_for_issue`, `summarise_validations`, `build_quality_checks`. |
+
+The issue strings themselves were **not** touched, per §4 — no CSV changed, so no
+Croissant checksum and no `fold_digest` moved.
+
+### Tests
+
+`tests/test_report.py` is new (13 tests; `report.py` had none). `tests/test_validation.py`
+gained `TestCheckNameForIssue` and `TestSummariseValidations`. Notable ones beyond the
+plan in §5:
+
+- `test_every_check_in_the_registry_resolves_to_itself` — runs every `CHECK_REGISTRY`
+  entry over a signal engineered to trip all of them and asserts each emitted issue
+  resolves back to its own registry key. A future per-lead check that forgets to
+  register its prefix fails here rather than silently inventing a check name.
+- `test_records_failed_never_exceeds_removed` — the invariant the bug violated.
+
+`688 passed`, `ruff check` clean. `black --check` still reports drift in
+`validation/checks.py` and `engine.py`, but that is pre-existing (3 files on `main`,
+2 after this change — `report.py` became compliant); no reformatting was done.
+
+### Data
+
+All 23 `output/*/validation_report.json` backfilled from their own `excluded_records`
+(script in §5, run dry first, then `--apply`, originals backed up). 14 changed, 9 stopped
+reporting a check called `"missing"`. Verified afterwards:
+
+- Every invariant in §6 holds across all 23 (0 violations).
+- The 14 rewritten reports differ from their backups in `quality_checks` **only**.
+- A re-run of the backfill is a no-op, so it is idempotent.
+
+`output/cpsc_2018/validation_report.json` now reads `amplitude_outlier: 99 records /
+696 issues` and `missing_leads: 18 / 32` — the numbers named in the issue.
+
+### End-to-end smoke run
+
+`ecgbench splits --dataset ptbdb --data-path …/physionet.org/files/ptbdb/1.0.0/`
+(549 records, real wfdb signals — this is the only thing that exercises the
+`ProcessPoolExecutor` path the suite never runs). The fresh run's `quality_checks` and
+`excluded_records` are **identical** to the backfilled `output/ptbdb/`, confirming the
+backfill reproduces exactly what the fixed engine produces. `flat_line` reports
+`records_failed: 1, total_issues: 3` — the divergence working end to end. Both
+`folds.csv` files are byte-identical to the existing ones, and every Croissant `sha256`
+matches (only `datePublished` differs).
+
+### Hub
+
+12 reports pushed to `vlbthambawita/ECGBench`, reports only — no fold CSV or Croissant
+was re-uploaded, since none changed. `echonext` and `mimic_iv_ecg` were correctly
+skipped by the `publish_fold_csvs: false` guard, which this path re-implements because
+it bypasses `run_upload()`. All 21 Hub reports were then re-downloaded and compared
+against local: all match.
+
+**Deviation:** the intended single `create_commit` failed — the `ECGBench_data`
+fine-grained token has `repo.write` on the dataset and `whoami` succeeds, but the
+`/preupload/main` endpoint returns 401 for it. `upload_file` works, so the push went
+through as 12 single-file commits instead of one. Worth resolving before the next bulk
+upload: `run_upload()` uses `upload_file` per file, so it is unaffected today, but any
+future move to batched commits will hit this.
+
+### Not done / observed in passing
+
+- **Issue #55 was not closed** — no `gh` CLI in this environment.
+- `Backups/DATASET_ANALYSIS_PLAN.md:264` describes `quality_checks` as coming from
+  `ValidationResult.summary` as "records_failed". That is now true; it was not before.
+  Left unedited (it lives under `Backups/`).
+- 8 dataset directories have no `manifest.json` (`challenge2021`, `chapman_shaoxing`,
+  `ecg_arrhythmia`, `incartdb`, `ludb`, `mimic_iv_ecg_demo`, `ptbdb`, `ptbxl`) —
+  pre-existing, from runs predating `manifest.py`. Unrelated to this bug.
+- `brugada_huca`'s Hub report differs from local in `validated_at` only (a re-run
+  timestamp); all counts agree. Pre-existing, left alone.

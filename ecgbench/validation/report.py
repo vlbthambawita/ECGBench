@@ -28,6 +28,40 @@ _CHECK_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+def describe_check(check_name: str) -> str:
+    """Human-readable description for a check name appearing in the report."""
+    if check_name in _CHECK_DESCRIPTIONS:
+        return _CHECK_DESCRIPTIONS[check_name]
+    if check_name.endswith("_error"):
+        return f"Check '{check_name[: -len('_error')]}' raised an exception"
+    return ""
+
+
+def build_quality_checks(
+    records_failed: dict[str, int],
+    issues: dict[str, int] | None = None,
+) -> list[dict]:
+    """Build the report's ``quality_checks`` block from the two summaries.
+
+    ``records_failed`` counts records, ``issues`` counts individual issue
+    strings; they differ for the per-lead checks. The two do not sum to the
+    excluded-record total, because one record can fail several checks.
+
+    ``issues`` may be omitted for a result built without it (the
+    ``--skip-validation`` stub), in which case the record count is reused.
+    """
+    issues = issues or {}
+    return [
+        {
+            "check": name,
+            "description": describe_check(name),
+            "records_failed": records_failed[name],
+            "total_issues": issues.get(name, records_failed[name]),
+        }
+        for name in sorted(records_failed)
+    ]
+
+
 def generate_report(result: ValidationResult, config: DatasetConfig) -> dict:
     """Generate a JSON-serialisable validation report dict.
 
@@ -43,20 +77,7 @@ def generate_report(result: ValidationResult, config: DatasetConfig) -> dict:
     except ImportError:
         __version__ = "0.0.0.dev0"
 
-    # Build per-check stats
-    quality_checks = []
-    for check_name, failed_count in sorted(result.summary.items()):
-        # Count total issues (some checks produce multiple issues per record)
-        total_issues = sum(
-            len([i for i in v.issues if i.startswith(check_name)])
-            for v in result.record_validations
-        )
-        quality_checks.append({
-            "check": check_name,
-            "description": _CHECK_DESCRIPTIONS.get(check_name, ""),
-            "records_failed": failed_count,
-            "total_issues": total_issues,
-        })
+    quality_checks = build_quality_checks(result.summary, result.issue_summary)
 
     # Build excluded records list
     excluded_records = [
