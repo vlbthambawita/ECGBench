@@ -1,0 +1,190 @@
+# ECGBench Config: CPSC 2018 (China Physiological Signal Challenge 2018)
+# =======================================================================
+# Automatic identification of rhythm/morphology abnormalities in 12-lead ECGs
+# http://2018.icbeb.org/Challenge.html
+#
+# This is the 6,877-record PUBLIC TRAINING SET. The challenge's 2,954-record
+# test set was never released and the organisers say it will stay private.
+#
+# PROVENANCE. The official icbeb.org download links are dead, so the copy this
+# config was built and verified against is the Kaggle mirror
+# https://www.kaggle.com/datasets/physionet/china-physiological-signal-challenge-in-2018
+# — a flat Training_WFDB/ directory of 6,877 .hea/.mat pairs. That mirror is the
+# WFDB conversion the PhysioNet/CinC Challenge 2020 organisers prepared, NOT the
+# original MATLAB release: labels arrive as SNOMED-CT codes in the header #Dx
+# field rather than as the challenge's own REFERENCE.csv, and no REFERENCE.csv
+# ships. See the "labels" note below for what that costs.
+#
+# VERIFIED AGAINST PHYSIONET. All 6,877 .mat files are byte-identical to
+# training/cpsc_2018/ in PhysioNet's Challenge 2020 v1.0.2 release, whose whole
+# 13,761-file cpsc_2018 subtree checks out against that release's own published
+# SHA256SUMS.txt. So the waveforms here are the authentic ones even though the
+# mirror ships no checksums of its own.
+#
+# OVERLAP — READ BEFORE EVALUATING. Every record here is also in `challenge2020`
+# (as the cpsc_2018 cohort, same A#### names) and therefore in `challenge2021`.
+# Do not train on either challenge and evaluate on this dataset; it is the same
+# 6,877 recordings. See docs/_datasets/cpsc-2018-*.md for the verification.
+
+name: "CPSC 2018 (China Physiological Signal Challenge 2018)"
+slug: "cpsc_2018"
+# The source publishes no version number. 1.0.0 marks the original 2018 training
+# release, which has never been reissued.
+version: "1.0.0"
+url: "http://2018.icbeb.org/Challenge.html"
+# The official links are dead and the Kaggle mirror needs an account, so there is
+# no direct URL to auto-download from. Pass --data-path.
+download_url: null
+# CC BY 4.0 is the licence PhysioNet redistributes these exact files under, in
+# Challenge 2020 (LICENSE.txt in that release's root). The CPSC organisers state
+# only a citation requirement, which CC BY 4.0 also carries.
+license: "CC BY 4.0"
+description: >
+  The public training set of the China Physiological Signal Challenge 2018,
+  "Automatic identification of the rhythm/morphology abnormalities in 12-lead
+  ECGs": 6,877 twelve-lead recordings collected at 11 Chinese hospitals, sampled
+  at 500 Hz. Records are labelled with one normal and eight abnormal classes —
+  AF, first-degree AV block, LBBB, RBBB, PAC, PVC, ST depression and ST
+  elevation — and 476 of them carry more than one, so the task is multi-label.
+  Record length varies from 6 s to 144 s (median 12 s), which is unusual for a
+  12-lead resting dataset and means a fixed window has to be sized to the
+  shortest record. Age and sex are in the WFDB headers. No metadata file ships;
+  CPSC2018Splitter builds one from the headers on first run.
+citation: >
+  Liu, F., Liu, C., Zhao, L., Zhang, X., Wu, X., Xu, X., Liu, Y., Ma, C., Wei,
+  S., He, Z., Li, J., Kwee, N.Y. An open access database for evaluating the
+  algorithms of electrocardiogram rhythm and morphology abnormality detection.
+  Journal of Medical Imaging and Health Informatics 8(7), 1368-1373 (2018).
+doi: "10.1166/jmihi.2018.2442"
+
+creators:
+  - type: Organization
+    name: "International Conference on Biomedical Engineering and Biotechnology (ICBEB)"
+    url: "http://2018.icbeb.org/"
+  - type: Organization
+    name: "Shandong University"
+  - type: Organization
+    name: "Southeast University, Nanjing"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every one of the 82,524 signal lines in the 6,877 headers declares 1000/mV, so
+# wfdb's p_signal is already millivolts. Checked, not assumed.
+signal_unit_scale: 1.0
+leads: 12
+# Identical in all 6,877 records — standard order and standard capitalisation.
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+# Nominal only: 10 s is the modal length (2,416 of 6,877 records). Records are
+# NOT uniform — 3,000 to 72,000 samples, i.e. 6 s to 144 s, in 1,650 distinct
+# lengths. See the validation block and the window= note in the example script.
+duration_seconds: 10
+# One rate for the whole dataset — 500 Hz in all 6,877 headers.
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# The mirror ships no metadata file of any kind — no REFERENCE.csv, no CSV, no
+# RECORDS. CPSC2018Splitter builds one from the WFDB headers on first run, via
+# ecgbench.labels.cpsc_2018, and caches it here. The validation engine re-reads
+# it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# No patient identifiers ship. The challenge describes the set as 6,877
+# recordings from 11 hospitals and never claims repeats, and the Challenge 2020
+# organisers treat this cohort as one record per patient — but nothing in the
+# files proves it, so this stays null rather than pointing at the record id.
+patient_id_column: null
+
+signal_path_columns:
+  500: "signal_path"  # e.g. Training_WFDB/A0001.mat
+
+# --- Labels ---
+label_column: "dx"  # comma-separated SNOMED-CT codes from the #Dx header
+label_format: "comma_separated"
+
+stratification:
+  # CPSC2018Splitter stratifies on stratify_dx_abbreviation from the label
+  # loader: the globally rarest of the (up to three) classes each record carries.
+  # There is no primary diagnosis to use instead — see the labels note below.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The challenge's own train/test division is not reproducible: only the training
+# set was published, and the 300-record validation subset it was drawn from is
+# not identified in these files.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Deliberately EMPTY. Length genuinely varies — 1,650 distinct values between
+  # 3,000 and 72,000 samples — and check_truncated_signal returns [] for a rate
+  # with no entry, which is the intended way to disable a check that cannot
+  # apply. Any value here would fail thousands of legitimate records.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/cpsc_2018.py parses the headers and maps the nine
+# SNOMED-CT codes onto CPSC's own class names. There is no source CSV to point at
+# — the headers are the source, so labels do NOT depend on `ecgbench splits`
+# having generated the metadata cache first.
+#
+# What this conversion lost: CPSC's REFERENCE.csv distinguished First_label,
+# Second_label and Third_label, and the challenge's published per-class table
+# counts First_label only. The #Dx lists in these headers are sorted by CPSC
+# class index instead (verified: A0043 is documented as First=5 RBBB, Second=2
+# AF and its header reads "164889003,59118001" — AF first), so the primary
+# diagnosis is unrecoverable from the shipped files.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "CPSC 2018"
+    - "ICBEB"
+    - "arrhythmia"
+    - "multi-label classification"
+    - "12-lead"
+    - "SNOMED-CT"
+  rai_data_collection: >
+    Routine clinical 12-lead ECGs collected at 11 hospitals in China and released
+    by the challenge organisers as the public training set of the China
+    Physiological Signal Challenge 2018. Recordings were labelled by the
+    organising committee into one normal and eight abnormal classes, with up to
+    three labels per recording. The copy ECGBench reads is the WFDB conversion
+    prepared for the PhysioNet/CinC Challenge 2020, in which the class labels
+    were re-encoded as SNOMED-CT codes in the per-record header.
+  rai_data_biases: >
+    A single-country, single-vendor-era clinical cohort: all recordings come from
+    11 Chinese hospitals in or before 2018, so findings may not transfer to other
+    populations or acquisition hardware. Class balance is uneven, from 1,857
+    records carrying RBBB to 220 carrying ST elevation, and the nine classes are
+    not exhaustive — a recording labelled only "normal" is normal with respect to
+    these eight abnormalities, not clinically unremarkable. Record length ranges
+    from 6 s to 144 s and correlates with class (the premature-beat classes are
+    the longest recordings on average), so a model can learn duration instead of
+    morphology unless recordings are windowed. The whole dataset is also
+    contained in PhysioNet/CinC Challenge 2020 and 2021, so cross-dataset
+    evaluation against either leaks completely.
+  rai_personal_sensitive_info: >
+    De-identified by the original providers; no patient identifiers are
+    published, which also means recordings from one patient cannot be kept out of
+    separate folds if any exist. Age and sex are retained in the WFDB headers.
+    Age is absent in 5 records (A0608, A1549, A1876, A2299, A5990) and recorded
+    as the sentinel -1 in 4 more; sex is present in all 6,877 (3,699 male, 3,178
+    female). Note that this mirror retains exact ages above 89 for 125 records,
+    running up to 104, where PhysioNet's Challenge 2020 re-release rails every
+    age above 89 to 92 — changing the recorded value in 104 of those 125.

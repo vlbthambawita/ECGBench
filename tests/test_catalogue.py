@@ -301,13 +301,15 @@ class TestChallenge2021Relationships:
             assert related[slug].relation == "contains"
             assert related[slug].shares_records is True
 
-    def test_cpsc_overlap_is_not_claimed_as_verified(self, by_slug):
-        """It rests on a count match, not on a file comparison — say so."""
-        link = next(
-            x for x in by_slug["physionet-cinc-challenge-2021"].related
-            if x.slug == "cpsc-2018-china-physiological-signal-challenge-2018"
-        )
-        assert link.verified is False
+    def test_cpsc_overlap_is_verified_against_the_files(self, by_slug):
+        """All 6,877 .mat files were compared byte for byte — both years."""
+        for year in ("physionet-cinc-challenge-2020", "physionet-cinc-challenge-2021"):
+            link = next(
+                x for x in by_slug[year].related
+                if x.slug == "cpsc-2018-china-physiological-signal-challenge-2018"
+            )
+            assert link.verified is True, year
+            assert "byte-identical" in link.note, year
 
     def test_source_datasets_see_the_inverse_edge(self, by_slug):
         """A user starting from PTBDB must be warned too, via the derived inverse."""

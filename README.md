@@ -201,6 +201,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ecgrdvq` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — same as `ecgdmmld` and again the opposite of `ecgcipa`; its median beats agree too, and add VCGMAG, vx, vy, vz |
 | `echonext` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated anywhere in the release**; inferred from the signals, since Einthoven's `III = II − I` and the Goldberger relations hold while wrong pairings do not |
 | `staffiii` | **V1-V6 FIRST, then I, II, III** — 9 signals, no aVR/aVL/aVF (derivable from I and II, so the montage is 12-lead clinically but `signal[0]` is V1) |
+| `cpsc_2018` | I, II, III, aVR, aVL, aVF, V1-V6 — necessarily the same as `challenge2020`/`challenge2021`, whose `cpsc_2018` cohort is a byte-for-byte copy of these records |
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -315,6 +316,16 @@ differ: 2020 scored 27 classes and 2021 scored 30, and 631 of the 2020 headers l
 a SNOMED code twice inside their own `#Dx` field (`ecgbench.labels.challenge2020`
 deduplicates them, which is what makes the shipped data reproduce the official code
 table). Never train on one year and evaluate on the other.
+
+`cpsc_2018` is the CPSC-2018 public training set as a dataset in its own right —
+6,877 records, one rate (500 Hz) but **6 s to 144 s** record length, so `window=`
+is mandatory and must fit the 6 s minimum. Its nine classes are multi-label (476
+records carry two or three), and its **primary diagnosis is gone**: the WFDB copy
+everyone uses sorted each `#Dx` list by class index, so CPSC's original
+First/Second/Third labelling is unrecoverable and `stratify_dx` is a folds-only
+reduction. All 6,877 records are byte-identical to the `cpsc_2018` cohort of both
+challenge years, under the same `A####` names — so this is the fourth way into the
+same recordings. See `examples/load_cpsc_2018.py`.
 
 `norwegian_athlete_ecg` is the smallest dataset here — 28 records, one per elite
 Norwegian endurance athlete — and the only one whose **amplitudes are not

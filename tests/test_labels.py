@@ -4183,3 +4183,141 @@ class TestSTAFFIIILabels:
 
         with pytest.raises(LabelSourceMissingError, match="No NNNx.hea headers"):
             scan_records(tmp_path)
+
+
+class TestCPSC2018Labels:
+    """CPSC's nine classes, and the primary label the WFDB conversion destroyed."""
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        """No metadata file ships — not even REFERENCE.csv — so the headers are it."""
+        from ecgbench.config import load_config
+
+        spec = load_config("cpsc_2018").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None
+        assert spec.join_column == "record_name"
+
+    def test_class_table_is_cpscs_own_nine_not_the_challenge_tables(self):
+        """The mapping is closed at nine codes, with CPSC's names, not SNOMED's.
+
+        The packaged Challenge 2020 table calls 164884008 "ventricular ectopics"
+        and 426783006 "sinus rhythm"; CPSC calls them PVC and Normal. This is the
+        CPSC dataset, so CPSC's vocabulary wins — but the codes must still be the
+        challenge's, because they are what the shipped headers contain.
+        """
+        from ecgbench.labels.challenge2020 import load_dx_mapping
+        from ecgbench.labels.cpsc_2018 import CPSC_CLASSES
+
+        assert len(CPSC_CLASSES) == 9
+        assert [i for i, _, _, _ in CPSC_CLASSES] == list(range(1, 10))
+        assert len({c for _, c, _, _ in CPSC_CLASSES}) == 9
+        assert len({a for _, _, a, _ in CPSC_CLASSES}) == 9
+
+        by_abbr = {a: c for _, c, a, _ in CPSC_CLASSES}
+        assert by_abbr["PVC"] == "164884008"
+        assert by_abbr["NSR"] == "426783006"
+        assert by_abbr["RBBB"] == "59118001"
+
+        # Every code exists in the challenge table, under a different name.
+        challenge = load_dx_mapping()
+        for _, code, _, _ in CPSC_CLASSES:
+            assert code in challenge.index
+        assert challenge.loc["164884008", "abbreviation"] == "VEB"
+        assert challenge.loc["426783006", "abbreviation"] == "NSR"
+
+    def test_multi_label_records_expose_every_class(self):
+        """476 of 6,877 records carry more than one class; dx must keep them all."""
+        import pandas as pd
+
+        from ecgbench.labels.cpsc_2018 import attach_dx_columns
+
+        df = attach_dx_columns(pd.DataFrame({"dx": ["164889003,59118001", "426783006"]}))
+
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "dx_abbreviations"] == "AF,RBBB"
+        assert df.loc[0, "dx_names"] == "Atrial fibrillation|Right bundle branch block"
+        assert df.loc[0, "dx_class_indices"] == "2,5"
+        assert df.loc[1, "n_dx"] == 1
+        assert df.loc[1, "dx_abbreviations"] == "NSR"
+
+    def test_shipped_dx_order_is_a_class_index_sort_not_a_primary_diagnosis(self):
+        """A0043 is documented as First=5 (RBBB), Second=2 (AF); its header is AF-first.
+
+        This is why the single-label reduction is named ``stratify_dx`` and not
+        ``primary_dx``. If the first code were ever a diagnosis, this assertion
+        would be the thing that noticed.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.cpsc_2018 import attach_dx_columns
+
+        a0043 = attach_dx_columns(pd.DataFrame({"dx": ["164889003,59118001"]}))
+        assert a0043.loc[0, "dx_abbreviations"].split(",")[0] == "AF"
+        assert a0043.loc[0, "dx_class_indices"] == "2,5"  # ascending: it is a sort
+
+    def test_stratify_reduction_takes_the_rarest_class(self):
+        """The reduction is rarest-first, so the tail stays representable."""
+        import pandas as pd
+
+        from ecgbench.labels.cpsc_2018 import attach_dx_columns
+
+        # RBBB (3 records) is commoner than STE (1), so STE wins for the record
+        # carrying both.
+        df = attach_dx_columns(
+            pd.DataFrame({"dx": ["59118001,164931005", "59118001", "59118001"]})
+        )
+        assert df.loc[0, "stratify_dx_abbreviation"] == "STE"
+        assert df.loc[1, "stratify_dx_abbreviation"] == "RBBB"
+
+    def test_stratify_reduction_breaks_ties_deterministically(self):
+        """Equally rare classes resolve to the lowest CPSC class index, not scan order."""
+        import pandas as pd
+
+        from ecgbench.labels.cpsc_2018 import attach_dx_columns
+
+        forward = attach_dx_columns(pd.DataFrame({"dx": ["164889003,59118001"]}))
+        reversed_ = attach_dx_columns(pd.DataFrame({"dx": ["59118001,164889003"]}))
+
+        # AF is class 2, RBBB is class 5 — both appear once, so AF wins both ways.
+        assert forward.loc[0, "stratify_dx"] == "164889003"
+        assert reversed_.loc[0, "stratify_dx"] == "164889003"
+
+    def test_unknown_codes_are_kept_rather_than_dropped(self):
+        """The nine-class set is closed, so a tenth code must surface, not vanish."""
+        import pandas as pd
+
+        from ecgbench.labels.cpsc_2018 import UNMAPPED, attach_dx_columns
+
+        df = attach_dx_columns(pd.DataFrame({"dx": ["164889003,999999999"]}))
+
+        assert df.loc[0, "n_dx"] == 2
+        assert df.loc[0, "dx_abbreviations"] == f"AF,{UNMAPPED}"
+        # An unmapped code has no class index, so it drops out of that column only.
+        assert df.loc[0, "dx_class_indices"] == "2"
+
+    def test_age_sentinel_is_documented_and_not_silently_dropped(self):
+        """-1 means nothing and must stay distinguishable from a genuinely absent age."""
+        from ecgbench.labels.cpsc_2018 import AGE_SENTINELS
+
+        assert AGE_SENTINELS == ("-1",)
+
+    def test_missing_record_tree_names_the_directory_to_point_at(self):
+        """The mirror is flat Training_WFDB/, which is easy to point past."""
+        from pathlib import Path
+
+        from ecgbench.config import load_config
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.cpsc_2018 import RECORDS_DIR, scan_headers
+
+        assert RECORDS_DIR == "Training_WFDB"
+        with pytest.raises(LabelSourceMissingError, match=RECORDS_DIR):
+            scan_headers(Path("/nonexistent/cpsc_2018"))
+
+        # The config's own paths are relative to the same root.
+        assert load_config("cpsc_2018").signal_path_columns == {500: "signal_path"}
+
+    def test_variable_length_dataset_disables_the_truncation_check(self):
+        """6 s to 144 s in 1,650 distinct lengths — expected_samples must stay empty."""
+        from ecgbench.config import load_config
+
+        assert load_config("cpsc_2018").validation.expected_samples == {}

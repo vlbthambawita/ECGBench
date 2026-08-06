@@ -357,6 +357,10 @@ class TestShippedLeadNames:
             # 0.13-0.19 against a 0.92 signal SD, where wrong pairings give 1.06+.
             ("echonext", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Identical in all 6,877 headers — and necessarily the same as
+            # challenge2020/2021, whose cpsc_2018 cohort is a byte-for-byte copy.
+            ("cpsc_2018", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

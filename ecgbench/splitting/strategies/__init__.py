@@ -5,6 +5,7 @@ from . import (  # noqa: F401
     challenge2020,
     challenge2021,
     chapman,
+    cpsc_2018,
     ecg_arrhythmia,
     ecgcipa,
     ecgdmmld,

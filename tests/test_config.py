@@ -660,3 +660,38 @@ def test_load_staffiii_config():
     assert "corrupt_header" in config.validation.checks
     # ODC-By: the fold CSVs are publishable.
     assert config.publish_fold_csvs is True
+
+
+def test_load_cpsc_2018_config():
+    """CPSC 2018: multi-label, variable length, contained whole in both challenges."""
+    config = load_config("cpsc_2018")
+    assert config.slug == "cpsc_2018"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # All 82,524 signal lines declare gain 1000/mV, so wfdb already yields mV.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Standard order and standard capitalisation in all 6,877 records.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    # No metadata ships (not even REFERENCE.csv): CPSC2018Splitter generates it.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # No patient identifiers are published.
+    assert config.patient_id_column is None
+    assert config.label_column == "dx"
+    assert config.label_format == "comma_separated"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # Records run 3,000 to 72,000 samples (6-144 s) in 1,650 distinct lengths,
+    # so any entry here would fail thousands of legitimate records.
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    assert config.validation.expected_samples == {}
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # CC BY 4.0 (the licence PhysioNet redistributes these exact files under).
+    assert config.publish_fold_csvs is True

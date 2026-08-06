@@ -2705,3 +2705,124 @@ class TestSTAFFIIISplitter:
 
         with pytest.raises(ValueError, match="stratify_class"):
             get_splitter("staffiii").get_stratification_labels(df, config)
+
+
+class TestCPSC2018Splitter:
+    """CPSC 2018 ships a flat record tree and no metadata file of any kind."""
+
+    def _header(self, name, dx, nsamp=5000, age="54", sex="Female"):
+        """The Kaggle mirror's header dialect: '16+24', '1000/mV', no space after '#'."""
+        return (
+            f"{name} 12 500 {nsamp} 12-May-2020 12:33:59\n"
+            + "".join(
+                f"{name}.mat 16+24 1000/mV 16 0 0 0 0 {lead}\n"
+                for lead in ("I", "II", "III", "aVR", "aVL", "aVF",
+                             "V1", "V2", "V3", "V4", "V5", "V6")
+            )
+            + f"#Age: {age}\n#Sex: {sex}\n#Dx: {dx}\n"
+            "#Rx: Unknown\n#Hx: Unknown\n#Sx: Unknown\n"
+        )
+
+    def _tree(self, tmp_path, records, nsamp=5000):
+        d = tmp_path / "Training_WFDB"
+        d.mkdir(parents=True, exist_ok=True)
+        for name, dx in records:
+            (d / f"{name}.hea").write_text(
+                self._header(name, dx, nsamp=nsamp), encoding="utf-8"
+            )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="cpsc_2018", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={500: "signal_path"}, default_sampling_rate=500,
+            label_column="dx", leads=12,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.cpsc_2018 import CPSC2018Splitter
+
+        assert isinstance(get_splitter("cpsc_2018"), CPSC2018Splitter)
+
+    def test_builds_signal_paths_from_a_flat_tree_and_caches_csv(
+        self, sample_config, tmp_path
+    ):
+        """No cohort subdirectories here, unlike the challenge releases."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("A0001", "59118001"), ("A0002", "426783006")])
+        df = get_splitter("cpsc_2018").load_metadata(tree, config)
+
+        paths = dict(zip(df["record_name"], df["signal_path"]))
+        assert paths["A0001"] == "Training_WFDB/A0001.mat"
+        assert paths["A0002"] == "Training_WFDB/A0002.mat"
+        # Written to disk because validate_dataset re-reads it rather than
+        # reusing this frame.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_metadata_exposes_all_nine_classes_and_the_duration(
+        self, sample_config, tmp_path
+    ):
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path, [("A0043", "164889003,59118001")], nsamp=72000
+        )
+        row = get_splitter("cpsc_2018").load_metadata(tree, config).iloc[0]
+
+        assert row["dx"] == "164889003,59118001"
+        assert row["n_dx"] == 2
+        assert row["dx_abbreviations"] == "AF,RBBB"
+        # Length varies by a factor of 24, so it is exposed per record.
+        assert row["duration_seconds"] == 144.0
+
+    def test_stratification_takes_the_rarest_class_not_the_first(
+        self, sample_config, tmp_path
+    ):
+        """The shipped #Dx order is a class-index sort, so it must not be used."""
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, (
+            [(f"A{i:04d}", "164889003") for i in range(12)]
+            + [("A9999", "164889003,164931005")]
+        ))
+        df = get_splitter("cpsc_2018").load_metadata(tree, config)
+
+        strat = dict(zip(df["record_name"], df["stratify_dx_abbreviation"]))
+        assert strat["A9999"] == "STE"     # rarest, though AF is listed first
+        assert strat["A0000"] == "AF"
+
+    def test_rare_classes_are_not_pooled(self, sample_config, tmp_path):
+        """Unlike Challenge 2020: the smallest real class here has 220 records.
+
+        Pooling would silently rename a genuine class, so the splitter must
+        leave every class it is given intact.
+        """
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, (
+            [(f"A{i:04d}", "164889003") for i in range(12)]
+            + [("A9999", "164931005")]
+        ))
+        splitter = get_splitter("cpsc_2018")
+        counts = splitter.get_stratification_labels(
+            splitter.load_metadata(tree, config), config
+        ).value_counts().to_dict()
+
+        assert counts == {"AF": 12, "STE": 1}
+        assert "OTHER" not in counts
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        import pandas as pd
+
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("cpsc_2018").get_stratification_labels(
+                pd.DataFrame({"record_name": ["A0001"]}), self._config(sample_config)
+            )
+
+    def test_missing_record_tree_raises(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="Training_WFDB"):
+            get_splitter("cpsc_2018").load_metadata(
+                tmp_path, self._config(sample_config)
+            )

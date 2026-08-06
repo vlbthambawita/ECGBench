@@ -96,6 +96,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     from ecgbench.labels import (
         challenge2020,
         challenge2021,
+        cpsc_2018,
         ecgcipa,
         ecgdmmld,
         ecgrdvq,
@@ -120,6 +121,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "norwegian_athlete_ecg": norwegian_athlete_ecg.load_labels,
         "challenge2020": challenge2020.load_labels,
         "challenge2021": challenge2021.load_labels,
+        "cpsc_2018": cpsc_2018.load_labels,
         "incartdb": incartdb.load_labels,
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,
         "mimic_iv_ecg": mimic_iv_ecg.load_labels,

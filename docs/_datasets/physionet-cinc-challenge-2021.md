@@ -93,14 +93,16 @@ related:
   - slug: "cpsc-2018-china-physiological-signal-challenge-2018"
     relation: "contains"
     shares_records: true
-    verified: false
+    verified: true
     note: >
-      The `cpsc_2018` cohort holds 6,877 records, exactly the size of the CPSC-2018
-      public training set, renamed `A0001`-`A6877`; `cpsc_2018_extra` adds 3,453
-      `Q####` records that CPSC-2018 did not release publicly. Assume the 6,877
-      overlap completely and do not evaluate on CPSC-2018 after training here. The
-      count agreement is strong evidence but was not checked against CPSC-2018 files —
-      unlike the other four cohort overlaps on this page.
+      The `cpsc_2018` cohort is the entire CPSC-2018 public training set — 6,877
+      records under CPSC's own `A0001`-`A6877` names, **not** renamed as the PTB-XL,
+      PTB and INCART cohorts were. Verified from the files: all 6,877 names match and
+      all 6,877 `.mat` waveforms are **byte-identical** to the CPSC-2018 release
+      ECGBench catalogues, with 0 records unique to either side. `cpsc_2018_extra`
+      adds 3,453 `Q####` records that CPSC-2018 did not release publicly and that
+      ECGBench does not catalogue separately. Do not evaluate on CPSC-2018 after
+      training here; it is the same recordings.
 
 sections:
   - type: description
