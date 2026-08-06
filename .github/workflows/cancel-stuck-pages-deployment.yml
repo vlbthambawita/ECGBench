@@ -1,0 +1,39 @@
+name: Cancel stuck Pages deployment
+
+# Utility, run by hand. GitHub Pages serves one deployment at a time, and a
+# deployment that hangs server-side holds that lock: every later run then fails
+# with either a 10-minute "deployment_queued" timeout or
+#
+#   Deployment request failed for <new sha> due to in progress deployment.
+#   Please cancel <stuck sha> first or wait for it to complete.
+#
+# Cancelling the client side (re-running the job, cancelling the run) does not
+# clear the server-side record — only this endpoint does. The deployment id is
+# the `pages_build_version` from that error, i.e. the stuck commit's SHA.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: 'Stuck deployment id — the full commit SHA named in the error'
+        required: true
+        type: string
+
+permissions:
+  pages: write  # POST /repos/:owner/:repo/pages/deployments/:id/cancel
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel the stuck deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        run: |
+          echo "Cancelling Pages deployment ${DEPLOYMENT_ID} in ${GITHUB_REPOSITORY}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/pages/deployments/${DEPLOYMENT_ID}/cancel"
+          echo "Cancelled. Re-run 'Deploy to GitHub Pages' to publish the newest commit."
