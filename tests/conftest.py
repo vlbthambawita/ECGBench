@@ -441,6 +441,35 @@ def tmp_csv_signal_dataset(tmp_path) -> Path:
 
 
 @pytest.fixture
+def tmp_hdf5_signal_dataset(tmp_path) -> Path:
+    """A loadable hdf5-format dataset: 5 records of 12 x 5000, plus a fold tree.
+
+    The layout `sph` ships: one file per record holding a single root dataset
+    named ``ecg``, shape **(leads, samples)** — already the orientation ECGBench
+    returns, unlike the csv and npy fixtures. Sample i of lead j holds
+    ``j * 100000 + i``, so a window's contents identify exactly which samples were
+    read and a transposed, shifted or truncated read cannot pass by accident.
+    """
+    h5py = pytest.importorskip("h5py")
+
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    for r in range(5):
+        rid = f"rec_{r}"
+        data = np.empty((12, 5000), dtype=np.float32)
+        for lead in range(12):
+            data[lead, :] = lead * 100_000 + np.arange(5000)
+        with h5py.File(records / f"{rid}.h5", "w") as handle:
+            handle.create_dataset("ecg", data=data)
+        record_ids.append(rid)
+        paths.append(f"records/{rid}.h5")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path
+
+
+@pytest.fixture
 def tmp_wfdb_signal_dataset(tmp_path) -> Path:
     """A loadable wfdb-format dataset: 5 records of 12 x 5000, plus a fold tree.
 

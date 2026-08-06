@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -361,6 +362,11 @@ class TestShippedLeadNames:
             # challenge2020/2021, whose cpsc_2018 cohort is a byte-for-byte copy.
             ("cpsc_2018", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # The HDF5 arrays carry no lead names, so this order was derived from
+            # the signals: III = II - I, aVR = -(I+II)/2, aVL = I - II/2 and
+            # aVF = II - I/2 all hold to under 2% relative RMS error.
+            ("sph", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):
@@ -373,6 +379,38 @@ class TestShippedLeadNames:
         assert names[6:] == chest
         # leads is a count of what lead_names lists, not an assumption of 12.
         assert len(names) == config.leads
+
+    def test_ningbo_iva_stores_its_leads_in_alphabetical_order(self):
+        """Ningbo IVA sorts the CSV columns alphabetically, so signal[0] is aVF.
+
+        The header row reads ``aVF,aVL,aVR,I,II,III,V1..V6`` — the augmented leads
+        first and the limb leads third, fourth and fifth. It cannot go in the
+        parametrised table above, which assumes ``names[:6]`` are I/II/III then
+        aVR/aVL/aVF. Every index a reader would reach for by habit is wrong here:
+        ``signal[0]`` is aVF rather than lead I, and ``signal[4]`` is lead II
+        rather than aVL.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("ningbo_iva")
+        assert config.leads == 12
+        assert config.lead_names == ["aVF", "aVL", "aVR", "I", "II", "III",
+                                     "V1", "V2", "V3", "V4", "V5", "V6"]
+        assert len(config.lead_names) == config.leads
+        # Alphabetical, case-insensitively, for the nine non-precordial-ordered
+        # names — which is what makes the order predictable but non-standard.
+        assert config.lead_names[:6] == sorted(
+            config.lead_names[:6], key=lambda n: n.lower()
+        )
+        # The two indices most likely to be assumed.
+        assert config.lead_names[0] != "I"
+        assert config.lead_names[4] != "aVL"
+        # All twelve standard leads are present, just permuted — so leads= can
+        # recover any of them by name.
+        assert {n.upper() for n in config.lead_names} == {
+            "I", "II", "III", "AVR", "AVL", "AVF",
+            "V1", "V2", "V3", "V4", "V5", "V6",
+        }
 
     def test_staffiii_stores_nine_leads_with_the_precordials_first(self):
         """STAFF III inverts the limb-then-chest order every other dataset uses.
@@ -598,6 +636,100 @@ class TestWindowedLoading:
         message = str(excinfo.value)
         assert "rec_" in message  # names the record
         assert "5000 samples" in message  # and its real length
+
+    # --- hdf5 format ---
+
+    def test_hdf5_window_reads_the_requested_samples(
+        self, tmp_hdf5_signal_dataset, sample_config
+    ):
+        """h5py slices on read, so the window must land on the right samples."""
+        config_overrides = {"signal_format": "hdf5"}
+        full = self._ds(
+            tmp_hdf5_signal_dataset, sample_config, config_overrides=config_overrides
+        )[0]["signal"]
+        assert tuple(full.shape) == (12, 5000)
+        # Stored (leads, samples) already, so a stray transpose would show here.
+        assert full[0, 0].item() == 0
+        assert full[3, 7].item() == 3 * 100_000 + 7
+
+        second = self._ds(
+            tmp_hdf5_signal_dataset,
+            sample_config,
+            config_overrides=config_overrides,
+            window=(2500, 2500),
+        )[0]["signal"]
+
+        assert tuple(second.shape) == (12, 2500)
+        assert second[0, 0].item() == 2500
+        assert second[3, 0].item() == 3 * 100_000 + 2500
+        assert torch.equal(second, full[:, 2500:5000])
+
+    def test_hdf5_window_to_the_end(self, tmp_hdf5_signal_dataset, sample_config):
+        ds = self._ds(
+            tmp_hdf5_signal_dataset,
+            sample_config,
+            config_overrides={"signal_format": "hdf5"},
+            window=(4000, None),
+        )
+        assert tuple(ds[0]["signal"].shape) == (12, 1000)
+
+    def test_hdf5_window_past_the_end_raises_a_useful_error(
+        self, tmp_hdf5_signal_dataset, sample_config
+    ):
+        from ecgbench.dataset import WindowOutOfRangeError
+
+        ds = self._ds(
+            tmp_hdf5_signal_dataset,
+            sample_config,
+            config_overrides={"signal_format": "hdf5"},
+            window=(4000, 2000),
+        )
+        with pytest.raises(WindowOutOfRangeError) as excinfo:
+            ds[0]
+        message = str(excinfo.value)
+        assert "rec_" in message  # names the record
+        assert "5000 samples" in message  # and its real length
+
+    def test_hdf5_explicit_dataset_key_and_its_failure_modes(self, tmp_hdf5_signal_dataset):
+        """``<file>.h5:<dataset>`` is how a multi-dataset file gets disambiguated."""
+        h5py = pytest.importorskip("h5py")
+
+        from ecgbench.dataset import _load_signal, _parse_hdf5_ref
+
+        path = str(tmp_hdf5_signal_dataset / "records" / "rec_0.h5")
+        implicit = _load_signal(path, "hdf5")
+        assert np.array_equal(_load_signal(f"{path}:ecg", "hdf5"), implicit)
+
+        # A colon inside a directory name is not a key.
+        assert _parse_hdf5_ref("/a:b/c.h5") == ("/a:b/c.h5", None)
+        assert _parse_hdf5_ref(f"{path}:ecg") == (path, "ecg")
+
+        with pytest.raises(ValueError, match="not in the file"):
+            _load_signal(f"{path}:missing", "hdf5")
+
+        # Two root datasets and no key: refuse rather than guess.
+        ambiguous = tmp_hdf5_signal_dataset / "two.h5"
+        with h5py.File(ambiguous, "w") as handle:
+            handle.create_dataset("ecg", data=np.zeros((12, 10), dtype=np.float32))
+            handle.create_dataset("other", data=np.zeros((12, 10), dtype=np.float32))
+        with pytest.raises(ValueError, match="ambiguous"):
+            _load_signal(str(ambiguous), "hdf5")
+        assert _load_signal(f"{ambiguous}:ecg", "hdf5").shape == (12, 10)
+
+    def test_hdf5_validation_engine_agrees_with_the_dataset_reader(
+        self, tmp_hdf5_signal_dataset
+    ):
+        """The two _load_signal copies must not drift — validation has its own."""
+        from ecgbench.dataset import _load_signal
+        from ecgbench.validation.engine import _load_signal as validation_load
+
+        pytest.importorskip("h5py")
+        path = str(tmp_hdf5_signal_dataset / "records" / "rec_0.h5")
+        assert np.array_equal(validation_load(path, "hdf5"), _load_signal(path, "hdf5"))
+        # And the unit scale is applied the same way on both sides.
+        assert np.allclose(
+            validation_load(path, "hdf5", 0.001), _load_signal(path, "hdf5", 0.001)
+        )
 
     # --- composition and picklability ---
 

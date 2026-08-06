@@ -1,0 +1,197 @@
+# ECGBench Config: SPH (Shandong Provincial Hospital ECG Database)
+# =================================================================
+# A large-scale multi-label 12-lead ECG database with standardized diagnostic
+# statements — 25,770 records from 24,666 patients, collected 2019-08 to 2020-08.
+# https://doi.org/10.6084/m9.figshare.c.5779802.v1
+#
+# FIRST HDF5 DATASET IN ECGBENCH. Every record is one .h5 file holding a single
+# root dataset named `ecg`, shape (12, N), float16, already in millivolts. That
+# is why `ecgbench/dataset.py` and `ecgbench/validation/engine.py` grew an `hdf5`
+# branch; both need `h5py` (pip install h5py). The array is stored in the
+# orientation ECGBench returns — (leads, samples) — so unlike the csv and npy
+# readers, the hdf5 one does not transpose.
+#
+# THE ARCHIVE NAME LIES. `records.tar.gz` is an *uncompressed* POSIX tar. Extract
+# it with `tar -xf records.tar.gz`; `tar -xzf` fails with "not in gzip format".
+#
+# NO SIGNAL-PATH COLUMN SHIPS. metadata.csv gives ECG_ID and leaves the file
+# location to convention, so SPHSplitter generates `records/<ECG_ID>.h5` into
+# ecgbench_metadata.csv on first run. The validation engine re-reads that file
+# from disk, so the dataset root must be writable.
+#
+# NO CHECKSUMS SHIP. The figshare/Mendeley release publishes no SHA256SUMS or
+# md5sums, so a local copy cannot be checked against the provider. What was
+# checked instead, on the copy this config was built against: all 25,770 HDF5
+# arrays have shape (12, N) with N equal to the metadata's own `N` column, all
+# 25,770 metadata IDs have a file and no file lacks a metadata row, and every AHA
+# code in every record resolves against code.csv.
+
+name: "SPH (Shandong Provincial Hospital ECG Database)"
+slug: "sph"
+# The Mendeley record is at v2 and figshare's collection at v1; neither release
+# carries an internal version string, and the paper describes this content.
+version: "1.0.0"
+url: "https://doi.org/10.6084/m9.figshare.c.5779802.v1"
+# figshare serves the four files (metadata.csv, code.csv, records.tar.gz and the
+# two PDFs) as separate downloads rather than one archive, and the 2.3 GB tar has
+# no stable direct URL. Pass --data-path.
+download_url: null
+license: "CC BY 4.0"
+description: >
+  25,770 twelve-lead clinical ECGs from 24,666 patients recorded at Shandong
+  Provincial Hospital between August 2019 and August 2020, sampled at 500 Hz and
+  stored one HDF5 array per record. Its distinguishing feature is the labelling:
+  diagnoses are AHA/ACC/HRS standardised statements — 44 primary statements in 11
+  categories plus 15 modifiers — rather than a dataset-specific vocabulary, so a
+  record's ground truth reads as "60+310;147" (frequent ventricular premature
+  complexes, T-wave abnormality). 3,724 records (14.45%) carry more than one
+  statement and 46.05% carry an abnormality. Record length varies from 10 s to
+  56 s, and the metadata's N column gives it exactly, so a fixed window has to be
+  sized to the shortest record. Age (18-95) and sex are complete for every row.
+citation: >
+  Liu, H., Chen, D., Chen, D., Zhang, X., Li, H., Bian, L., Shu, M., Wang, Y. A
+  large-scale multi-label 12-lead electrocardiogram database with standardized
+  diagnostic statements. Scientific Data 9, 272 (2022).
+doi: "10.1038/s41597-022-01403-5"
+
+creators:
+  - type: Organization
+    name: "Shandong Provincial Hospital, Shandong First Medical University"
+  - type: Organization
+    name: "Shandong Artificial Intelligence Institute, Qilu University of Technology"
+
+# --- Signal Properties ---
+signal_format: "hdf5"
+# float16 arrays already in millivolts, per the paper's Data Records section and
+# confirmed against the files: median per-record peak amplitude is 1.74 mV and
+# the median lead-II R amplitude 0.82 mV. No scaling.
+signal_unit_scale: 1.0
+leads: 12
+# Standard order and standard capitalisation. Verified from the arrays rather
+# than the paper: III = II - I, aVR = -(I+II)/2, aVL = I - II/2 and aVF = II - I/2
+# all hold to under 2% relative RMS error over 30 sampled records.
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+# Nominal only: 10 s is the modal length (18,842 of 25,770 records). Records are
+# NOT uniform — 5,000 to 28,000 samples, i.e. 10 s to 56 s, in 39 distinct
+# lengths. See the validation block and the window= note in the example script.
+duration_seconds: 10
+# One rate for the whole release — 500 Hz for all 25,770 records.
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# The shipped metadata.csv has no signal-path column and its columns are
+# TitleCase. SPHSplitter normalises it — snake_case names, the decoded AHA
+# columns, and a real signal_path — into this generated file on first run, so the
+# validation engine resolves the same paths the splitter does. The dataset root
+# must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "ecg_id"
+# 24,666 patients over 25,770 records: 23,600 contributed one, 1,033 two, 29
+# three, 3 four and 1 five. Grouping is mandatory — 1,104 records would otherwise
+# be able to put the same patient in both train and test.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  500: "signal_path"  # e.g. records/A00001.h5
+
+# --- Labels ---
+label_column: "aha_primary_codes"  # ';'-separated AHA primary statement codes
+# The vocabulary here is "several statements per record". `comma_separated` is the
+# closest of the four label_format values, but note the actual separator is ';' —
+# four of the AHA descriptions contain a comma, so a comma-joined list could not
+# be split back apart.
+label_format: "comma_separated"
+
+stratification:
+  # SPHSplitter stratifies on stratify_code from the label loader: the globally
+  # rarest of the 44 AHA primary codes each record carries, with the 9 codes below
+  # ten records pooled into OTHER. There is no primary diagnosis to use instead —
+  # see the labels note below.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The paper defines no train/test division; it describes the whole release.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Deliberately EMPTY. Length genuinely varies — 39 distinct values between
+  # 5,000 and 28,000 samples — and check_truncated_signal returns [] for a rate
+  # with no entry, which is the intended way to disable a check that cannot
+  # apply. Any value here would fail thousands of legitimate records. The exact
+  # per-record length is in the metadata's `n_samples` column instead, and it
+  # agrees with the HDF5 arrays for all 25,770 records.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Expect ~323 records (1.3%) to fail amplitude_outlier and land in original/
+  # but not clean/. That is the intended outcome, not a mis-set range: the median
+  # per-record peak is 1.74 mV, so a record reaching beyond 10 mV has a railed or
+  # artefact-dominated lead. 88 records exceed 32 mV and one reaches 1590 mV.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/sph.py joins metadata.csv against the code.csv
+# codebook and parses the AHA_Code grammar — ';'-separated statements, each one
+# primary code plus '+'-joined modifiers. Both source files ship, so labels do
+# NOT depend on `ecgbench splits` having generated the metadata cache first.
+#
+# Multi-label with no primary diagnosis. The statement order is nearly a numeric
+# sort of the primary code (24,961 of 25,770 records ascending, and 2,915 of the
+# 3,724 multi-statement ones), so the first statement is neither reliably a sort
+# artefact nor documented as a ranking — nothing in the release ranks statements.
+# The single-label reduction is therefore named `stratify_code`, not
+# `primary_code`, and is for stratification only. Train on `aha_primary_codes`.
+labels:
+  source_csv: null
+  join_column: "ecg_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "SPH"
+    - "Shandong Provincial Hospital"
+    - "AHA/ACC/HRS"
+    - "multi-label classification"
+    - "12-lead"
+    - "HDF5"
+  rai_data_collection: >
+    Routine clinical 12-lead ECGs recorded at Shandong Provincial Hospital,
+    Jinan, China between August 2019 and August 2020, released by the hospital
+    together with the Shandong Artificial Intelligence Institute. Each recording
+    was interpreted by cardiologists and coded with AHA/ACC/HRS standardised
+    diagnostic statements — 44 primary statements across 11 categories plus 15
+    modifiers — so a recording may carry several statements. Waveforms are
+    distributed as one HDF5 array per record at 16-bit precision, in millivolts.
+  rai_data_biases: >
+    A single-centre, single-country clinical cohort: every recording comes from
+    one Chinese tertiary hospital within a thirteen-month window, so findings may
+    not transfer to other populations or acquisition hardware. Only adults are
+    included — ages run 18 to 95 — so nothing here supports paediatric use. Class
+    balance is extreme: 13,903 records (53.95%) are coded Normal ECG and nothing
+    else, while 20 of the 44 primary statements appear in fewer than 100 records
+    and three appear in three. A recording coded only Normal is normal with
+    respect to these 44 statements, not clinically unremarkable. Record length
+    ranges from 10 s to 56 s, so a model can learn duration instead of morphology
+    unless recordings are windowed. Because 1,066 patients contributed more than
+    one recording, any split that ignores patient identity leaks; ECGBench's
+    folds are grouped on patient_id.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. Record and patient identifiers
+    are opaque surrogates (A00001, S00001) rather than hospital numbers, and
+    patient identity is published only as that surrogate, which is what makes
+    patient-grouped folds possible. Age in whole years and sex are retained for
+    every record, along with the acquisition date to day resolution — the
+    combination of date, age and sex is a quasi-identifier, so treat the metadata
+    as pseudonymised rather than anonymous. No names, no free-text reports and no
+    hospital identifiers ship.

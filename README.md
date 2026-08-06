@@ -32,6 +32,15 @@ pip install ecgbench
 pip install ecgbench[torch]
 ```
 
+### With HDF5 datasets
+
+`sph` stores one HDF5 array per record, which needs `h5py`. It is the only
+dataset that does, so the dependency is its own extra:
+
+```bash
+pip install ecgbench[hdf5]
+```
+
 ### With everything
 
 ```bash
@@ -159,7 +168,9 @@ Each dataset exposes its own fields — SCP codes plus diagnostic super/subclass
 for PTB-XL, SNOMED-CT codes for `ecg_arrhythmia`, rhythm/beat annotations and
 eleven automated measurements for `chapman_shaoxing`, free-text machine reports
 plus nine interval/axis measurements for `mimic_iv_ecg`, reference beat counts for
-`incartdb`, protocol phase and balloon-occlusion timings for `staffiii`. A dataset
+`incartdb`, protocol phase and balloon-occlusion timings for `staffiii`,
+AHA/ACC/HRS statements with their modifiers for `sph`, the ablation-confirmed
+arrhythmia origin for `ningbo_iva`. A dataset
 that genuinely has none (`mimic_iv_ecg_demo`) raises
 `LabelsUnavailableError` naming where labels could come from, rather than
 returning empty columns.
@@ -202,6 +213,8 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `echonext` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated anywhere in the release**; inferred from the signals, since Einthoven's `III = II − I` and the Goldberger relations hold while wrong pairings do not |
 | `staffiii` | **V1-V6 FIRST, then I, II, III** — 9 signals, no aVR/aVL/aVF (derivable from I and II, so the montage is 12-lead clinically but `signal[0]` is V1) |
 | `cpsc_2018` | I, II, III, aVR, aVL, aVF, V1-V6 — necessarily the same as `challenge2020`/`challenge2021`, whose `cpsc_2018` cohort is a byte-for-byte copy of these records |
+| `sph` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated in the HDF5 arrays**; derived from the signals, since `III = II − I` and the Goldberger relations hold to under 2% relative RMS error |
+| `ningbo_iva` | **aVF, aVL, aVR, I, II, III**, V1-V6 — the columns are sorted **alphabetically**, so `signal[0]` is aVF and lead I is `signal[3]` |
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -222,6 +235,16 @@ ECGDataset("echonext", units="uV", ...)
 Every other dataset declares `signal_units: mV` (the default) and is unaffected.
 `amplitude_outlier` validation is skipped for non-mV sources, since its thresholds
 are millivolts.
+
+**One dataset's millivolt scale is an estimate rather than a declared value.**
+`ningbo_iva` ships bare integers, and neither its paper nor figshare states a gain
+— the paper's own figures plot the raw counts. Its `signal_unit_scale` of
+`6.1035e-05` (1 mV = 2¹⁴ counts) was measured by comparing median lead-II R-peak
+amplitude, sex for sex, against `sph`, whose samples are millivolts by
+declaration; the two sexes bracket it at 14,029 and 17,111 counts/mV. **Waveform
+shape is exact; absolute calibration is good to roughly ±20%.** Divide the
+millivolt values by `6.1035e-05` to recover the shipped integers if you would
+rather calibrate them yourself.
 
 `signal[4]` is aVL in most of them and aVF in both MIMIC datasets, so slicing by index across
 datasets silently crosses two leads. Matching is case-insensitive — `leads=["aVL"]`
@@ -326,6 +349,29 @@ First/Second/Third labelling is unrecoverable and `stratify_dx` is a folds-only
 reduction. All 6,877 records are byte-identical to the `cpsc_2018` cohort of both
 challenge years, under the same `A####` names — so this is the fourth way into the
 same recordings. See `examples/load_cpsc_2018.py`.
+
+`sph` is the largest **single-source** dataset here — 25,770 records from 24,666
+patients at one Chinese hospital — and the only one stored as **HDF5** (`pip install
+ecgbench[hdf5]`), one `(12, N)` float16 array per record, already in millivolts. Its
+labels are AHA/ACC/HRS standardised statements rather than a bespoke vocabulary: 44
+primary statements in 11 categories, each optionally qualified by one of 15
+modifiers, so a record reads `60+310;147`. 14.45% of records carry more than one
+statement and there is **no primary diagnosis**, so `stratify_code` is a folds-only
+rarest-code reduction. 1,066 patients contributed 2-5 records, so folds are grouped
+on `patient_id` — the grouping was verified on the output, not assumed. Length runs
+10-56 s, and the metadata's `N` column gives it exactly per record, so nothing has
+to open a signal file to learn a length. See `examples/load_sph.py`.
+
+`ningbo_iva` is the only dataset here whose label is **invasive ground truth**: 334
+12-lead ECGs recorded during catheter ablation, each labelled with the outflow tract
+(RVOT 257 / LVOT 77) the ablation proved the arrhythmia came from, so the task is to
+predict the origin from the surface ECG before the procedure. Three things about it
+are unlike everything else: the lead order is **alphabetical** (`signal[0]` is aVF),
+the sampling rate is **2000 Hz** — the highest in the catalogue, from an EP-lab
+system rather than a diagnostic cart — and the samples carry **no declared unit**,
+so the millivolt scale is an ECGBench estimate (see "Leads and units"). Length runs
+2.9-59.3 s in 317 distinct values over 334 records. See
+`examples/load_ningbo_iva.py`.
 
 `norwegian_athlete_ecg` is the smallest dataset here — 28 records, one per elite
 Norwegian endurance athlete — and the only one whose **amplitudes are not
@@ -503,8 +549,8 @@ second[0]["signal"].shape   # (12, 2500) -- samples 2500-4999
 
 A window that does not fit raises `WindowOutOfRangeError`, naming the record and
 its true length. Record length is not constant in every dataset — `cpsc_2018`
-runs 6-144 s, `ptbdb` 32-120 s and `staffiii` 94.5-960 s — so a fixed window can
-fit most records and not all.
+runs 6-144 s, `ptbdb` 32-120 s, `staffiii` 94.5-960 s, `sph` 10-56 s and
+`ningbo_iva` 2.9-59.3 s — so a fixed window can fit most records and not all.
 
 `window` combines freely with `fold_numbers`, `leads` and `units`; it is applied
 first, then lead selection, then units, then `transform`.

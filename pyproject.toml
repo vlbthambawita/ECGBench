@@ -36,7 +36,10 @@ torch = ["torch>=1.12.0", "wfdb>=4.0.0"]
 croissant = ["mlcroissant>=1.0.0"]
 download = ["tqdm>=4.60.0"]
 hf = ["huggingface_hub>=0.20.0", "python-dotenv>=1.0.0"]
-all = ["ecgbench[torch,croissant,download,hf]"]
+# Datasets shipping one HDF5 array per record (sph). Only the hdf5 branch of
+# _load_signal needs it, so it stays out of the base install.
+hdf5 = ["h5py>=3.0.0"]
+all = ["ecgbench[torch,croissant,download,hf,hdf5]"]
 dev = [
     "ecgbench[all]",
     "pytest>=7.0.0",

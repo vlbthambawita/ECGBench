@@ -695,3 +695,116 @@ def test_load_cpsc_2018_config():
     assert config.validation.amplitude_range_mv == (-10.0, 10.0)
     # CC BY 4.0 (the licence PhysioNet redistributes these exact files under).
     assert config.publish_fold_csvs is True
+
+
+def test_load_sph_config():
+    """SPH: the first hdf5 dataset, patient-grouped, multi-label AHA statements."""
+    config = load_config("sph")
+    assert config.slug == "sph"
+    assert config.version == "1.0.0"
+    # The one and only hdf5 dataset — one .h5 per record holding a single
+    # (12, N) root dataset named 'ecg'. Needs the [hdf5] extra.
+    assert config.signal_format == "hdf5"
+    # float16 arrays already in millivolts, per the paper and confirmed against
+    # the files (median per-record peak 1.74 mV).
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # Standard order and standard capitalisation, verified from the arrays via
+    # Einthoven's and Goldberger's relations rather than from the paper.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    # metadata.csv ships but has no signal-path column, so SPHSplitter normalises
+    # it — and the validation engine re-reads the generated file from disk.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "ecg_id"
+    # 1,066 of the 24,666 patients contributed more than one record, so grouping
+    # is mandatory rather than cosmetic.
+    assert config.patient_id_column == "patient_id"
+    assert config.label_column == "aha_primary_codes"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # 5,000 to 28,000 samples (10-56 s) in 39 distinct lengths; the per-record
+    # length is in the metadata's n_samples column instead.
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    assert config.validation.expected_samples == {}
+    # 323 of 25,770 records fail this deliberately — the median peak is 1.74 mV,
+    # so beyond 10 mV means a railed or artefact-dominated lead.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # Labels need the code.csv join, so the loader is a module, not declarative.
+    assert config.labels is not None
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "ecg_id"
+    # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_load_ningbo_iva_config():
+    """Ningbo IVA: alphabetical lead order and an estimated, not declared, mV scale."""
+    config = load_config("ningbo_iva")
+    assert config.slug == "ningbo_iva"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "csv"
+    # ESTIMATED, not declared — the release ships bare integers and states no
+    # unit. 1 mV = 16384 counts, measured against sph sex-for-sex; see the config.
+    assert config.signal_unit_scale == pytest.approx(6.1035e-05)
+    assert config.leads == 12
+    # ALPHABETICAL, straight off the CSV header row: signal[0] is aVF, and lead I
+    # is signal[3]. This is why leads= takes names rather than indices.
+    assert config.lead_names == ["aVF", "aVL", "aVR", "I", "II", "III",
+                                "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.lead_names[0] == "aVF"
+    assert config.lead_names.index("I") == 3
+    # 2000 Hz, the highest rate in the catalogue — an EP-lab acquisition system,
+    # not a diagnostic cart.
+    assert config.sampling_rates == [2000]
+    assert config.default_sampling_rate == 2000
+    assert config.signal_path_columns == {2000: "signal_path"}
+    # Diagnosis.xlsx has no path column, so NingboIVASplitter normalises it.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "hospital_id"
+    # HospitalID is both the record and the patient id, one record each, so this
+    # stays null rather than asserting a grouping nothing exercised.
+    assert config.patient_id_column is None
+    assert config.label_column == "left_right"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "direct"
+    assert config.has_predefined_splits is False
+    # 5,791 to 118,642 samples in 317 distinct lengths over 334 records.
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    assert config.validation.expected_samples == {}
+    # Nothing trips this: the largest sample anywhere is 9.45 estimated mV. Left
+    # wide on purpose, so a 20% error in the estimated scale cannot start
+    # excluding records.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    assert config.labels is not None
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "hospital_id"
+    # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_the_two_hdf5_and_2000hz_facts_are_unique_and_intentional():
+    """Guard the two configs that broke a catalogue-wide assumption.
+
+    ``sph`` is the only hdf5 dataset (so the reader branch has exactly one real
+    user) and ``ningbo_iva`` the only 2000 Hz one. Both were assumptions elsewhere
+    in the codebase before these datasets landed; this test fails loudly if a
+    later dataset joins either group without the author noticing.
+    """
+    by_format: dict[str, list[str]] = {}
+    fastest: list[str] = []
+    for slug in list_available_configs():
+        config = load_config(slug)
+        by_format.setdefault(config.signal_format, []).append(slug)
+        if config.default_sampling_rate >= 2000:
+            fastest.append(slug)
+
+    assert by_format["hdf5"] == ["sph"]
+    assert fastest == ["ningbo_iva"]

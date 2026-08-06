@@ -4321,3 +4321,317 @@ class TestCPSC2018Labels:
         from ecgbench.config import load_config
 
         assert load_config("cpsc_2018").validation.expected_samples == {}
+
+
+class TestSPHLabels:
+    """SPH's AHA statement grammar, which nothing else in ECGBench parses."""
+
+    #: A minimal codebook: two primaries, one modifier.
+    CODE_CSV = (
+        "Category,Code,Description\n"
+        "A,1,Normal ECG\n"
+        "C,22,Sinus bradycardia\n"
+        "F,60,Ventricular premature complex(es)\n"
+        'D,31,"Atrial premature complexes, nonconducted"\n'
+        "Modifier,310,Frequent\n"
+    )
+
+    def _tree(self, tmp_path, rows):
+        """rows: list of (ecg_id, aha_code, patient_id, age, sex, n)."""
+        (tmp_path / "code.csv").write_text(self.CODE_CSV, encoding="utf-8")
+        lines = ["ECG_ID,AHA_Code,Patient_ID,Age,Sex,N,Date"]
+        lines += [
+            f"{rid},{code},{pid},{age},{sex},{n},2020-01-01"
+            for rid, code, pid, age, sex, n in rows
+        ]
+        (tmp_path / "metadata.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="sph", record_id_column="ecg_id",
+            patient_id_column="patient_id", signal_path_columns={500: "signal_path"},
+            default_sampling_rate=500, label_column="aha_primary_codes",
+        )
+
+    def test_labels_come_from_two_shipped_csvs_not_the_generated_cache(self):
+        """Both sources ship, so labels do not depend on `ecgbench splits` first."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.sph import CODE_CSV, METADATA_CSV
+
+        spec = load_config("sph").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # module-based: needs the code.csv join
+        assert spec.join_column == "ecg_id"
+        assert (METADATA_CSV, CODE_CSV) == ("metadata.csv", "code.csv")
+
+    def test_statement_grammar_splits_primaries_from_modifiers(self, tmp_path, sample_config):
+        """';' separates statements, '+' attaches modifiers to one primary."""
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        root = self._tree(tmp_path, [("A00001", "60+310;22", "S1", 44, "M", 5000)])
+        df = sph_labels(root, self._config(sample_config))
+        row = df.loc["A00001"]
+
+        assert row["n_statements"] == 2
+        assert row["aha_primary_codes"] == "60;22"
+        assert row["aha_primary_descriptions"] == (
+            "Ventricular premature complex(es);Sinus bradycardia"
+        )
+        assert row["aha_primary_categories"] == "F;C"
+        # The modifier is not promoted to a diagnosis.
+        assert row["aha_modifier_codes"] == "310"
+        assert row["aha_modifier_descriptions"] == "Frequent"
+        # aha_statements keeps the attachment the two flat columns discard.
+        assert row["aha_statements"] == "60+310;22"
+        assert row["is_normal"] is False or not row["is_normal"]
+
+    def test_repeated_normal_code_still_counts_as_normal(self, tmp_path, sample_config):
+        """A02322 and A05000 ship as "1;1"; a string comparison would miss them."""
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        root = self._tree(
+            tmp_path,
+            [("A00001", "1", "S1", 40, "M", 5000), ("A00002", "1;1", "S2", 50, "F", 5000)],
+        )
+        df = sph_labels(root, self._config(sample_config))
+
+        assert bool(df.loc["A00002", "is_normal"]) is True
+        # Deduplicated: one primary code, but the raw statement count is still 2.
+        assert df.loc["A00002", "n_primary_codes"] == 1
+        assert df.loc["A00002", "n_statements"] == 2
+        assert df.loc["A00002", "aha_primary_codes"] == "1"
+        assert bool(df["is_normal"].all())
+
+    def test_list_columns_use_semicolons_because_descriptions_contain_commas(
+        self, tmp_path, sample_config
+    ):
+        """"Atrial premature complexes, nonconducted" cannot survive a comma join."""
+        from ecgbench.labels.sph import LIST_SEPARATOR
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        assert LIST_SEPARATOR == ";"
+        root = self._tree(tmp_path, [("A00001", "31;22", "S1", 44, "M", 5000)])
+        df = sph_labels(root, self._config(sample_config))
+        descriptions = df.loc["A00001", "aha_primary_descriptions"]
+
+        assert "," in descriptions  # the comma is inside a description
+        assert descriptions.split(LIST_SEPARATOR) == [
+            "Atrial premature complexes, nonconducted",
+            "Sinus bradycardia",
+        ]
+
+    def test_stratify_code_is_the_rarest_not_the_first(self, tmp_path, sample_config):
+        """Rarest-first keeps the tail representable; first-listed does not."""
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        rows = [(f"A{i:05d}", "22", f"S{i}", 40, "M", 5000) for i in range(5)]
+        rows.append(("A09999", "22;60", "S99", 40, "M", 5000))
+        df = sph_labels(self._tree(tmp_path, rows), self._config(sample_config))
+
+        # 22 occurs six times, 60 once, so the multi-label record goes to 60 even
+        # though 22 is listed first.
+        assert df.loc["A09999", "aha_primary_codes"] == "22;60"
+        assert df.loc["A09999", "stratify_code"] == "60"
+        assert df.loc["A09999", "stratify_description"] == "Ventricular premature complex(es)"
+        assert df.loc["A00000", "stratify_code"] == "22"
+
+    def test_length_comes_from_metadata_not_from_opening_a_signal_file(
+        self, tmp_path, sample_config
+    ):
+        """N agrees with the arrays for all 25,770 records, so it is authoritative."""
+        from ecgbench.labels.sph import SAMPLING_RATE
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        root = self._tree(
+            tmp_path,
+            [("A00001", "1", "S1", 40, "M", 5000), ("A00002", "1", "S2", 40, "M", 28000)],
+        )
+        df = sph_labels(root, self._config(sample_config))
+
+        assert SAMPLING_RATE == 500
+        assert list(df["n_samples"]) == [5000, 28000]
+        assert list(df["duration_seconds"]) == [10.0, 56.0]
+        # No signal files exist in this fixture at all, and the loader did not care.
+        assert not (root / "records").exists()
+
+    def test_signal_paths_are_relative_to_the_dataset_root(self, tmp_path, sample_config):
+        """The release publishes no path column, so the loader invents one."""
+        from ecgbench.labels.sph import RECORDS_DIR
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        root = self._tree(tmp_path, [("A00001", "1", "S1", 40, "M", 5000)])
+        df = sph_labels(root, self._config(sample_config))
+
+        assert RECORDS_DIR == "records"
+        assert df.loc["A00001", "signal_path"] == "records/A00001.h5"
+
+    def test_missing_metadata_and_codebook_each_name_their_file(self, tmp_path, sample_config):
+        from ecgbench.labels.sph import load_code_table
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        with pytest.raises(LabelSourceMissingError, match="metadata.csv"):
+            sph_labels(tmp_path, self._config(sample_config))
+
+        # metadata.csv present but the codebook absent: a different message.
+        (tmp_path / "metadata.csv").write_text(
+            "ECG_ID,AHA_Code,Patient_ID,Age,Sex,N,Date\nA00001,1,S1,40,M,5000,2020-01-01\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(LabelSourceMissingError, match="code.csv"):
+            sph_labels(tmp_path, self._config(sample_config))
+        with pytest.raises(LabelSourceMissingError, match="code.csv"):
+            load_code_table(tmp_path)
+
+    def test_a_code_outside_the_codebook_surfaces_rather_than_vanishing(
+        self, tmp_path, sample_config
+    ):
+        """The vocabulary is closed today; a future release must not fail silently."""
+        from ecgbench.labels.sph import UNMAPPED
+        from ecgbench.labels.sph import load_labels as sph_labels
+
+        root = self._tree(tmp_path, [("A00001", "999;22", "S1", 40, "M", 5000)])
+        df = sph_labels(root, self._config(sample_config))
+
+        assert df.loc["A00001", "aha_primary_codes"] == "999;22"
+        assert df.loc["A00001", "aha_primary_descriptions"] == f"{UNMAPPED};Sinus bradycardia"
+        assert UNMAPPED in df.loc["A00001", "aha_primary_categories"]
+
+    def test_variable_length_dataset_disables_the_truncation_check(self):
+        """10 s to 56 s in 39 distinct lengths — expected_samples must stay empty."""
+        from ecgbench.config import load_config
+
+        assert load_config("sph").validation.expected_samples == {}
+
+
+class TestNingboIVALabels:
+    """The label is what the ablation proved, not what the ECG shows."""
+
+    def _sheet(self, tmp_path, rows):
+        """rows: list of (hospital_id, type, left_right, sublocation, gender)."""
+        frame = pd.DataFrame(
+            rows, columns=["HospitalID", "Type", "LeftRight", "Sublocation", "Gender"]
+        )
+        # .csv, not .xlsx — read_diagnosis prefers it and it needs no openpyxl.
+        frame.to_csv(tmp_path / "Diagnosis.csv", index=False)
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="ningbo_iva", record_id_column="hospital_id",
+            patient_id_column=None, signal_path_columns={2000: "signal_path"},
+            default_sampling_rate=2000, label_column="left_right",
+        )
+
+    def test_labels_come_from_the_spreadsheet_not_the_generated_cache(self):
+        """Diagnosis.xlsx ships, so labels do not depend on `ecgbench splits`."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.ningbo_iva import DIAGNOSIS_FILES
+
+        spec = load_config("ningbo_iva").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # pandas cannot read .xlsx declaratively
+        assert spec.join_column == "hospital_id"
+        assert DIAGNOSIS_FILES == ("Diagnosis.csv", "Diagnosis.xlsx")
+
+    def test_right_left_are_renamed_to_the_papers_rvot_lvot(self, tmp_path, sample_config):
+        from ecgbench.labels.ningbo_iva import load_labels as iva_labels
+
+        root = self._sheet(
+            tmp_path,
+            [
+                (1000364, "PVC", "Right", "AC", "female"),
+                (991591, "VT", "Left", "LCC", "male"),
+            ],
+        )
+        df = iva_labels(root, self._config(sample_config))
+
+        assert list(df["left_right"]) == ["RVOT", "LVOT"]
+        assert set(df.index) == {"1000364", "991591"}
+        assert df.index.name == "hospital_id"
+
+    def test_sex_keeps_the_shipped_spelling_and_adds_the_catalogue_one(
+        self, tmp_path, sample_config
+    ):
+        """This is the only dataset spelling sex 'female'/'male' in lower case."""
+        from ecgbench.labels.ningbo_iva import load_labels as iva_labels
+
+        root = self._sheet(
+            tmp_path,
+            [(1, "PVC", "Right", "AC", "female"), (2, "PVC", "Left", "LCC", "male")],
+        )
+        df = iva_labels(root, self._config(sample_config))
+
+        assert list(df["sex"]) == ["female", "male"]
+        assert list(df["sex_code"]) == ["F", "M"]
+
+    def test_blank_sublocations_are_left_blank_not_inferred(self, tmp_path, sample_config):
+        """40 cells are blank and the paper's Table 2 explains them — but it is not us.
+
+        The paper assigns 45 RVOT patients to "RVOTOther" where the spreadsheet has
+        6 explicit plus 39 blanks. Filling them would put our inference into the
+        published labels.
+        """
+        from ecgbench.labels.ningbo_iva import load_labels as iva_labels
+
+        root = self._sheet(
+            tmp_path,
+            [(1, "PVC", "Right", "RVOTOther", "female"), (2, "PVC", "Right", None, "male")],
+        )
+        df = iva_labels(root, self._config(sample_config))
+
+        assert df.loc["1", "sublocation"] == "RVOTOther"
+        assert pd.isna(df.loc["2", "sublocation"])
+
+    def test_both_signal_paths_are_exposed_but_only_the_raw_one_is_canonical(
+        self, tmp_path, sample_config
+    ):
+        """The denoised copy is not sample-aligned with the raw one — see the module."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.ningbo_iva import (
+            DENOISED_DIR,
+            SIGNAL_DIR,
+        )
+        from ecgbench.labels.ningbo_iva import (
+            load_labels as iva_labels,
+        )
+
+        assert (SIGNAL_DIR, DENOISED_DIR) == ("PVCVTRawECGData", "PVCVTECGData")
+        root = self._sheet(tmp_path, [(1000364, "PVC", "Right", "AC", "female")])
+        df = iva_labels(root, self._config(sample_config))
+
+        assert df.loc["1000364", "signal_path"] == "PVCVTRawECGData/1000364.csv"
+        assert df.loc["1000364", "signal_path_denoised"] == "PVCVTECGData/1000364.csv"
+        # Only the raw column is wired into the config, validated and exported.
+        assert load_config("ningbo_iva").signal_path_columns == {2000: "signal_path"}
+
+    def test_sampling_rate_is_2000_not_the_catalogue_default_500(self):
+        """An EP-lab acquisition system, and the highest rate in the catalogue."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.ningbo_iva import SAMPLING_RATE
+
+        assert SAMPLING_RATE == 2000
+        assert load_config("ningbo_iva").sampling_rates == [2000]
+
+    def test_missing_spreadsheet_names_both_accepted_filenames(self, tmp_path, sample_config):
+        from ecgbench.labels.ningbo_iva import load_labels as iva_labels
+
+        with pytest.raises(LabelSourceMissingError, match="Diagnosis"):
+            iva_labels(tmp_path, self._config(sample_config))
+
+    def test_a_renamed_column_fails_loudly(self, tmp_path, sample_config):
+        from ecgbench.labels.ningbo_iva import load_labels as iva_labels
+
+        frame = pd.DataFrame(
+            [(1, "PVC", "Right", "AC", "female")],
+            columns=["HospitalID", "Type", "Tract", "Sublocation", "Gender"],
+        )
+        frame.to_csv(tmp_path / "Diagnosis.csv", index=False)
+        with pytest.raises(ValueError, match="LeftRight"):
+            iva_labels(tmp_path, self._config(sample_config))
+
+    def test_variable_length_dataset_disables_the_truncation_check(self):
+        """317 distinct lengths over 334 records — expected_samples must stay empty."""
+        from ecgbench.config import load_config
+
+        assert load_config("ningbo_iva").validation.expected_samples == {}

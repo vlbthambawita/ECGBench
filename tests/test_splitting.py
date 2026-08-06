@@ -2826,3 +2826,225 @@ class TestCPSC2018Splitter:
             get_splitter("cpsc_2018").load_metadata(
                 tmp_path, self._config(sample_config)
             )
+
+
+class TestSPHSplitter:
+    """SPH ships metadata.csv with no path column and codes needing a join."""
+
+    CODE_CSV = (
+        "Category,Code,Description\n"
+        "A,1,Normal ECG\n"
+        "C,22,Sinus bradycardia\n"
+        "F,60,Ventricular premature complex(es)\n"
+        "M,166,Extensive anterior MI\n"
+        "Modifier,310,Frequent\n"
+    )
+
+    def _tree(self, tmp_path, rows):
+        """rows: list of (ecg_id, aha_code, patient_id)."""
+        (tmp_path / "code.csv").write_text(self.CODE_CSV, encoding="utf-8")
+        lines = ["ECG_ID,AHA_Code,Patient_ID,Age,Sex,N,Date"]
+        lines += [f"{rid},{code},{pid},44,M,5000,2020-01-01" for rid, code, pid in rows]
+        (tmp_path / "metadata.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="sph", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="ecg_id", patient_id_column="patient_id",
+            signal_path_columns={500: "signal_path"}, default_sampling_rate=500,
+            label_column="aha_primary_codes", leads=12, signal_format="hdf5",
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.sph import SPHSplitter
+
+        assert isinstance(get_splitter("sph"), SPHSplitter)
+
+    def test_builds_the_implicit_signal_path_and_caches_the_csv(self, tmp_path, sample_config):
+        """The release leaves records/<ECG_ID>.h5 to convention; validation cannot."""
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [("A00001", "1", "S1"), ("A00002", "22", "S2")])
+
+        df = get_splitter("sph").load_metadata(root, config)
+
+        assert list(df["signal_path"]) == ["records/A00001.h5", "records/A00002.h5"]
+        assert list(df["ecg_id"]) == ["A00001", "A00002"]
+        # Written to disk, because validate_dataset re-reads it rather than
+        # reusing this frame.
+        cached = root / "ecgbench_metadata.csv"
+        assert cached.exists()
+        again = get_splitter("sph").load_metadata(root, config)
+        assert list(again["signal_path"]) == list(df["signal_path"])
+        # Codes must survive the CSV round trip as strings, not become ints.
+        assert again["aha_primary_codes"].map(type).eq(str).all()
+
+    def test_stratifies_on_the_rarest_code_and_pools_the_tail(self, tmp_path, sample_config):
+        """9 of the 44 real codes fall under ten records; they must not each be a class."""
+        from ecgbench.splitting.strategies.sph import MIN_CLASS_SIZE, OTHER
+
+        assert MIN_CLASS_SIZE == 10
+        config = self._config(sample_config)
+        rows = [(f"A{i:05d}", "1", f"S{i}") for i in range(12)]
+        rows += [(f"B{i:05d}", "22", f"T{i}") for i in range(11)]
+        rows.append(("C00001", "166", "U1"))  # a single rare record
+        splitter = get_splitter("sph")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(self._tree(tmp_path, rows), config), config
+        )
+
+        counts = labels.value_counts().to_dict()
+        assert counts == {"1": 12, "22": 11, OTHER: 1}
+        assert "166" not in counts
+
+    def test_a_multi_label_record_strata_on_its_rarest_code(self, tmp_path, sample_config):
+        """Statement order is not a ranking, so the first listed code is not used."""
+        config = self._config(sample_config)
+        rows = [(f"A{i:05d}", "22", f"S{i}") for i in range(15)]
+        rows += [(f"B{i:05d}", "60", f"T{i}") for i in range(10)]
+        rows.append(("C00001", "22;60", "U1"))
+        splitter = get_splitter("sph")
+        df = splitter.load_metadata(self._tree(tmp_path, rows), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        # 22 occurs 16 times, 60 eleven, so the multi-label record goes to 60.
+        assert df.set_index("ecg_id").loc["C00001", "aha_primary_codes"] == "22;60"
+        assert labels[df.index[df["ecg_id"] == "C00001"][0]] == "60"
+
+    def test_no_class_is_pooled_when_every_class_is_big_enough(self, tmp_path, sample_config):
+        from ecgbench.splitting.strategies.sph import OTHER
+
+        config = self._config(sample_config)
+        rows = [(f"A{i:05d}", "1", f"S{i}") for i in range(12)]
+        rows += [(f"B{i:05d}", "22", f"T{i}") for i in range(10)]
+        splitter = get_splitter("sph")
+        counts = splitter.get_stratification_labels(
+            splitter.load_metadata(self._tree(tmp_path, rows), config), config
+        ).value_counts().to_dict()
+
+        assert counts == {"1": 12, "22": 10}
+        assert OTHER not in counts
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("sph").get_stratification_labels(
+                pd.DataFrame({"ecg_id": ["A00001"]}), self._config(sample_config)
+            )
+
+    def test_missing_metadata_raises_naming_the_file(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="metadata.csv"):
+            get_splitter("sph").load_metadata(tmp_path, self._config(sample_config))
+
+    def test_folds_keep_a_repeated_patient_together(self, tmp_path, sample_config):
+        """1,066 real patients have 2-5 records, so grouping has to actually hold."""
+        config = self._config(sample_config)
+        # 40 patients, every fourth contributing two records.
+        rows = []
+        for i in range(40):
+            code = "1" if i % 2 else "22"
+            rows.append((f"A{i:05d}", code, f"S{i}"))
+            if i % 4 == 0:
+                rows.append((f"B{i:05d}", code, f"S{i}"))
+        splitter = get_splitter("sph")
+        df = splitter.load_metadata(self._tree(tmp_path, rows), config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+        assigned = pd.concat(
+            [frame.assign(fold=n) for n, frame in result.folds.items()], ignore_index=True
+        )
+        assert assigned.groupby("patient_id")["fold"].nunique().max() == 1
+        assert result.group_column == "patient_id"
+
+
+class TestNingboIVASplitter:
+    """Ningbo IVA ships a spreadsheet with five columns and none of them a path."""
+
+    def _sheet(self, tmp_path, rows):
+        """rows: list of (hospital_id, type, left_right, sublocation, gender)."""
+        pd.DataFrame(
+            rows, columns=["HospitalID", "Type", "LeftRight", "Sublocation", "Gender"]
+        ).to_csv(tmp_path / "Diagnosis.csv", index=False)
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ningbo_iva", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="hospital_id", patient_id_column=None,
+            signal_path_columns={2000: "signal_path"}, default_sampling_rate=2000,
+            label_column="left_right", leads=12, signal_format="csv",
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ningbo_iva import NingboIVASplitter
+
+        assert isinstance(get_splitter("ningbo_iva"), NingboIVASplitter)
+
+    def test_builds_the_missing_signal_path_and_caches_the_csv(self, tmp_path, sample_config):
+        """A path fix-up that lives only in memory leaves validation with nothing."""
+        config = self._config(sample_config)
+        root = self._sheet(
+            tmp_path,
+            [
+                (1000364, "PVC", "Right", "AC", "female"),
+                (991591, "VT", "Left", "LCC", "male"),
+            ],
+        )
+
+        df = get_splitter("ningbo_iva").load_metadata(root, config)
+
+        assert set(df["signal_path"]) == {
+            "PVCVTRawECGData/1000364.csv",
+            "PVCVTRawECGData/991591.csv",
+        }
+        cached = root / "ecgbench_metadata.csv"
+        assert cached.exists()
+        # The generated file is what validate_dataset reads, so the column has to
+        # be there on the second pass too — and the ids must stay strings.
+        again = get_splitter("ningbo_iva").load_metadata(root, config)
+        assert again["hospital_id"].map(type).eq(str).all()
+        assert set(again["signal_path"]) == set(df["signal_path"])
+
+    def test_stratifies_on_the_ablation_confirmed_tract(self, tmp_path, sample_config):
+        config = self._config(sample_config)
+        rows = [(i, "PVC", "Right", "AC", "female") for i in range(1, 8)]
+        rows += [(i, "PVC", "Left", "LCC", "male") for i in range(100, 103)]
+        splitter = get_splitter("ningbo_iva")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(self._sheet(tmp_path, rows), config), config
+        )
+
+        assert labels.value_counts().to_dict() == {"RVOT": 7, "LVOT": 3}
+        assert labels.name == "stratify_class"
+
+    def test_sublocation_is_not_the_split_target(self, tmp_path, sample_config):
+        """12 values over 334 patients, five under ten cases — unusable for 10 folds."""
+        from ecgbench.splitting.strategies.ningbo_iva import STRATIFY_COLUMN
+
+        assert STRATIFY_COLUMN == "left_right"
+        config = self._config(sample_config)
+        rows = [(i, "PVC", "Right", f"Site{i % 6}", "female") for i in range(1, 13)]
+        splitter = get_splitter("ningbo_iva")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(self._sheet(tmp_path, rows), config), config
+        )
+
+        assert set(labels) == {"RVOT"}
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("ningbo_iva").get_stratification_labels(
+                pd.DataFrame({"hospital_id": ["1000364"]}), self._config(sample_config)
+            )
+
+    def test_missing_spreadsheet_raises_naming_the_file(self, sample_config, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="Diagnosis"):
+            get_splitter("ningbo_iva").load_metadata(tmp_path, self._config(sample_config))

@@ -1,0 +1,217 @@
+# ECGBench Config: Ningbo First Hospital IVA (Idiopathic Ventricular Arrhythmia)
+# ==============================================================================
+# 12-lead surface ECGs recorded during catheter ablation in 334 patients with
+# outflow-tract ventricular arrhythmia, labelled with the origin the ablation
+# proved. https://doi.org/10.6084/m9.figshare.c.4668086.v2
+#
+# THE LABEL IS INVASIVE GROUND TRUTH, NOT AN ECG READING. Every patient had a
+# successful ablation, and `left_right` records which outflow tract the arrhythmia
+# actually came from. That is what makes 334 records worth having: the task is to
+# predict the origin from the surface ECG *before* the procedure.
+#
+# READ THIS BEFORE USING THE SIGNALS — TWO NON-OBVIOUS PROPERTIES.
+#
+# 1. LEAD ORDER IS ALPHABETICAL, NOT STANDARD. The CSV header reads
+#    aVF,aVL,aVR,I,II,III,V1..V6. `signal[0]` is aVF here and lead I is
+#    `signal[3]`. Use ECGDataset(leads=[...]) to select by name.
+#
+# 2. THE SAMPLES CARRY NO DECLARED UNIT, AND `signal_unit_scale` BELOW IS AN
+#    ECGBENCH ESTIMATE. The CSVs hold bare integers; the paper states the
+#    sampling rate (2000 Hz, EP-WorkMate system) and never states an amplitude
+#    unit or gain, and its own Figure 8 plots the raw counts with a MATLAB "x10^4"
+#    multiplier and no y-axis unit. So a scale had to be measured. Method: median
+#    lead-II R-peak prominence (Butterworth 0.5-40 Hz, scipy find_peaks), computed
+#    over all 334 records and compared sex-for-sex against `sph`, whose samples
+#    are millivolts by declaration. Female-matched gives 14,029 counts/mV,
+#    male-matched 17,111. 16,384 (2^14) sits between them, is the nearest
+#    binary-clean gain of the kind acquisition systems export, and is what this
+#    config uses. Treat it as accurate to roughly +/-20%: the shape of every
+#    waveform is exact, the absolute mV calibration is not. If you need certainty,
+#    work in raw counts with units="uV" reversed by hand, or ask the providers.
+#
+# THE RAW DIRECTORY IS THE CANONICAL ONE. The release ships PVCVTRawECGData/ and
+# PVCVTECGData/ (wavelet-denoised, same filenames). This config points at the raw
+# copy, matching `chapman_shaoxing`, which takes ECGData/ over ECGDataDenoised/.
+# The denoised copy is not a drop-in substitute: the denoiser ran per lead
+# independently, so III = II - I holds to under 1% of RMS in the raw files and
+# fails by up to 14% in the denoised ones, and 106 of the 334 denoised files are
+# shorter than their raw counterparts (by up to 7x), so the two are not
+# sample-aligned. The label loader exposes `signal_path_denoised` for anyone who
+# wants it anyway.
+#
+# NO SIGNAL-PATH COLUMN AND NO CSV METADATA SHIP. Diagnosis.xlsx has five columns
+# and none of them is a path, so NingboIVASplitter generates
+# `PVCVTRawECGData/<HospitalID>.csv` into ecgbench_metadata.csv on first run. The
+# validation engine re-reads that file from disk, so the dataset root must be
+# writable.
+#
+# NO CHECKSUMS SHIP. figshare publishes no SHA256SUMS or md5sums. What was checked
+# instead, on the copy this config was built against: every file extracted from
+# PVCVTECGData.zip and PVCVTRawECGData.zip is byte-identical to the extracted
+# copy on disk (334 + 334 files, zero mismatches), and the 334 HospitalIDs in
+# Diagnosis.xlsx match the 334 filenames in both directories exactly, in both
+# directions.
+
+name: "Ningbo First Hospital IVA (Idiopathic Ventricular Arrhythmia)"
+slug: "ningbo_iva"
+# figshare shows one revision of the collection (v2) and the release carries no
+# internal version string; 1.0.0 marks the content the 2020 paper describes.
+version: "1.0.0"
+url: "https://doi.org/10.6084/m9.figshare.c.4668086.v2"
+# figshare serves the collection as three separate items (two zips and the
+# spreadsheet) rather than one archive, with no stable direct URL. Pass
+# --data-path.
+download_url: null
+license: "CC BY 4.0"
+description: >
+  12-lead surface ECGs from 334 patients who underwent successful catheter
+  ablation for outflow-tract ventricular arrhythmia at Ningbo First Hospital,
+  recorded intra-procedurally on an EP-WorkMate system at 2000 Hz. Each patient's
+  label is the origin the ablation confirmed — right (257) or left (77) outflow
+  tract, and one of 12 anatomic sub-sites within it — so the ground truth is
+  invasive rather than an ECG reading, and the task is to predict the origin from
+  the surface ECG before the procedure. Recordings are excerpts of the procedure
+  containing both sinus beats and ectopy, so length varies from 2.9 s to 59 s.
+  Two directories ship: raw integers (canonical) and a wavelet-denoised copy.
+  Sex is recorded; age is not.
+citation: >
+  Zheng, J., Fu, G., Anderson, K., Chu, H., Rakovski, C. A 12-Lead ECG database to
+  identify origins of idiopathic ventricular arrhythmia containing 334 patients.
+  Scientific Data 7, 98 (2020).
+doi: "10.1038/s41597-020-0440-8"
+
+creators:
+  - type: Organization
+    name: "Chapman University, Orange, CA"
+    url: "https://www.chapman.edu/"
+  - type: Organization
+    name: "Ningbo First Hospital of Zhejiang University"
+
+# --- Signal Properties ---
+signal_format: "csv"      # one CSV per record: N rows x 12 lead columns + header
+# ESTIMATED, NOT DECLARED — 1 mV = 16384 counts. See the long note at the top of
+# this file for the measurement and its uncertainty. The release states no unit.
+signal_unit_scale: 6.1035e-05
+leads: 12
+# ALPHABETICAL, not the standard order — this is the header row of every CSV,
+# read from the files. signal[0] is aVF and lead I is signal[3].
+lead_names: ["aVF", "aVL", "aVR", "I", "II", "III", "V1", "V2", "V3", "V4", "V5", "V6"]
+# Nominal only, and not even a modal value: length is essentially unique per
+# record (317 distinct lengths over 334 records), from 5,791 to 118,642 samples —
+# 2.9 s to 59.3 s at 2000 Hz. The paper says an excerpt "containing both normal
+# heart beats and PVCs" was cut from each procedure recording, so duration is an
+# artefact of that editing. A window= must fit the 5,791-sample record.
+duration_seconds: 10
+# One rate for the whole release.
+sampling_rates: [2000]
+default_sampling_rate: 2000
+
+# --- File Structure ---
+# Diagnosis.xlsx is a spreadsheet with no path column, so NingboIVASplitter
+# normalises it — snake_case names, RVOT/LVOT in place of Right/Left, and both
+# signal paths — into this generated file on first run, so the validation engine
+# resolves the same paths the splitter does. The dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "hospital_id"
+# HospitalID is simultaneously the record and the patient identifier: 334
+# distinct values, 334 CSV files, one record per patient. This stays null rather
+# than pointing at the record id, which would make SplitResult claim a patient
+# grouping that nothing exercised.
+patient_id_column: null
+
+signal_path_columns:
+  2000: "signal_path"  # e.g. PVCVTRawECGData/1000364.csv
+
+# --- Labels ---
+label_column: "left_right"  # RVOT or LVOT, the ablation-confirmed outflow tract
+label_format: "single"
+
+stratification:
+  method: "direct"  # left_right is already one label per patient
+
+# --- Predefined Splits ---
+# The paper reports classification results but publishes no fold assignment.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Deliberately EMPTY. Length is essentially unique per record — 317 distinct
+  # values between 5,791 and 118,642 samples — and check_truncated_signal returns
+  # [] for a rate with no entry, which is the intended way to disable a check
+  # that cannot apply. Any value here would fail most of the dataset.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # In the estimated mV of signal_unit_scale above, the largest sample anywhere in
+  # the release is 154,888 counts = 9.45 mV, so nothing trips this range and the
+  # check is a guard rather than a filter. It is deliberately not tightened: the
+  # scale is an estimate, and a range that depended on it would turn a 20%
+  # calibration error into hundreds of spurious exclusions. These are
+  # intra-procedural recordings, so genuinely large deflections are expected.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ningbo_iva.py reads Diagnosis.xlsx (pandas cannot
+# read .xlsx declaratively) and exposes the three nested labels, sex, and both
+# signal paths. The spreadsheet ships, so labels do NOT depend on
+# `ecgbench splits` having generated the metadata cache first.
+#
+# Two figures here disagree with the paper and the file wins, because it is what
+# ships: Table 1 reports 325 frequent PVC / 9 sustained VT where the spreadsheet
+# reads 329 PVC / 5 VT, and Table 2 assigns 45 RVOT patients to "RVOTOther" where
+# the spreadsheet has 6 explicit plus 39 blanks. See the module docstring.
+labels:
+  source_csv: null
+  join_column: "hospital_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "ventricular arrhythmia"
+    - "PVC"
+    - "catheter ablation"
+    - "outflow tract"
+    - "RVOT"
+    - "LVOT"
+    - "12-lead"
+  rai_data_collection: >
+    12-lead surface ECGs recorded during elective catheter-ablation procedures at
+    Ningbo First Hospital of Zhejiang University, under the auspices of Chapman
+    University, on an Abbott EP-WorkMate system at 2000 Hz. For each patient an
+    excerpt containing both sinus beats and the ectopy of interest was cut from
+    the full procedure recording. The label is the arrhythmia origin confirmed by
+    a successful ablation, defined as absence of spontaneous or induced
+    outflow-tract arrhythmia 30 minutes after the last energy delivery and
+    verified over a six-month follow-up; patients whose frequent ectopy recurred
+    were excluded. Only single-source arrhythmias were included. The institutional
+    review board approved public sharing after de-identification and waived
+    patient consent.
+  rai_data_biases: >
+    A referral cohort for an invasive procedure, not a screening population: every
+    patient had symptomatic outflow-tract arrhythmia severe enough to warrant
+    ablation, and only those whose ablation succeeded and did not recur are
+    included, so the labels are conditioned on treatment success. The tracts are
+    strongly imbalanced (257 right, 77 left) and the paper notes the sampling was
+    not random. Sex is skewed and differently so per class: 230 of 334 patients
+    are female overall, but 192 of 257 right-tract cases against 38 of 77
+    left-tract ones, so sex alone predicts the label better than chance and a
+    model can learn it instead of the ECG. Presentation is almost entirely
+    premature complexes rather than sustained tachycardia (329 against 5). The
+    sub-site label has 12 values over 334 patients with five under ten cases and
+    40 blank. Single centre, single acquisition system, single country.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. HospitalID is the only
+    identifier and is an opaque 6-7 digit number, one per patient, with one
+    recording each. Sex is retained; age is not published at all, though the paper
+    reports the cohort mean. No names, no dates, no free-text reports and no
+    procedural notes ship. Note that the recordings are intra-procedural, so they
+    capture a clinical event rather than a routine resting ECG.

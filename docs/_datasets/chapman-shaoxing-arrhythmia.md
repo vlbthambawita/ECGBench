@@ -40,7 +40,13 @@ related:
     note: >
       Same institution, and 34,905 of the records here are the Ningbo cohort. The
       334-record figshare Idiopathic Ventricular Arrhythmia dataset is a separate
-      release; whether its records also appear here is unconfirmed.
+      release and cannot share recordings with this one: those are
+      intra-procedural EP-lab excerpts at 2000 Hz of variable length (2.9-59 s),
+      where every record here is a 10 s diagnostic ECG at 500 Hz. Whether the same
+      patients appear in both is unverifiable rather than merely unchecked — the
+      two releases publish no common key, and the IVA release ships no age and no
+      date to join on. Treat a patient-level overlap as possible when combining
+      them.
 sections:
   - type: description
     title: "Overview"

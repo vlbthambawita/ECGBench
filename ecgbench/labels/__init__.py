@@ -106,9 +106,11 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         ludb,
         mhd_effect_ecg_mri,
         mimic_iv_ecg,
+        ningbo_iva,
         norwegian_athlete_ecg,
         ptbdb,
         ptbxl,
+        sph,
         staffiii,
         wctecgdb,
     )
@@ -131,6 +133,8 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "ecgdmmld": ecgdmmld.load_labels,
         "ecgrdvq": ecgrdvq.load_labels,
         "staffiii": staffiii.load_labels,
+        "sph": sph.load_labels,
+        "ningbo_iva": ningbo_iva.load_labels,
     }
 
 

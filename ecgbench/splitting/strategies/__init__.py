@@ -18,9 +18,11 @@ from . import (  # noqa: F401
     mhd_effect_ecg_mri,
     mimic_iv_ecg,
     mimic_iv_ecg_demo,
+    ningbo_iva,
     norwegian_athlete_ecg,
     ptbdb,
     ptbxl,
+    sph,
     staffiii,
     wctecgdb,
 )
