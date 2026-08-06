@@ -84,18 +84,18 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
             )
         signal = np.asarray(record, dtype=np.float32).T
     elif signal_format == "hdf5":
-        # One file per record holding a single (leads, samples) array, already in
-        # the orientation the checks want. Window-less like the rest of this
-        # function: validation always sees the whole record.
+        # Either one file per record holding a (leads, samples) array, or one row
+        # of a shared (records, samples, leads) array — _hdf5_signal_view
+        # normalises both to the orientation the checks want. Window-less like
+        # the rest of this function: validation always sees the whole record.
         import h5py
 
-        from ecgbench.dataset import _hdf5_dataset, _parse_hdf5_ref
+        from ecgbench.dataset import _hdf5_dataset, _hdf5_signal_view, _parse_hdf5_ref
 
-        path, key = _parse_hdf5_ref(record_path)
+        path, key, row = _parse_hdf5_ref(record_path)
         with h5py.File(path, "r") as handle:
-            signal = np.asarray(
-                _hdf5_dataset(handle, key, record_path), dtype=np.float32
-            )
+            dataset = _hdf5_dataset(handle, key, record_path)
+            signal = _hdf5_signal_view(dataset, row, record_path, slice(None))
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "

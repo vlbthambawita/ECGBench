@@ -1,0 +1,216 @@
+# ECGBench Config: CODE-test (827-record annotated hold-out test set)
+# ====================================================================
+# The evaluation set of Ribeiro et al. 2020 — 827 twelve-lead ECGs from the CODE
+# cohort, each read independently by two cardiologists with a third adjudicating
+# disagreements, plus four more annotator groups and the paper's own DNN.
+# https://doi.org/10.5281/zenodo.3765780
+#
+# THIS IS AN EVALUATION SET, AND ECGBENCH STILL GIVES IT TEN FOLDS. That is a
+# framework convention, not a recommendation: every ECGBench dataset is
+# partitioned the same way so the tooling stays uniform. The release's intended
+# use is all 827 records as a single hold-out set, which is
+#     ECGDataset("code_test", split=None, fold_numbers=list(range(1, 11)))
+# The folds are there for cross-validating on the annotator-agreement data, not
+# for training a diagnostic model on 8/10 of a test set. Train on CODE-15%.
+#
+# THE RECORDS HAVE NO IDENTIFIERS AT ALL. ecg_tracings.hdf5 holds one 3-D
+# `tracings` array of shape (827, 4096, 12) and nothing else — no exam_id, no
+# patient id. attributes.csv and all seven annotation CSVs are aligned to it
+# purely by row: "the i-th line corresponds to the i-th tracing", per the
+# bundled README. So `record_id` here IS the row index, 0-826, and every join in
+# CODETestSplitter and ecgbench/labels/code_test.py is positional. Each source
+# file is checked for exactly 827 rows before it is used; a positional join
+# against a file of the wrong length would silently mislabel everything.
+#
+# ROW-INDEXED HDF5. Like CODE-15%, a record names a row of a shared 3-D array —
+# `ecg_tracings.hdf5:tracings:417` — which is the `<file>.hdf5:<dataset>:<row>`
+# form `_parse_hdf5_ref` reads. 3-D arrays are (records, samples, leads) and get
+# transposed; 2-D ones (SPH) are (leads, samples) and do not. Needs h5py.
+#
+# NON-STANDARD LIMB-LEAD ORDER — I, II, III, aVL, aVF, aVR. This differs from
+# CODE-15%, which stores the standard aVR, aVL, aVF despite being the same
+# cohort at the same sampling rate. Verified from the arrays, not the README.
+# Anything using both releases must select leads by name.
+#
+# CHECKSUMS. The shipped data.zip matches Zenodo's published md5
+# (cef8fe457abf4b8f66a34dc1269b4ced) exactly, so this copy is the v1.0.3 release
+# unmodified.
+
+name: "CODE-test (827-record hold-out test set)"
+slug: "code_test"
+# Zenodo's own version string for the record. There is no version marker inside
+# the archive; this is the number the DOI resolves to.
+version: "1.0.3"
+url: "https://doi.org/10.5281/zenodo.3765780"
+# A single data.zip would be expressible, but it extracts to a `data/`
+# subdirectory and the splitter generates metadata_csv, so this stays null.
+# Direct URL, for reference: https://zenodo.org/records/3765780/files/data.zip
+download_url: null
+license: "CC BY 4.0"
+description: >
+  827 twelve-lead ECGs from 827 distinct patients of the CODE cohort, published
+  as the hold-out test set of Ribeiro et al. 2020 and notable less for its size
+  than for its annotation. Six binary abnormalities (1dAVb, RBBB, LBBB, SB, AF,
+  ST) were labelled independently by two cardiologists, with a third senior
+  specialist adjudicating every disagreement to produce the gold standard;
+  four further sets of annotations — two 4th-year cardiology residents, two
+  3rd-year emergency residents, two 5th-year medical students, and the paper's
+  own neural network — ship alongside it, which is what makes the release usable
+  for studying reader agreement rather than only for scoring a classifier.
+  Against the gold standard, 146 of the 827 records (17.7%) carry at least one
+  abnormality and 12 carry more than one. Every record is 4,096 samples at
+  400 Hz; the underlying acquisitions were 7 s or 10 s, symmetrically zero-padded
+  to that length.
+citation: >
+  Ribeiro, A.H., Ribeiro, M.H., Paixão, G.M.M., Oliveira, D.M., Gomes, P.R.,
+  Canazart, J.A., Ferreira, M.P.S., Andersson, C.R., Macfarlane, P.W., Meira
+  Jr., W., Schön, T.B., Ribeiro, A.L.P. Automatic diagnosis of the 12-lead ECG
+  using a deep neural network. Nature Communications 11, 1760 (2020).
+doi: "10.1038/s41467-020-15432-4"
+
+creators:
+  - type: Organization
+    name: "Universidade Federal de Minas Gerais"
+  - type: Organization
+    name: "Telehealth Network of Minas Gerais (TNMG)"
+
+# --- Signal Properties ---
+signal_format: "hdf5"
+# float64 arrays already in millivolts. The bundled README says the signals are
+# "at the scale 1e-4V: so it should be multiplied by 1000 in order to obtain the
+# signals in V", which cannot both be true — the first clause puts the median
+# R wave at 0.15 mV and the second at 1,480 V. Measured instead: the median
+# per-record peak is 3.51 mV and the median lead-II R amplitude 1.48 mV. That is
+# millivolts. No scaling.
+signal_unit_scale: 1.0
+leads: 12
+# NON-STANDARD, and this is the release's own documented order — aVL and aVF
+# before aVR. Verified from the arrays over all 827 records: with channels 0 and
+# 1 as I and II, channel 3 matches I-II/2 (aVL), channel 4 matches II-I/2 (aVF)
+# and channel 5 matches -(I+II)/2 (aVR), each to a median relative error under
+# 2.3%, while every other assignment is off by more than 150%. signal[3] is aVL
+# here and aVR in CODE-15%.
+lead_names: ["I", "II", "III", "aVL", "aVF", "aVR", "V1", "V2", "V3", "V4", "V5", "V6"]
+# 4,096 samples at 400 Hz, uniform across all 827 records.
+duration_seconds: 10.24
+sampling_rates: [400]
+default_sampling_rate: 400
+
+# --- File Structure ---
+# Generated by CODETestSplitter on first run — the release ships no table with a
+# record identifier in it, so there is nothing to point at otherwise. Written to
+# disk because `validate_dataset` re-reads the metadata CSV itself. The dataset
+# root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# The row index into `tracings`, 0-826. Not an identifier the release assigns —
+# it has none — but the only key its own documentation defines.
+record_id_column: "record_id"
+# 827 tracings "from different patients" per the README: one record per patient,
+# and no patient identifier ships, so there is nothing to group on.
+patient_id_column: null
+
+signal_path_columns:
+  400: "signal_path"  # e.g. ecg_tracings.hdf5:tracings:417
+
+# --- Labels ---
+label_column: "abnormality_codes"  # ','-separated gold-standard subset, '' if none
+label_format: "comma_separated"
+
+stratification:
+  # CODETestSplitter stratifies on stratify_class from the label loader: the
+  # rarest gold-standard abnormality a record carries, or NONE. The rarest
+  # stratum is AF at 13 records — just above the ten a 10-fold stratified split
+  # needs, so most folds get one AF record and a few get two.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The release is itself the test half of a division whose training half is a
+# different dataset (CODE-full), so there is no fold column here. See the
+# evaluation-set note at the top.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Uniform: all 827 records are exactly 4,096 samples.
+  expected_samples:
+    400: 4096
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Matches code15.yaml deliberately — same cohort, same instruments, same
+  # telehealth acquisition conditions, so the same range has to apply or the two
+  # releases would be cleaned to different standards. Measured over all 827
+  # records: +-5 mV excludes 21.5%, +-10 excludes 6.7%, +-20 excludes 0.6%
+  # (5 records), +-30 excludes 2. See the longer note in code15.yaml for why
+  # ECGBench's usual +-10 is wrong for this cohort. Expect 14 records (1.7%) to
+  # fail missing_leads as well: a lead recorded as exactly zero throughout.
+  amplitude_range_mv: [-20.0, 20.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/code_test.py. It has to be — there are eight
+# source files (attributes.csv and seven annotation CSVs), none has a key, and
+# all are joined by row position. The loader exposes all six annotator sets
+# side by side, prefixed by annotator, because inter-reader agreement is the
+# thing this release exists for; a loader returning only the gold standard would
+# throw away its distinguishing feature.
+#
+# Multi-label. Train and evaluate on `abnormality_codes` (the gold standard) or
+# the per-annotator flag columns, never on `stratify_class`.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "CODE-test"
+    - "CODE"
+    - "Telehealth Network of Minas Gerais"
+    - "Brazil"
+    - "annotator agreement"
+    - "benchmark test set"
+    - "12-lead"
+    - "HDF5"
+  rai_data_collection: >
+    827 twelve-lead ECGs drawn from the CODE cohort collected by the Telehealth
+    Network of Minas Gerais, a Brazilian public telehealth service serving
+    primary-care units, and published as the evaluation set of Ribeiro et al.
+    2020. Each tracing was annotated for six abnormalities independently by two
+    cardiologists; where they agreed the common reading became the gold
+    standard, and where they disagreed a third senior specialist, shown both
+    annotations, decided. The same 827 tracings were then annotated separately
+    by two 4th-year cardiology residents, two 3rd-year emergency residents and
+    two 5th-year medical students, each pair splitting the set in half, and
+    scored by the paper's neural network. All eight tables are aligned to the
+    waveform array by row position; no identifiers ship.
+  rai_data_biases: >
+    A small, single-country, single-network sample: 827 recordings from the
+    Brazilian public telehealth system, so nothing here supports claims about
+    other populations, hospital settings or acquisition hardware. Ages run 17 to
+    97 and 61.2% of records are from women, which is not the sex balance of the
+    parent CODE-15% release (40.3% men). Class balance is extreme and the rarest
+    classes are very small in absolute terms — atrial fibrillation appears in 13
+    records and sinus bradycardia in 16, so a per-class metric computed here has
+    wide confidence intervals no matter how the folds fall, and a
+    ten-fold-averaged AF score rests on one or four records per fold. 681 of the
+    827 records (82.3%) carry none of the six abnormalities; as in CODE-15%,
+    that means "none of these six", not "normal". The residents' and students'
+    annotation sets each come from two people who annotated one half of the set
+    each, so a disagreement between an expert and a student set is partly a
+    difference between two individuals rather than between two levels of
+    training. Recordings carry the parent cohort's telehealth noise, with a
+    median per-record peak of 3.51 mV.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release, and more thoroughly than most
+    — the waveform file carries no identifier of any kind, and age in whole
+    years and sex are the only attributes published. Records are addressable
+    only by their position in the array. No dates, no free-text reports, no
+    patient or clinic identifiers and no mortality follow-up ship.

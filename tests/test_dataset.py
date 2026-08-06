@@ -367,6 +367,15 @@ class TestShippedLeadNames:
             # aVF = II - I/2 all hold to under 2% relative RMS error.
             ("sph", ["I", "II", "III", "aVR", "aVL", "aVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Standard, and checked rather than assumed because its own sibling
+            # release is not — see test_the_two_code_releases_disagree below.
+            # Derived from the arrays over 1,200 records spanning four parts.
+            ("code15", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # aVL, aVF, aVR — the release's own documented order, confirmed
+            # against all 827 arrays. Same cohort as code15, different order.
+            ("code_test", ["I", "II", "III", "aVL", "aVF", "aVR"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):
@@ -379,6 +388,32 @@ class TestShippedLeadNames:
         assert names[6:] == chest
         # leads is a count of what lead_names lists, not an assumption of 12.
         assert len(names) == config.leads
+
+    def test_the_two_code_releases_disagree_about_the_augmented_leads(self):
+        """CODE-15% and CODE-test permute aVR/aVL/aVF differently.
+
+        Same cohort, same telehealth network, same 400 Hz, same
+        ``(N, 4096, 12)`` HDF5 layout — and channels 3, 4 and 5 mean different
+        physical leads in each. CODE-15% is standard (aVR, aVL, aVF) and
+        CODE-test is not (aVL, aVF, aVR), both verified from the arrays. Anyone
+        stacking the two into one training set by index crosses all three
+        augmented leads on one of them, so this asserts the disagreement rather
+        than letting a later "consistency" edit quietly erase it.
+        """
+        from ecgbench.config import load_config
+
+        code15 = load_config("code15").lead_names
+        code_test = load_config("code_test").lead_names
+
+        # Identical where it matters least...
+        assert code15[:3] == code_test[:3] == ["I", "II", "III"]
+        assert code15[6:] == code_test[6:]
+        # ...and permuted where it matters most.
+        assert code15[3:6] == ["aVR", "aVL", "aVF"]
+        assert code_test[3:6] == ["aVL", "aVF", "aVR"]
+        assert set(code15) == set(code_test)
+        # The index a reader would reach for by habit is wrong in one of them.
+        assert code15[3] != code_test[3]
 
     def test_ningbo_iva_stores_its_leads_in_alphabetical_order(self):
         """Ningbo IVA sorts the CSV columns alphabetically, so signal[0] is aVF.
@@ -701,8 +736,11 @@ class TestWindowedLoading:
         assert np.array_equal(_load_signal(f"{path}:ecg", "hdf5"), implicit)
 
         # A colon inside a directory name is not a key.
-        assert _parse_hdf5_ref("/a:b/c.h5") == ("/a:b/c.h5", None)
-        assert _parse_hdf5_ref(f"{path}:ecg") == (path, "ecg")
+        assert _parse_hdf5_ref("/a:b/c.h5") == ("/a:b/c.h5", None, None)
+        assert _parse_hdf5_ref(f"{path}:ecg") == (path, "ecg", None)
+        # A bare trailing number is still a key, not a row: the row form needs
+        # the dataset named too, so a dataset called "3" stays reachable.
+        assert _parse_hdf5_ref(f"{path}:3") == (path, "3", None)
 
         with pytest.raises(ValueError, match="not in the file"):
             _load_signal(f"{path}:missing", "hdf5")
@@ -715,6 +753,61 @@ class TestWindowedLoading:
         with pytest.raises(ValueError, match="ambiguous"):
             _load_signal(str(ambiguous), "hdf5")
         assert _load_signal(f"{ambiguous}:ecg", "hdf5").shape == (12, 10)
+
+    def test_hdf5_row_of_a_shared_3d_array(self, tmp_path):
+        """``<file>.h5:<dataset>:<row>`` — the CODE layout, many records per file.
+
+        Note the orientation flip: a 2-D HDF5 array is ``(leads, samples)`` and a
+        3-D one is ``(records, samples, leads)``. That is what the releases ship,
+        so the reader transposes one and not the other.
+        """
+        h5py = pytest.importorskip("h5py")
+
+        from ecgbench.dataset import (
+            WindowOutOfRangeError,
+            _load_signal,
+            _parse_hdf5_ref,
+        )
+
+        # Values encode (row, lead, sample) so a wrong row, a transpose or a
+        # shifted window cannot pass by accident.
+        raw = np.arange(3 * 40 * 12, dtype=np.float32).reshape(3, 40, 12)
+        shared = tmp_path / "exams.hdf5"
+        with h5py.File(shared, "w") as handle:
+            handle.create_dataset("tracings", data=raw)
+            handle.create_dataset("exam_id", data=np.array([10, 11, 12]))
+
+        ref = f"{shared}:tracings:1"
+        assert _parse_hdf5_ref(ref) == (str(shared), "tracings", 1)
+
+        signal = _load_signal(ref, "hdf5")
+        assert signal.shape == (12, 40)  # (leads, samples), transposed
+        assert np.array_equal(signal, raw[1].T)
+
+        windowed = _load_signal(ref, "hdf5", window=(5, 10))
+        assert np.array_equal(windowed, raw[1].T[:, 5:15])
+
+        with pytest.raises(WindowOutOfRangeError):
+            _load_signal(ref, "hdf5", window=(35, 10))
+
+        # A 3-D array with no row named is ambiguous, and a row past the end is
+        # an error rather than a numpy wrap-around.
+        with pytest.raises(ValueError, match="must name one"):
+            _load_signal(f"{shared}:tracings", "hdf5")
+        with pytest.raises(ValueError, match="holds 3 records"):
+            _load_signal(f"{shared}:tracings:9", "hdf5")
+
+        # A row index against a 2-D array is a mistake, not a no-op.
+        flat = tmp_path / "one.h5"
+        with h5py.File(flat, "w") as handle:
+            handle.create_dataset("ecg", data=np.zeros((12, 40), dtype=np.float32))
+        with pytest.raises(ValueError, match="only applies to a 3-D"):
+            _load_signal(f"{flat}:ecg:0", "hdf5")
+
+        # And the validation engine's own copy must agree.
+        from ecgbench.validation.engine import _load_signal as validation_load
+
+        assert np.array_equal(validation_load(ref, "hdf5"), signal)
 
     def test_hdf5_validation_engine_agrees_with_the_dataset_reader(
         self, tmp_hdf5_signal_dataset

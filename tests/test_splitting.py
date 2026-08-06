@@ -3,6 +3,7 @@
 import itertools
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -3048,3 +3049,307 @@ class TestNingboIVASplitter:
 
         with pytest.raises(LabelSourceMissingError, match="Diagnosis"):
             get_splitter("ningbo_iva").load_metadata(tmp_path, self._config(sample_config))
+
+
+class TestCODE15Splitter:
+    """CODE-15% resolves exam_id to a row of one of 18 shared HDF5 arrays."""
+
+    COLUMNS = (
+        "exam_id,age,is_male,nn_predicted_age,1dAVb,RBBB,LBBB,SB,ST,AF,"
+        "patient_id,death,timey,normal_ecg,trace_file"
+    )
+
+    def _tree(self, tmp_path, rows, hdf5_ids=None):
+        """rows: (exam_id, patient_id, trace_file, rbbb). hdf5_ids: part -> ids."""
+        h5py = pytest.importorskip("h5py")
+        lines = [self.COLUMNS]
+        for exam_id, patient_id, part, rbbb in rows:
+            lines.append(
+                f"{exam_id},50,True,51.0,False,{rbbb},False,False,False,False,"
+                f"{patient_id},False,1.0,{not rbbb},{part}"
+            )
+        (tmp_path / "exams.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        if hdf5_ids is None:
+            # Default: each part's own order, plus the trailing all-zero padding
+            # row with exam_id 0 that every real part carries.
+            hdf5_ids = {}
+            for exam_id, _, part, _ in rows:
+                hdf5_ids.setdefault(part, []).append(exam_id)
+            hdf5_ids = {p: [*ids, 0] for p, ids in hdf5_ids.items()}
+
+        for part, ids in hdf5_ids.items():
+            with h5py.File(tmp_path / part, "w") as handle:
+                handle.create_dataset("exam_id", data=np.array(ids, dtype=np.int64))
+                handle.create_dataset(
+                    "tracings", data=np.zeros((len(ids), 8, 12), dtype=np.float32)
+                )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="code15", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="exam_id", patient_id_column="patient_id",
+            signal_path_columns={400: "signal_path"}, default_sampling_rate=400,
+            label_column="abnormality_codes", leads=12, signal_format="hdf5",
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.code15 import CODE15Splitter
+
+        assert isinstance(get_splitter("code15"), CODE15Splitter)
+
+    def test_row_index_comes_from_the_hdf5_not_from_the_csv_order(
+        self, tmp_path, sample_config
+    ):
+        """exams.csv is not in file order — part 0's real CSV rows and its own
+        exam_id dataset disagree, so a positional read mislabels almost every
+        record."""
+        config = self._config(sample_config)
+        rows = [
+            (500, 1, "exams_part0.hdf5", False),
+            (600, 2, "exams_part0.hdf5", True),
+            (700, 3, "exams_part0.hdf5", False),
+        ]
+        # The file stores them in a different order from the CSV.
+        root = self._tree(tmp_path, rows, hdf5_ids={"exams_part0.hdf5": [700, 500, 600, 0]})
+
+        df = get_splitter("code15").load_metadata(root, config).set_index("exam_id")
+
+        assert df.loc[700, "signal_path"] == "exams_part0.hdf5:tracings:0"
+        assert df.loc[500, "signal_path"] == "exams_part0.hdf5:tracings:1"
+        assert df.loc[600, "signal_path"] == "exams_part0.hdf5:tracings:2"
+
+    def test_the_trailing_padding_row_is_dropped(self, tmp_path, sample_config):
+        """Every part holds one more row than it has records: an all-zero row
+        with exam_id 0 that appears in no CSV."""
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [
+            (500, 1, "exams_part0.hdf5", False),
+            (600, 2, "exams_part0.hdf5", False),
+        ])
+
+        df = get_splitter("code15").load_metadata(root, config)
+
+        assert len(df) == 2
+        assert 0 not in set(df["exam_id"])
+        assert not any(p.endswith(":2") for p in df["signal_path"])
+
+    def test_records_spread_across_parts_each_get_their_own_file(
+        self, tmp_path, sample_config
+    ):
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [
+            (500, 1, "exams_part0.hdf5", False),
+            (600, 2, "exams_part9.hdf5", True),
+        ])
+
+        df = get_splitter("code15").load_metadata(root, config).set_index("exam_id")
+
+        assert df.loc[500, "signal_path"] == "exams_part0.hdf5:tracings:0"
+        assert df.loc[600, "signal_path"] == "exams_part9.hdf5:tracings:0"
+
+    def test_a_part_disagreeing_with_the_csv_raises(self, tmp_path, sample_config):
+        """Zenodo publishes checksums only for the zips, so this set comparison
+        is the only integrity check an extracted copy gets."""
+        config = self._config(sample_config)
+        root = self._tree(
+            tmp_path,
+            [(500, 1, "exams_part0.hdf5", False), (600, 2, "exams_part0.hdf5", False)],
+            hdf5_ids={"exams_part0.hdf5": [500, 999, 0]},   # 600 missing, 999 extra
+        )
+
+        with pytest.raises(ValueError, match="disagree about which records"):
+            get_splitter("code15").load_metadata(root, config)
+
+    def test_a_missing_part_names_the_file(self, tmp_path, sample_config):
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [(500, 1, "exams_part0.hdf5", False)])
+        (root / "exams_part0.hdf5").unlink()
+
+        with pytest.raises(FileNotFoundError, match="exams_part0.hdf5"):
+            get_splitter("code15").load_metadata(root, config)
+
+    def test_metadata_is_written_to_disk_for_the_validation_engine(
+        self, tmp_path, sample_config
+    ):
+        """validate_dataset re-reads config.metadata_csv and rebuilds paths from
+        it, so an in-memory-only fix-up fails every record."""
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [(500, 1, "exams_part0.hdf5", False)])
+
+        get_splitter("code15").load_metadata(root, config)
+
+        written = root / "ecgbench_metadata.csv"
+        assert written.exists()
+        reread = pd.read_csv(written)
+        assert reread.loc[0, "signal_path"] == "exams_part0.hdf5:tracings:0"
+
+    def test_cached_metadata_keeps_the_empty_label_list_a_string(
+        self, tmp_path, sample_config
+    ):
+        """abnormality_codes is empty for 89% of records; read back naively it
+        becomes float NaN and stops being a list."""
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [
+            (500, 1, "exams_part0.hdf5", False), (600, 2, "exams_part0.hdf5", True),
+        ])
+        splitter = get_splitter("code15")
+
+        first = splitter.load_metadata(root, config)
+        cached = splitter.load_metadata(root, config)      # now hits the cache
+
+        assert list(cached["abnormality_codes"]) == list(first["abnormality_codes"])
+        assert cached["abnormality_codes"].iloc[0] == ""
+        assert cached["abnormality_codes"].iloc[1] == "RBBB"
+
+    def test_stratification_separates_normal_from_other(self, tmp_path, sample_config):
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, [
+            (500, 1, "exams_part0.hdf5", False),    # normal_ecg True
+            (600, 2, "exams_part0.hdf5", True),     # RBBB
+        ])
+        splitter = get_splitter("code15")
+        df = splitter.load_metadata(root, config)
+
+        labels = splitter.get_stratification_labels(df, config)
+        assert labels.name == "stratify_class"
+        assert list(labels) == ["NORMAL", "RBBB"]
+
+    def test_stratification_without_load_metadata_first_says_so(self, sample_config):
+        splitter = get_splitter("code15")
+        with pytest.raises(ValueError, match="call load_metadata"):
+            splitter.get_stratification_labels(
+                pd.DataFrame({"exam_id": [1]}), self._config(sample_config)
+            )
+
+
+class TestCODETestSplitter:
+    """CODE-test has no identifiers: the record id is the array row index."""
+
+    ABN = ("1dAVb", "RBBB", "LBBB", "SB", "AF", "ST")
+
+    def _tree(self, tmp_path, n=4, flags=None, n_array_rows=None):
+        h5py = pytest.importorskip("h5py")
+        (tmp_path / "annotations").mkdir(exist_ok=True)
+        (tmp_path / "attributes.csv").write_text(
+            "\n".join(["age,sex"] + [f"{30 + i},M" for i in range(n)]) + "\n",
+            encoding="utf-8",
+        )
+
+        from ecgbench.labels.code_test import ANNOTATORS
+
+        for name in ANNOTATORS:
+            rows = flags if (flags and name == "gold_standard") else [()] * n
+            header = ("," if name == "dnn" else "") + ",".join(self.ABN)
+            lines = [header]
+            for i, on in enumerate(rows):
+                cells = ["1" if c in on else "0" for c in self.ABN]
+                lines.append(",".join(([str(i)] if name == "dnn" else []) + cells))
+            (tmp_path / "annotations" / f"{name}.csv").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8"
+            )
+
+        with h5py.File(tmp_path / "ecg_tracings.hdf5", "w") as handle:
+            handle.create_dataset(
+                "tracings",
+                data=np.zeros((n_array_rows if n_array_rows else n, 8, 12)),
+            )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="code_test", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_id", patient_id_column=None,
+            signal_path_columns={400: "signal_path"}, default_sampling_rate=400,
+            label_column="abnormality_codes", leads=12, signal_format="hdf5",
+        )
+
+    def _patch_n(self, monkeypatch, n):
+        import ecgbench.labels.code_test as labels_mod
+        import ecgbench.splitting.strategies.code_test as split_mod
+
+        monkeypatch.setattr(labels_mod, "N_RECORDS", n)
+        monkeypatch.setattr(split_mod, "N_RECORDS", n)
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.code_test import CODETestSplitter
+
+        assert isinstance(get_splitter("code_test"), CODETestSplitter)
+
+    def test_signal_paths_are_row_references_into_the_shared_array(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        self._patch_n(monkeypatch, 3)
+        config = self._config(sample_config)
+        df = get_splitter("code_test").load_metadata(self._tree(tmp_path, 3), config)
+
+        assert list(df["record_id"]) == [0, 1, 2]
+        assert list(df["signal_path"]) == [
+            "ecg_tracings.hdf5:tracings:0",
+            "ecg_tracings.hdf5:tracings:1",
+            "ecg_tracings.hdf5:tracings:2",
+        ]
+
+    def test_an_array_of_the_wrong_length_is_refused(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """Record ids are row numbers, so a different row count means the
+        alignment the whole release rests on no longer holds."""
+        self._patch_n(monkeypatch, 3)
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, 3, n_array_rows=5)
+
+        with pytest.raises(ValueError, match="aligned to that array by row position"):
+            get_splitter("code_test").load_metadata(root, config)
+
+    def test_missing_tracings_file_points_at_the_data_subdirectory(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        self._patch_n(monkeypatch, 2)
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, 2)
+        (root / "ecg_tracings.hdf5").unlink()
+
+        with pytest.raises(FileNotFoundError, match="data/"):
+            get_splitter("code_test").load_metadata(root, config)
+
+    def test_metadata_is_written_to_disk_and_reread_intact(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        self._patch_n(monkeypatch, 3)
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, 3, flags=[("AF",), (), ("RBBB",)])
+        splitter = get_splitter("code_test")
+
+        first = splitter.load_metadata(root, config)
+        assert (root / "ecgbench_metadata.csv").exists()
+
+        cached = splitter.load_metadata(root, config)
+        assert list(cached["abnormality_codes"]) == list(first["abnormality_codes"])
+        # Empty for the unflagged record, and still a string rather than NaN.
+        assert cached["abnormality_codes"].iloc[1] == ""
+        assert cached["gold_standard_abnormality_codes"].iloc[1] == ""
+
+    def test_no_patient_grouping_because_no_patient_id_ships(self):
+        """827 tracings from 827 different patients, and no identifier at all."""
+        from ecgbench.config import load_config
+
+        assert load_config("code_test").patient_id_column is None
+
+    def test_stratification_labels_come_from_the_gold_standard(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        self._patch_n(monkeypatch, 3)
+        config = self._config(sample_config)
+        root = self._tree(tmp_path, 3, flags=[("AF", "RBBB"), (), ("RBBB",)])
+        splitter = get_splitter("code_test")
+        df = splitter.load_metadata(root, config)
+
+        labels = splitter.get_stratification_labels(df, config)
+        assert labels.name == "stratify_class"
+        assert list(labels) == ["AF", "NONE", "RBBB"]

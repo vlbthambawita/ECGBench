@@ -4635,3 +4635,299 @@ class TestNingboIVALabels:
         from ecgbench.config import load_config
 
         assert load_config("ningbo_iva").validation.expected_samples == {}
+
+
+class TestCODE15Labels:
+    """CODE-15%: six flags, and the trap that "no flag" is not "normal"."""
+
+    COLUMNS = (
+        "exam_id,age,is_male,nn_predicted_age,1dAVb,RBBB,LBBB,SB,ST,AF,"
+        "patient_id,death,timey,normal_ecg,trace_file"
+    )
+
+    def _exams(self, tmp_path, rows):
+        """rows: list of dicts overriding the defaults below."""
+        lines = [self.COLUMNS]
+        for row in rows:
+            r = {
+                "exam_id": 1, "age": 50, "is_male": "True", "nn_predicted_age": 51.0,
+                "1dAVb": "False", "RBBB": "False", "LBBB": "False", "SB": "False",
+                "ST": "False", "AF": "False", "patient_id": 100, "death": "False",
+                "timey": 1.0, "normal_ecg": "False", "trace_file": "exams_part0.hdf5",
+                **row,
+            }
+            lines.append(",".join(str(r[c]) for c in self.COLUMNS.split(",")))
+        (tmp_path / "exams.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="code15", record_id_column="exam_id",
+            patient_id_column="patient_id", signal_path_columns={400: "signal_path"},
+            default_sampling_rate=400, label_column="abnormality_codes",
+        )
+
+    def test_the_six_flags_are_the_whole_vocabulary(self):
+        from ecgbench.labels.code15 import ABNORMALITIES
+
+        assert ABNORMALITIES == ("1dAVb", "RBBB", "LBBB", "SB", "ST", "AF")
+
+    def test_labels_come_from_the_one_shipped_csv(self):
+        """exams.csv ships, so labels do not depend on `ecgbench splits` first."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.code15 import EXAMS_CSV
+
+        spec = load_config("code15").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # module-based: needs the derived columns
+        assert spec.join_column == "exam_id"
+        assert EXAMS_CSV == "exams.csv"
+
+    def test_no_abnormality_is_not_the_same_as_normal(self, tmp_path, sample_config):
+        """173,347 real records are neither flagged nor normal — the central trap.
+
+        A model trained on the six flags alone treats those as negatives for
+        everything, which is wrong rather than merely uninformative, so the two
+        cases must stay distinguishable.
+        """
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "normal_ecg": "True"},                 # genuinely normal
+            {"exam_id": 2, "normal_ecg": "False"},                # some other finding
+            {"exam_id": 3, "RBBB": "True", "normal_ecg": "False"},
+        ])
+        df = code15_labels(root, self._config(sample_config))
+
+        # Both unflagged records have an empty label list...
+        assert df.loc[1, "abnormality_codes"] == ""
+        assert df.loc[2, "abnormality_codes"] == ""
+        # ...and are still told apart, by normal_ecg and by stratify_class.
+        assert bool(df.loc[1, "normal_ecg"]) is True
+        assert bool(df.loc[2, "normal_ecg"]) is False
+        assert df.loc[1, "stratify_class"] == "NORMAL"
+        assert df.loc[2, "stratify_class"] == "OTHER"
+        assert df.loc[3, "stratify_class"] == "RBBB"
+
+    def test_multi_label_records_join_their_codes_and_stratify_on_the_rarest(
+        self, tmp_path, sample_config
+    ):
+        """Rarest-wins, computed from the frame rather than hardcoded."""
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        # RBBB appears three times, LBBB once, so LBBB is the rarer of the pair.
+        rows = [
+            {"exam_id": 1, "RBBB": "True", "LBBB": "True"},
+            {"exam_id": 2, "RBBB": "True"},
+            {"exam_id": 3, "RBBB": "True"},
+        ]
+        df = code15_labels(self._exams(tmp_path, rows), self._config(sample_config))
+
+        # Codes are listed in the declared column order, not the rarity order.
+        assert df.loc[1, "abnormality_codes"] == "RBBB,LBBB"
+        assert df.loc[1, "n_abnormalities"] == 2
+        # But the single-label reduction takes the rarer one.
+        assert df.loc[1, "stratify_class"] == "LBBB"
+        assert df.loc[2, "stratify_class"] == "RBBB"
+
+    def test_absent_mortality_followup_stays_absent(self, tmp_path, sample_config):
+        """112,132 real records have no follow-up; reading NaN as False invents
+        112,132 survivors."""
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "death": "True", "timey": 2.5},
+            {"exam_id": 2, "death": "False", "timey": 3.0},
+            {"exam_id": 3, "death": "", "timey": ""},          # no follow-up
+        ])
+        df = code15_labels(root, self._config(sample_config))
+
+        assert df["death"].dtype == "boolean"          # nullable, not plain bool
+        assert bool(df.loc[1, "death"]) is True
+        assert bool(df.loc[2, "death"]) is False
+        assert pd.isna(df.loc[3, "death"])
+        assert list(df["has_followup"]) == [True, True, False]
+        # The false reading this guards against.
+        assert int(df["death"].fillna(False).sum()) == 1
+
+    def test_sex_is_derived_from_is_male_and_both_are_kept(self, tmp_path, sample_config):
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        root = self._exams(tmp_path, [
+            {"exam_id": 1, "is_male": "True"}, {"exam_id": 2, "is_male": "False"},
+        ])
+        df = code15_labels(root, self._config(sample_config))
+
+        assert list(df["sex"]) == ["M", "F"]
+        assert list(df["is_male"]) == [True, False]
+
+    def test_a_renamed_column_fails_loudly(self, tmp_path, sample_config):
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        (tmp_path / "exams.csv").write_text("exam_id,age\n1,50\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="missing column"):
+            code15_labels(tmp_path, self._config(sample_config))
+
+    def test_missing_exams_csv_says_where_to_get_it(self, tmp_path, sample_config):
+        from ecgbench.labels.code15 import load_labels as code15_labels
+
+        with pytest.raises(LabelSourceMissingError, match="exams.csv"):
+            code15_labels(tmp_path, self._config(sample_config))
+
+
+class TestCODETestLabels:
+    """CODE-test: eight keyless files joined by row position, seven annotators."""
+
+    ABN = ("1dAVb", "RBBB", "LBBB", "SB", "AF", "ST")
+
+    def _tree(self, tmp_path, n=4, flags=None, annotator_flags=None):
+        """Build a data/ tree of `n` rows. `flags` sets the gold standard."""
+        (tmp_path / "annotations").mkdir(exist_ok=True)
+        attributes = ["age,sex"] + [f"{30 + i},{'MF'[i % 2]}" for i in range(n)]
+        (tmp_path / "attributes.csv").write_text(
+            "\n".join(attributes) + "\n", encoding="utf-8"
+        )
+
+        from ecgbench.labels.code_test import ANNOTATORS
+
+        for name in ANNOTATORS:
+            rows = (annotator_flags or {}).get(name) or flags or [()] * n
+            header = ("," if name == "dnn" else "") + ",".join(self.ABN)
+            lines = [header]
+            for i, on in enumerate(rows):
+                cells = ["1" if code in on else "0" for code in self.ABN]
+                lines.append(",".join(([str(i)] if name == "dnn" else []) + cells))
+            (tmp_path / "annotations" / f"{name}.csv").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8"
+            )
+        return tmp_path
+
+    def _config(self, sample_config):
+        return replace(
+            sample_config, slug="code_test", record_id_column="record_id",
+            patient_id_column=None, signal_path_columns={400: "signal_path"},
+            default_sampling_rate=400, label_column="abnormality_codes",
+        )
+
+    def _patch_n(self, monkeypatch, n):
+        """The real loader hard-codes 827; shrink it for the fixtures."""
+        import ecgbench.labels.code_test as mod
+
+        monkeypatch.setattr(mod, "N_RECORDS", n)
+
+    def test_the_record_id_is_the_row_index(self, tmp_path, sample_config, monkeypatch):
+        """No identifier ships, so position is the only key there is."""
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        self._patch_n(monkeypatch, 4)
+        df = ct_labels(self._tree(tmp_path, 4), self._config(sample_config))
+
+        assert list(df.index) == [0, 1, 2, 3]
+        assert df.index.name == "record_id"
+        assert list(df["age"]) == [30, 31, 32, 33]
+        assert list(df["sex"]) == ["M", "F", "M", "F"]
+
+    def test_all_seven_annotator_sets_are_exposed_side_by_side(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """Reader agreement is what this release is for; only the gold standard
+        would throw that away."""
+        from ecgbench.labels.code_test import ANNOTATORS
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        self._patch_n(monkeypatch, 2)
+        root = self._tree(
+            tmp_path, 2,
+            flags=[("AF",), ()],
+            annotator_flags={"medical_students": [("AF", "RBBB"), ("SB",)]},
+        )
+        df = ct_labels(root, self._config(sample_config))
+
+        assert len(ANNOTATORS) == 7
+        for name in ANNOTATORS:
+            assert f"{name}_AF" in df.columns
+            assert f"{name}_abnormality_codes" in df.columns
+
+        # The disagreement survives into the frame rather than being resolved.
+        assert bool(df.loc[0, "gold_standard_AF"]) is True
+        assert bool(df.loc[0, "medical_students_RBBB"]) is True
+        assert bool(df.loc[0, "gold_standard_RBBB"]) is False
+        assert df.loc[1, "medical_students_abnormality_codes"] == "SB"
+        assert df.loc[1, "gold_standard_abnormality_codes"] == ""
+
+    def test_the_unprefixed_columns_are_the_gold_standard(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        from ecgbench.labels.code_test import GOLD_STANDARD
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        self._patch_n(monkeypatch, 2)
+        root = self._tree(
+            tmp_path, 2,
+            flags=[("LBBB",), ()],
+            annotator_flags={"dnn": [("ST",), ("ST",)]},
+        )
+        df = ct_labels(root, self._config(sample_config))
+
+        assert GOLD_STANDARD == "gold_standard"
+        assert df.loc[0, "abnormality_codes"] == "LBBB"
+        assert bool(df.loc[0, "LBBB"]) is True
+        # Not the DNN's reading, even though it also has an opinion.
+        assert bool(df.loc[0, "ST"]) is False
+        assert bool(df.loc[0, "dnn_ST"]) is True
+
+    def test_dnn_csv_extra_index_column_is_dropped(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """dnn.csv alone carries a leading unnamed column; the other six do not."""
+        from ecgbench.labels.code_test import load_annotations
+
+        self._patch_n(monkeypatch, 3)
+        root = self._tree(tmp_path, 3, flags=[("AF",), (), ("SB",)])
+        annotations = load_annotations(root)
+
+        assert list(annotations["dnn"].columns) == list(self.ABN)
+        assert not any(c.startswith("Unnamed") for c in annotations["dnn"].columns)
+        assert list(annotations["dnn"].index) == [0, 1, 2]
+
+    def test_a_source_file_of_the_wrong_length_is_refused_not_mis_joined(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """A positional join cannot partially match — it silently mislabels."""
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        self._patch_n(monkeypatch, 4)
+        root = self._tree(tmp_path, 4)
+        # One annotator file loses a row.
+        path = root / "annotations" / "cardiologist2.csv"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="rows, expected 4"):
+            ct_labels(root, self._config(sample_config))
+
+    def test_stratify_takes_the_rarest_gold_standard_class(
+        self, tmp_path, sample_config, monkeypatch
+    ):
+        """AF is 13 of 827 in the real release; a commoner class winning would
+        leave folds with no AF at all."""
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        self._patch_n(monkeypatch, 4)
+        root = self._tree(tmp_path, 4, flags=[("RBBB", "AF"), ("RBBB",), ("RBBB",), ()])
+        df = ct_labels(root, self._config(sample_config))
+
+        assert df.loc[0, "abnormality_codes"] == "RBBB,AF"
+        assert df.loc[0, "stratify_class"] == "AF"      # the rarer of the two
+        assert df.loc[1, "stratify_class"] == "RBBB"
+        # Not "NORMAL": this release publishes no normal flag at all.
+        assert df.loc[3, "stratify_class"] == "NONE"
+
+    def test_missing_annotations_point_at_the_data_subdirectory(
+        self, tmp_path, sample_config
+    ):
+        """The archive extracts to data/, which is the commonest --data-path slip."""
+        from ecgbench.labels.code_test import load_labels as ct_labels
+
+        with pytest.raises(LabelSourceMissingError, match="data/"):
+            ct_labels(tmp_path, self._config(sample_config))

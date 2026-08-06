@@ -34,8 +34,8 @@ pip install ecgbench[torch]
 
 ### With HDF5 datasets
 
-`sph` stores one HDF5 array per record, which needs `h5py`. It is the only
-dataset that does, so the dependency is its own extra:
+`sph`, `code15` and `code_test` store their waveforms as HDF5, which needs
+`h5py`. They are the only datasets that do, so the dependency is its own extra:
 
 ```bash
 pip install ecgbench[hdf5]
@@ -215,6 +215,8 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `cpsc_2018` | I, II, III, aVR, aVL, aVF, V1-V6 — necessarily the same as `challenge2020`/`challenge2021`, whose `cpsc_2018` cohort is a byte-for-byte copy of these records |
 | `sph` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated in the HDF5 arrays**; derived from the signals, since `III = II − I` and the Goldberger relations hold to under 2% relative RMS error |
 | `ningbo_iva` | **aVF, aVL, aVR, I, II, III**, V1-V6 — the columns are sorted **alphabetically**, so `signal[0]` is aVF and lead I is `signal[3]` |
+| `code15` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, but **checked** rather than assumed, because its own sibling release below is not |
+| `code_test` | I, II, III, **aVL, aVF, aVR**, V1-V6 — the **same cohort as `code15` at the same rate, permuted differently**. `signal[3]` is aVR in one and aVL in the other, so anything stacking the two must select by name |
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -350,8 +352,8 @@ reduction. All 6,877 records are byte-identical to the `cpsc_2018` cohort of bot
 challenge years, under the same `A####` names — so this is the fourth way into the
 same recordings. See `examples/load_cpsc_2018.py`.
 
-`sph` is the largest **single-source** dataset here — 25,770 records from 24,666
-patients at one Chinese hospital — and the only one stored as **HDF5** (`pip install
+`sph` is the largest **single-source hospital** dataset here — 25,770 records from
+24,666 patients at one Chinese hospital — and stored as **HDF5** (`pip install
 ecgbench[hdf5]`), one `(12, N)` float16 array per record, already in millivolts. Its
 labels are AHA/ACC/HRS standardised statements rather than a bespoke vocabulary: 44
 primary statements in 11 categories, each optionally qualified by one of 15
@@ -372,6 +374,35 @@ system rather than a diagnostic cart — and the samples carry **no declared uni
 so the millivolt scale is an ECGBench estimate (see "Leads and units"). Length runs
 2.9-59.3 s in 317 distinct values over 334 records. See
 `examples/load_ningbo_iva.py`.
+
+`code15` is the **largest dataset in the catalogue** — 345,779 records from 233,770
+Brazilian telehealth patients — and the first where a record is a **row of a shared
+array** rather than a file: 18 HDF5 parts each hold one `(N, 4096, 12)` array, so a
+signal path reads `exams_part0.hdf5:tracings:417`. (2-D HDF5 arrays are
+`(leads, samples)` as in `sph`; 3-D ones are `(records, samples, leads)` and get
+transposed.) Its label trap is worth stating twice: six binary flags ship, 308,004
+records carry none of them, and **only 134,657 of those are flagged `normal_ecg`** —
+so half the release has some finding the six-class vocabulary cannot name, and a
+model trained on the flags alone treats 173,347 records as confident negatives for
+everything. It also carries **mortality follow-up**, missing for 112,132 records,
+where missing means "not followed up" rather than "survived". Folds are grouped on
+`patient_id`; 66,929 patients contributed more than one record. See
+`examples/load_code15.py`.
+
+`code_test` is its 827-record sibling — the hold-out evaluation set of the same
+paper, from the same cohort — and the most heavily annotated dataset here: **seven
+independent readings of every record** (two cardiologists, the gold standard
+adjudicated from them, two cardiology residents, two emergency residents, two
+medical students, and the paper's DNN), all exposed side by side. Two things to know.
+It has **no identifiers at all** — one `(827, 4096, 12)` array and eight keyless
+tables aligned by row position — so `record_id` is the row index and every source
+file is refused unless it has exactly 827 rows. And its limb-lead order is
+`aVL, aVF, aVR` where `code15`'s is standard, despite the shared cohort and rate, so
+crossing the two by index silently swaps three leads. ECGBench folds it ten ways like
+everything else, but the release is an evaluation set: use
+`split=None, fold_numbers=range(1, 11)` for all 827 and train on `code15`. Verified
+against the waveforms, the two share **no recordings**. See
+`examples/load_code_test.py`.
 
 `norwegian_athlete_ecg` is the smallest dataset here — 28 records, one per elite
 Norwegian endurance athlete — and the only one whose **amplitudes are not

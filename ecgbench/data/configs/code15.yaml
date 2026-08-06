@@ -1,0 +1,221 @@
+# ECGBench Config: CODE-15% (Telehealth Network of Minas Gerais, 15% subset)
+# ===========================================================================
+# 345,779 twelve-lead ECGs from 233,770 patients — an open 15% sample of the
+# CODE cohort collected by the Telehealth Network of Minas Gerais.
+# https://doi.org/10.5281/zenodo.4916206
+#
+# FIRST DATASET TO USE A ROW-INDEXED HDF5 REFERENCE. The waveforms are not one
+# file per record: 18 files each hold a single 3-D `tracings` array of shape
+# (N, 4096, 12). A record therefore has to name a row as well as a file, which
+# is the `<file>.hdf5:<dataset>:<row>` form `_parse_hdf5_ref` reads —
+# `exams_part0.hdf5:tracings:417`. Note the orientation: 2-D HDF5 arrays are
+# (leads, samples) as in SPH, and 3-D ones are (records, samples, leads), so
+# `_hdf5_signal_view` transposes this one and not SPH's. Needs h5py.
+#
+# EVERY PART HAS ONE MORE ROW THAN IT HAS RECORDS. exams_part0..16 hold 20,001
+# rows for 20,000 records and part17 holds 5,780 for 5,779. The extra row is
+# all zeros with `exam_id` 0 and appears in no CSV. Reading rows positionally
+# would silently shift every record after it — and would also be wrong for
+# another reason, below.
+#
+# exams.csv IS NOT IN FILE ORDER. Its rows within a part do not follow the
+# part's own `exam_id` dataset, so the row index has to come from that dataset,
+# not from the CSV's row number. CODE15Splitter builds the exam_id -> (file,
+# row) map by reading all 18 `exam_id` datasets, and writes the resolved
+# reference into `ecgbench_metadata.csv` — on disk, because `validate_dataset`
+# re-reads the metadata CSV itself and never sees an in-memory fix-up.
+#
+# LEAD ORDER DIFFERS FROM ITS OWN SIBLING RELEASE. CODE-15% stores the standard
+# I, II, III, aVR, aVL, aVF, while CODE-test stores I, II, III, aVL, aVF, aVR.
+# Same cohort, same 400 Hz, different limb-lead order. Verified from the arrays
+# (see lead_names below), not from the documentation. Anything stacking the two
+# must select leads by name.
+#
+# CHECKSUMS. exams.csv matches Zenodo's published md5
+# (0107516d3f63864498fb77d15799cc95) exactly, as does the shipped MD5SUMS file.
+# The HDF5 files cannot be checked directly — Zenodo publishes checksums of the
+# exams_part*.zip archives, which this copy no longer has. What was verified
+# instead: all 18 arrays have the expected (N, 4096, 12) shape, and the exam_id
+# sets of the parts and of exams.csv agree exactly, part by part. CODE15Splitter
+# re-runs that second check on every run and refuses to proceed if it fails.
+
+name: "CODE-15% (Telehealth Network of Minas Gerais, 15% subset)"
+slug: "code15"
+version: "1.0.0"
+url: "https://doi.org/10.5281/zenodo.4916206"
+# Zenodo serves 19 separate files (exams.csv plus 18 ~2.7 GB zips), which a
+# single URL cannot express — and the splitter generates metadata_csv anyway,
+# so this must stay null. Pass --data-path.
+download_url: null
+license: "CC BY 4.0"
+description: >
+  345,779 twelve-lead ECGs from 233,770 patients, an openly licensed 15% sample
+  of the CODE cohort gathered by the Telehealth Network of Minas Gerais (TNMG)
+  from primary-care units across Brazil. Every recording is stored as 4,096
+  samples at 400 Hz — 10.24 s — with shorter acquisitions zero-padded
+  symmetrically to that length. Six binary abnormality labels ship per record
+  (1dAVb, RBBB, LBBB, SB, ST, AF), derived from the TNMG's own reports, plus a
+  `normal_ecg` flag, age, sex, a neural-network age estimate, and mortality
+  follow-up for the 233,647 records that have it. 37,775 records (10.9%) carry
+  at least one of the six abnormalities and 3,671 carry more than one. Because
+  66,929 patients contributed more than one recording — up to 38 — folds are
+  grouped on patient_id.
+citation: >
+  Ribeiro, A.H., Ribeiro, M.H., Paixão, G.M.M., Oliveira, D.M., Gomes, P.R.,
+  Canazart, J.A., Ferreira, M.P.S., Andersson, C.R., Macfarlane, P.W., Meira
+  Jr., W., Schön, T.B., Ribeiro, A.L.P. Automatic diagnosis of the 12-lead ECG
+  using a deep neural network. Nature Communications 11, 1760 (2020).
+doi: "10.1038/s41467-020-15432-4"
+
+creators:
+  - type: Organization
+    name: "Telehealth Network of Minas Gerais (TNMG)"
+  - type: Organization
+    name: "Universidade Federal de Minas Gerais"
+
+# --- Signal Properties ---
+signal_format: "hdf5"
+# float32 arrays already in millivolts. The bundled CODE-test README claims a
+# scale of "1e-4V ... multiplied by 1000 in order to obtain the signals in V",
+# which is self-contradictory — the first clause makes a median R wave 0.17 mV
+# and the second makes it 1,750 V. Measured instead: the median per-record peak
+# is 4.27 mV and the median lead-II R amplitude 1.75 mV, which is millivolts and
+# nothing else. No scaling.
+signal_unit_scale: 1.0
+leads: 12
+# STANDARD order — and deliberately checked rather than assumed, because the
+# sibling CODE-test release is NOT standard. Verified from the arrays over 1,200
+# records spanning parts 0, 5, 11 and 17: with channels 0 and 1 taken as I and
+# II, channel 3 matches -(I+II)/2, channel 4 matches I-II/2 and channel 5
+# matches II-I/2, each to a median relative error under 2%, while every other
+# assignment is off by more than 140%.
+lead_names: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+# 4,096 samples at 400 Hz. Uniform across all 345,779 records — the underlying
+# acquisitions were 7 s or 10 s and the release zero-pads both to 4,096.
+duration_seconds: 10.24
+sampling_rates: [400]
+default_sampling_rate: 400
+
+# --- File Structure ---
+# Generated by CODE15Splitter on first run: exams.csv plus the exam_id -> row
+# resolution it cannot express. The dataset root must be writable, and the
+# validation engine reads this file rather than exams.csv.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "exam_id"
+# 233,770 patients over 345,779 records, with 66,929 patients contributing more
+# than one (up to 38). Grouping is mandatory: without it roughly a third of the
+# records could put the same patient in both train and test.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  400: "signal_path"  # e.g. exams_part0.hdf5:tracings:417
+
+# --- Labels ---
+label_column: "abnormality_codes"  # ','-separated subset of the six, '' if none
+label_format: "comma_separated"
+
+stratification:
+  # CODE15Splitter stratifies on stratify_class from the label loader: the
+  # globally rarest of the six abnormalities a record carries, or NORMAL /
+  # OTHER for the 308,004 records carrying none. See the labels note below.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# The release defines none. The paper's train/test division is over CODE-full
+# and its test set is the separate CODE-test release, not a column here.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 12
+  # Uniform: every record is exactly 4,096 samples, verified from the array
+  # shapes of all 18 parts. Unlike SPH this check can and should run.
+  expected_samples:
+    400: 4096
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # NOT the ECGBench-usual +-10 mV, and the difference is deliberate. These are
+  # telehealth recordings made by non-specialist staff in primary-care units,
+  # so they carry far more electrode artefact and baseline wander than a
+  # hospital cohort: the median per-record peak is 4.27 mV against SPH's 1.74.
+  # Measured exclusion rates over 20,000 records of part 3 — +-5 mV: 38.7%,
+  # +-10: 11.8%, +-15: 6.5%, +-20: 2.0%, +-30: 0.15%. +-10 would drop roughly
+  # 40,000 legitimate recordings; +-20 keeps the exclusion near the ~1-2% the
+  # other ECGBench datasets sit at while still catching the railed leads (the
+  # worst record in that sample peaks at 281 mV). Expect ~0.4% of records to
+  # fail missing_leads as well: a lead recorded as exactly zero throughout.
+  amplitude_range_mv: [-20.0, 20.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/code15.py. exams.csv alone would nearly do as a
+# declarative select, but the six abnormality flags need reducing to the
+# `abnormality_codes` list and the `stratify_class` the splitter groups on, and
+# the mortality columns need their missingness made explicit. Deriving those
+# here keeps the splitter and the exposed labels from drifting apart.
+#
+# Multi-label, and "no label" does not mean "normal". 308,004 records carry none
+# of the six, but only 134,657 of those are flagged normal_ecg — the remaining
+# 173,347 have some other finding that the six-class vocabulary does not name.
+# Train on `abnormality_codes` and `normal_ecg`, never on `stratify_class`.
+labels:
+  source_csv: null
+  join_column: "exam_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "CODE-15%"
+    - "CODE"
+    - "Telehealth Network of Minas Gerais"
+    - "Brazil"
+    - "multi-label classification"
+    - "12-lead"
+    - "HDF5"
+  rai_data_collection: >
+    Twelve-lead ECGs recorded between 2010 and 2016 by the Telehealth Network of
+    Minas Gerais, a public telehealth service serving primary-care units in
+    hundreds of municipalities across the Brazilian state of Minas Gerais.
+    Recordings were made by non-specialist staff on portable
+    tele-electrocardiographs and transmitted for remote reporting by
+    cardiologists. The six abnormality labels were derived from those reports by
+    a combination of text mining and the Minnesota code assigned by the
+    automatic analysis, with disagreements resolved in favour of the report.
+    This release is an openly licensed 15% sample of the full CODE cohort,
+    stratified so that all recordings of a sampled patient are included; the
+    remaining 85% is available only under a data use agreement.
+  rai_data_biases: >
+    A single-country, single-network primary-care cohort: every recording comes
+    from the Brazilian public telehealth system between 2010 and 2016, so
+    findings may not transfer to hospital populations, other countries or other
+    acquisition hardware. Ages run 17 to 100 and 40.3% of records are from men.
+    Class balance is extreme — 308,004 of 345,779 records (89.1%) carry none of
+    the six abnormalities, and the rarest, sinus bradycardia, appears in 5,605
+    (1.6%). Crucially, a record with no abnormality label is not a normal ECG:
+    only 134,657 records are flagged normal_ecg, so 173,347 carry some finding
+    outside this six-class vocabulary and would be silently treated as negative
+    by a model trained on the flags alone. The labels come from reports and
+    text mining rather than from a fresh expert read of each tracing, so they
+    inherit the reporting cardiologists' error rate. Recordings are noisier than
+    a hospital cohort's, with a median per-record peak of 4.27 mV. Because
+    66,929 patients contributed more than one recording, any split ignoring
+    patient identity leaks; ECGBench's folds are grouped on patient_id. Note
+    that patient grouping does not catch everything — the release contains a
+    small number of byte-identical duplicate recordings filed under different
+    patient_ids (47 records among the 20,000 of part 0).
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. Record and patient
+    identifiers are opaque integers rather than health-service numbers, and
+    patient identity is published only as that surrogate, which is what makes
+    patient-grouped folds possible. Age in whole years and sex are retained for
+    every record. The release also carries mortality follow-up — a death flag
+    and time-to-event in years for the 233,647 records with follow-up, of which
+    8,341 died — which is sensitive outcome data even though it names no one. No
+    dates, no free-text reports, no clinic identifiers and no names ship.

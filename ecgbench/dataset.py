@@ -100,8 +100,9 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
         try:
             import h5py
 
-            path, key = _parse_hdf5_ref(record_path)
+            path, key, _ = _parse_hdf5_ref(record_path)
             with h5py.File(path, "r") as handle:
+                # Samples are axis 1 for both the 2-D and the 3-D layout.
                 return int(_hdf5_dataset(handle, key, record_path).shape[1])
         except Exception:
             return None
@@ -113,27 +114,44 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
 _HDF5_SUFFIXES = (".h5", ".hdf5", ".he5", ".hdf")
 
 
-def _parse_hdf5_ref(record_path: str) -> tuple[str, str | None]:
-    """Split an optional ``<file>.h5:<dataset>`` reference into file and key.
+def _parse_hdf5_ref(record_path: str) -> tuple[str, str | None, int | None]:
+    """Split an HDF5 reference into file, optional dataset key and optional row.
 
-    Releases conventionally put one array in each file — SPH's ``A00001.h5``
-    holds only ``ecg`` — so the key is optional and the reader takes the sole
-    dataset when it is omitted. The suffix form exists for files holding several,
-    and is recognised only when the part before the colon ends in an HDF5
-    extension, so a directory named with a colon is never read as a key.
+    Three forms, in decreasing specificity:
+
+    ``<file>.h5:<dataset>:<row>``
+        Row ``<row>`` of a **3-D** ``(records, samples, leads)`` array — the
+        layout CODE-15% and CODE-test use, where one file holds tens of
+        thousands of records. Both the key and the row are required here, so
+        that a dataset literally named ``417`` can never be read as a row.
+    ``<file>.h5:<dataset>``
+        A named **2-D** ``(leads, samples)`` array.
+    ``<file>.h5``
+        The file's sole 2-D array — SPH's ``A00001.h5`` holds only ``ecg``.
+
+    A colon is only ever read as a separator when what precedes it ends in an
+    HDF5 extension, so a directory named with a colon stays part of the path.
     """
-    head, separator, tail = str(record_path).rpartition(":")
+    text = str(record_path)
+    head, separator, tail = text.rpartition(":")
+
+    if separator and tail.lstrip("-").isdigit():
+        path, inner, key = head.rpartition(":")
+        if inner and path.lower().endswith(_HDF5_SUFFIXES):
+            return path, key, int(tail)
+
     if separator and head.lower().endswith(_HDF5_SUFFIXES):
-        return head, tail
-    return str(record_path), None
+        return head, tail, None
+
+    return text, None, None
 
 
 def _hdf5_dataset(handle, key: str | None, record_path: str):
-    """Resolve the 2-D dataset to read out of an open HDF5 file.
+    """Resolve the dataset to read out of an open HDF5 file.
 
-    Stored **(leads, samples)** — the orientation SPH and every other HDF5 ECG
-    release ECGBench has met uses — so unlike the csv and npy readers this one
-    does not transpose.
+    Returns the raw h5py dataset, 2-D or 3-D; :func:`_hdf5_signal_view` is what
+    turns it into one record. Both shapes put samples on **axis 1**, which is
+    what :func:`_record_length` relies on.
     """
     import h5py
 
@@ -154,12 +172,48 @@ def _hdf5_dataset(handle, key: str | None, record_path: str):
             )
         dataset = handle[names[0]]
 
-    if dataset.ndim != 2:
+    if dataset.ndim not in (2, 3):
         raise ValueError(
             f"HDF5 dataset in {record_path!r} has shape {dataset.shape}; expected "
-            "2-D (leads, samples)."
+            "2-D (leads, samples) or 3-D (records, samples, leads)."
         )
     return dataset
+
+
+def _hdf5_signal_view(dataset, row: int | None, record_path: str, sl: slice) -> np.ndarray:
+    """Read ``sl`` samples of one record out of a resolved HDF5 dataset.
+
+    The two shapes have **opposite** orientations, which is not an inconsistency
+    this code invented — it is what the releases ship:
+
+    * 2-D is ``(leads, samples)``, already what ECGBench returns (SPH).
+    * 3-D is ``(records, samples, leads)``, matching the ``npy`` convention and
+      needing a transpose (CODE).
+
+    Slicing happens inside h5py, so a window costs only the samples it asks for
+    even though the files are contiguous and uncompressed.
+    """
+    if dataset.ndim == 2:
+        if row is not None:
+            raise ValueError(
+                f"HDF5 record {record_path!r} names row {row}, but the dataset is "
+                f"2-D {dataset.shape} — a row index only applies to a 3-D "
+                "(records, samples, leads) array."
+            )
+        return np.asarray(dataset[:, sl], dtype=np.float32)
+
+    if row is None:
+        raise ValueError(
+            f"HDF5 dataset in {record_path!r} is 3-D {dataset.shape}, so it holds "
+            "many records and the reference must name one as "
+            "'<file>.h5:<dataset>:<row>'."
+        )
+    if not -dataset.shape[0] <= row < dataset.shape[0]:
+        raise ValueError(
+            f"HDF5 record {record_path!r} names row {row}, but the dataset holds "
+            f"{dataset.shape[0]} records."
+        )
+    return np.asarray(dataset[row, sl, :], dtype=np.float32).T
 
 
 def _parse_npy_ref(record_path: str) -> tuple[str, int]:
@@ -250,18 +304,21 @@ def _load_signal(
             raise _window_error(record_path, start, length, int(record.shape[0]))
         signal = np.asarray(record[start:sampto], dtype=np.float32).T
     elif signal_format == "hdf5":
-        # One file per record holding a single (leads, samples) array — already
-        # the orientation ECGBench returns, so no transpose. h5py slices on read,
-        # so a window decodes only the samples it asks for.
+        # Either one file per record holding a (leads, samples) array, or one
+        # file holding many records as (records, samples, leads) — see
+        # _hdf5_signal_view, which normalises both to (leads, samples). h5py
+        # slices on read, so a window decodes only the samples it asks for.
         import h5py
 
-        path, key = _parse_hdf5_ref(record_path)
+        path, key, row = _parse_hdf5_ref(record_path)
         with h5py.File(path, "r") as handle:
             dataset = _hdf5_dataset(handle, key, record_path)
             n_samples = int(dataset.shape[1])
             if start >= n_samples or (length is not None and sampto > n_samples):
                 raise _window_error(record_path, start, length, n_samples)
-            signal = np.asarray(dataset[:, start:sampto], dtype=np.float32)
+            signal = _hdf5_signal_view(
+                dataset, row, record_path, slice(start, sampto)
+            )
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "

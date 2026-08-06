@@ -790,13 +790,15 @@ def test_load_ningbo_iva_config():
     assert config.publish_fold_csvs is True
 
 
-def test_the_two_hdf5_and_2000hz_facts_are_unique_and_intentional():
-    """Guard the two configs that broke a catalogue-wide assumption.
+def test_the_hdf5_and_2000hz_facts_are_intentional():
+    """Guard the configs that broke a catalogue-wide assumption.
 
-    ``sph`` is the only hdf5 dataset (so the reader branch has exactly one real
-    user) and ``ningbo_iva`` the only 2000 Hz one. Both were assumptions elsewhere
-    in the codebase before these datasets landed; this test fails loudly if a
-    later dataset joins either group without the author noticing.
+    ``ningbo_iva`` is still the only 2000 Hz dataset. hdf5 is no longer a
+    one-dataset branch: ``sph`` reads a 2-D ``(leads, samples)`` array per file,
+    while ``code15`` and ``code_test`` read a **row of a shared 3-D**
+    ``(records, samples, leads)`` array and get transposed. The two shapes go
+    through the same ``signal_format``, so this list is the reminder that adding
+    a fourth means deciding which of the two layouts it is.
     """
     by_format: dict[str, list[str]] = {}
     fastest: list[str] = []
@@ -806,5 +808,100 @@ def test_the_two_hdf5_and_2000hz_facts_are_unique_and_intentional():
         if config.default_sampling_rate >= 2000:
             fastest.append(slug)
 
-    assert by_format["hdf5"] == ["sph"]
+    assert sorted(by_format["hdf5"]) == ["code15", "code_test", "sph"]
     assert fastest == ["ningbo_iva"]
+
+
+def test_load_code15_config():
+    """CODE-15%: a row of a shared 3-D HDF5 array, patient-grouped, six flags."""
+    config = load_config("code15")
+    assert config.slug == "code15"
+    assert config.version == "1.0.0"
+    # Not one file per record: 18 parts each holding a (N, 4096, 12) array, so a
+    # record names a row — "exams_part0.hdf5:tracings:417". Needs h5py.
+    assert config.signal_format == "hdf5"
+    # Already millivolts. The bundled README's "scale 1e-4V ... multiplied by
+    # 1000 to obtain V" is self-contradictory; measured median lead-II R is
+    # 1.75 mV, which settles it.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # STANDARD — and the sibling code_test release is not. Verified from the
+    # arrays via Einthoven's and Goldberger's relations.
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [400]
+    assert config.default_sampling_rate == 400
+    assert config.signal_path_columns == {400: "signal_path"}
+    # exams.csv gives a part but not a row, and its rows are not in file order,
+    # so CODE15Splitter resolves exam_id -> row and writes this file. The
+    # validation engine re-reads it from disk.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "exam_id"
+    # 66,929 of 233,770 patients contributed more than one record, up to 38.
+    assert config.patient_id_column == "patient_id"
+    assert config.label_column == "abnormality_codes"
+    assert config.label_format == "comma_separated"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    # Uniform, unlike sph: every record is exactly 4,096 samples at 400 Hz.
+    assert config.validation.expected_samples == {400: 4096}
+    # Wider than ECGBench's usual +-10 on purpose. These are telehealth
+    # recordings with a median peak of 4.27 mV, so +-10 would exclude 11.8% of
+    # the release; +-20 excludes ~2%. See the config comment.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    # Module loader: the six flags need reducing to a list and a stratify class.
+    assert config.labels is not None
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "exam_id"
+    # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_load_code_test_config():
+    """CODE-test: 827 records with no identifiers, joined by row position."""
+    config = load_config("code_test")
+    assert config.slug == "code_test"
+    assert config.version == "1.0.3"
+    assert config.signal_format == "hdf5"
+    # float64 arrays, already millivolts (median lead-II R 1.48 mV).
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    # NON-STANDARD: aVL, aVF, aVR. signal[3] is aVL here and aVR in code15.
+    assert config.lead_names == ["I", "II", "III", "aVL", "aVF", "aVR",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [400]
+    assert config.default_sampling_rate == 400
+    assert config.signal_path_columns == {400: "signal_path"}
+    # No shipped table carries a record identifier, so there is nothing to point
+    # at but a generated file.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    # The row index into the tracings array, 0-826 — the only key the release's
+    # own documentation defines.
+    assert config.record_id_column == "record_id"
+    # 827 tracings from 827 different patients, and no patient id ships.
+    assert config.patient_id_column is None
+    assert config.label_column == "abnormality_codes"
+    assert config.label_format == "comma_separated"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    # The release is the test half of a division whose training half is a
+    # different dataset, so there is no fold column to honour.
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    assert config.validation.expected_leads == 12
+    assert config.validation.expected_samples == {400: 4096}
+    # Same cohort and instruments as code15, so deliberately the same range —
+    # the two must not be cleaned to different standards.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    assert config.validation.amplitude_range_mv == (
+        load_config("code15").validation.amplitude_range_mv
+    )
+    # Module loader: eight keyless source files, all joined by position.
+    assert config.labels is not None
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_id"
+    # CC BY 4.0: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
