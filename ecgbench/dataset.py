@@ -96,6 +96,13 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
             return int(np.load(path, mmap_mode="r").shape[-2])
         except Exception:
             return None
+    if signal_format == "csv_lead_rows":
+        # Samples run along the row, so the length is one row's field count.
+        try:
+            with open(record_path) as handle:
+                return handle.readline().count(",") + 1
+        except Exception:
+            return None
     if signal_format == "hdf5":
         try:
             import h5py
@@ -281,6 +288,19 @@ def _load_signal(
         ):
             available = start + (0 if signal.size == 0 else signal.shape[1])
             raise _window_error(record_path, start, length, available)
+    elif signal_format == "csv_lead_rows":
+        # The transpose of "csv": one ROW per lead, one column per sample, and no
+        # header at all — already the orientation ECGBench returns, so no .T.
+        # Samples run along the row, which numpy's text reader cannot seek into,
+        # so unlike every other branch here the window is a slice after the read
+        # rather than a push-down. That costs nothing on the 10 s records this
+        # format is used for; revisit if a long-record dataset ever adopts it.
+        signal = np.loadtxt(record_path, delimiter=",", dtype=np.float32, ndmin=2)
+        if window is not None:
+            available = signal.shape[1]
+            if start >= available or (length is not None and sampto > available):
+                raise _window_error(record_path, start, length, available)
+            signal = signal[:, start:sampto]
     elif signal_format == "npy":
         # One array per split holding every record, so the reference names a row
         # rather than a file of its own. Memory-mapped: the window slices before
@@ -322,7 +342,7 @@ def _load_signal(
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, npy, hdf5"
         )
 
     if unit_scale != 1.0:

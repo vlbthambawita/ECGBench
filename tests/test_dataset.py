@@ -394,6 +394,12 @@ class TestShippedLeadNames:
             # TestAlternateLeadLayouts, which is where that is pinned.
             ("zzu_pecg", ["I", "II", "III", "AVR", "AVL", "AVF"],
              ["V1", "V2", "V3", "V4", "V5", "V6"]),
+            # Simulated, so there is no header to read: the order is the one the
+            # release README states, corroborated by the per-record parameter
+            # files, which give electrode positions for RA/LA/RL/LL and V1-V6 and
+            # nothing else — the augmented leads are computed, not placed.
+            ("medalcare_xl", ["I", "II", "III", "aVR", "aVL", "aVF"],
+             ["V1", "V2", "V3", "V4", "V5", "V6"]),
         ],
     )
     def test_lead_names_match_the_files(self, slug, limb, chest):

@@ -3560,3 +3560,166 @@ class TestZZUPediatricSplitter:
             pd.DataFrame({STRATIFY_COLUMN: ["NONE", "Kawasaki disease"]}), config
         )
         assert list(labels) == ["NONE", "Kawasaki disease"]
+
+
+class TestMedalCareXLSplitter:
+    """MedalCare-XL: metadata built from directory names, since none ships."""
+
+    def _tree(self, tmp_path):
+        """A miniature of the release's signal and parameter trees.
+
+        Reproduces the four structural traps in the real one: the extra MI
+        subclass level, the non-record ``mi/examples/`` directory, gaps in the
+        per-directory record numbering, and three file variants per record.
+        """
+        from ecgbench.splitting.strategies.medalcare_xl import PARAMS_DIR, SIGNALS_DIR
+
+        signals = tmp_path / SIGNALS_DIR
+        params = tmp_path / PARAMS_DIR
+        layout = {
+            "sinus/train/run_S65": ["000001", "000002"],
+            "sinus/test/run_S64": ["000001"],
+            # A gap: 000002 is missing, exactly as iab/train/run_S66 has 23.
+            "iab/validation/run_S67": ["000001", "000003"],
+            "mi/LCX_0.3_ant/train/run_S69": ["000001"],
+            "mi/RCA_1.0/test/run_S62": ["000001"],
+        }
+        for rel, numbers in layout.items():
+            for number in numbers:
+                (signals / rel).mkdir(parents=True, exist_ok=True)
+                for variant in ("raw", "noise", "filtered"):
+                    (signals / rel / f"{number}_{variant}.csv").write_text("0,0\n")
+                (params / rel).mkdir(parents=True, exist_ok=True)
+                for kind in ("Atrial", "Ventricular"):
+                    (params / rel / f"{number}_{kind}Parameters.txt").write_text(
+                        "im.name = Courtemanche\n"
+                    )
+            (signals / rel / "siginfo.csv").write_text("info1,info2\n")
+        # Six loose illustration files with no split level — not records.
+        (signals / "mi" / "examples").mkdir(parents=True)
+        for name in ("S62_LAD_0.3", "S62_RCA_1.0"):
+            for variant in ("raw", "noise", "filtered"):
+                (signals / "mi" / "examples" / f"{name}_{variant}.csv").write_text("0,0\n")
+        return tmp_path
+
+    def _build(self, tmp_path):
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.medalcare_xl import build_metadata
+
+        return build_metadata(self._tree(tmp_path), load_config("medalcare_xl"))
+
+    def test_splitter_is_registered(self):
+        assert type(get_splitter("medalcare_xl")).__name__ == "MedalCareXLSplitter"
+
+    def test_mi_examples_are_not_records(self, tmp_path):
+        """``mi/examples/`` holds figure illustrations, not data.
+
+        Counting ``*_raw.csv`` naively finds 6 more records than exist in the real
+        release, and both parameter-file trees agree with the smaller number. The
+        directory is excluded by having no train/validation/test level, so a future
+        subclass directory that *does* have one still has to parse.
+        """
+        df = self._build(tmp_path)
+        assert len(df) == 7
+        assert not df["record_id"].str.contains("example").any()
+        assert not df["signal_path"].str.contains("examples").any()
+
+    def test_records_are_enumerated_from_the_files_not_a_range(self, tmp_path):
+        """13 of the 186 real run directories have gaps in their numbering."""
+        df = self._build(tmp_path)
+        iab = df[df["pathology"] == "iab"]
+        assert sorted(iab["record_number"]) == ["000001", "000003"]
+
+    def test_record_ids_are_unique_across_the_whole_release(self, tmp_path):
+        """Numbering restarts at 000001 per run directory, so the path is the key."""
+        df = self._build(tmp_path)
+        assert df["record_id"].is_unique
+        # The same number appears in five directories and yields five distinct ids.
+        assert (df["record_number"] == "000001").sum() == 5
+        assert "sinus_train_S65_000001" in set(df["record_id"])
+        assert "mi_LCX_0.3_ant_train_S69_000001" in set(df["record_id"])
+
+    def test_signal_path_is_the_filtered_variant_and_the_others_are_kept(self, tmp_path):
+        """One record in three renderings, not three records."""
+        df = self._build(tmp_path)
+        assert df["signal_path"].str.endswith("_filtered.csv").all()
+        assert df["signal_path_raw"].str.endswith("_raw.csv").all()
+        assert df["signal_path_noise"].str.endswith("_noise.csv").all()
+        # Each record contributes exactly one row despite its three files.
+        assert len(df) == df["signal_path"].nunique()
+
+    def test_mi_subclass_is_decomposed_and_blank_elsewhere(self, tmp_path):
+        df = self._build(tmp_path).set_index("record_id")
+        lcx = df.loc["mi_LCX_0.3_ant_train_S69_000001"]
+        assert lcx["mi_occlusion_site"] == "LCX"
+        assert lcx["mi_transmurality"] == 0.3
+        assert lcx["mi_region"] == "ant"
+        # RCA is not split anterior/posterior — only LCX is.
+        assert pd.isna(df.loc["mi_RCA_1.0_test_S62_000001", "mi_region"])
+        # Non-MI records carry none of the three.
+        sinus = df.loc["sinus_train_S65_000001"]
+        assert pd.isna(sinus["mi_subclass"])
+        assert pd.isna(sinus["mi_occlusion_site"])
+        assert pd.isna(sinus["mi_transmurality"])
+
+    def test_pathology_subclass_is_the_fifteen_class_label(self, tmp_path):
+        df = self._build(tmp_path)
+        assert set(df["pathology_subclass"]) == {
+            "sinus", "iab", "mi_LCX_0.3_ant", "mi_RCA_1.0"
+        }
+        labels = self._splitter().get_stratification_labels(df, None)
+        assert labels.tolist() == df["pathology_subclass"].tolist()
+
+    def test_source_split_maps_to_folds_one_two_three(self, tmp_path):
+        """The authors' own partition, taken verbatim — `validation` is fold 2."""
+        from ecgbench.splitting.strategies.medalcare_xl import SPLIT_TO_FOLD
+
+        assert SPLIT_TO_FOLD == {"train": 1, "validation": 2, "test": 3}
+        df = self._build(tmp_path)
+        assert dict(zip(df["source_split"], df["fold"], strict=True)) == {
+            "train": 1, "validation": 2, "test": 3
+        }
+
+    def test_model_id_is_the_ventricular_model_not_a_patient(self, tmp_path):
+        """There are no patients; `model_id` groups by simulation model."""
+        df = self._build(tmp_path)
+        assert set(df["model_id"]) == {"S65", "S64", "S67", "S69", "S62"}
+        assert not df["model_id"].str.startswith("run_").any()
+
+    def test_an_unrecognised_mi_subclass_raises(self, tmp_path):
+        """A directory that looks like data must parse, not be silently accepted."""
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.medalcare_xl import SIGNALS_DIR, build_metadata
+
+        root = self._tree(tmp_path)
+        bogus = root / SIGNALS_DIR / "mi" / "LAD_0.7_lateral" / "train" / "run_S65"
+        bogus.mkdir(parents=True)
+        (bogus / "000001_filtered.csv").write_text("0,0\n")
+        with pytest.raises(ValueError, match="Unrecognised MI subclass"):
+            build_metadata(root, load_config("medalcare_xl"))
+
+    def test_a_missing_signal_tree_names_the_nesting_trap(self, tmp_path):
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.medalcare_xl import build_metadata
+
+        with pytest.raises(FileNotFoundError, match="MedalCare-XL/MedalCare-XL"):
+            build_metadata(tmp_path, load_config("medalcare_xl"))
+
+    def _splitter(self):
+        from ecgbench.splitting.strategies.medalcare_xl import MedalCareXLSplitter
+
+        return MedalCareXLSplitter()
+
+    def test_load_metadata_caches_to_disk_for_the_validation_engine(self, tmp_path):
+        """validate_dataset re-reads the CSV, so an in-memory frame is not enough."""
+        from ecgbench.config import load_config
+
+        config = load_config("medalcare_xl")
+        root = self._tree(tmp_path)
+        df = self._splitter().load_metadata(root, config)
+        cached = root / config.metadata_csv
+        assert cached.exists()
+        # The second call reads the cache and agrees with the first.
+        again = self._splitter().load_metadata(root, config)
+        assert again["record_id"].tolist() == df["record_id"].tolist()
+        assert again["record_number"].tolist() == df["record_number"].tolist()

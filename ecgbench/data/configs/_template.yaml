@@ -20,7 +20,12 @@ creators:
     url: null
 
 # --- Signal Properties ---
-signal_format: "wfdb"             # One of: wfdb, csv (edf/mat/numpy/hdf5 not implemented)
+signal_format: "wfdb"             # One of: wfdb, csv, csv_lead_rows, npy, hdf5
+                                  #   csv           -> samples in rows, leads in
+                                  #                    columns, with a header row
+                                  #   csv_lead_rows -> the transpose: leads in rows,
+                                  #                    samples in columns, no header
+                                  # (edf/mat not implemented)
 signal_unit_scale: 1.0            # Multiply raw samples by this to get millivolts.
                                   #   wfdb applies its own header gain -> leave at 1.0
                                   #   CSV/array data stored in microvolts -> 0.001

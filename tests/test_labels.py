@@ -5385,3 +5385,163 @@ class TestZZUPediatricLabels:
         df = zzu_labels(root, self._config(sample_config))
         assert df.loc["short", "duration_seconds"] == pytest.approx(5.0)
         assert df.loc["long", "duration_seconds"] == pytest.approx(120.0)
+
+
+class TestMedalCareXLLabels:
+    """The label is the simulated condition, and the parameters that produced it."""
+
+    def _config(self):
+        from ecgbench.config import load_config
+
+        return load_config("medalcare_xl")
+
+    def _root(self, tmp_path, rows=None):
+        """Write a stand-in for the generated metadata CSV and its parameter files."""
+        rows = rows or [
+            ("sinus_train_S65_000001", "S65", "sinus", None, "sinus", "train"),
+            ("mi_LAD_1.0_test_S62_000001", "S62", "mi", "LAD_1.0", "mi_LAD_1.0", "test"),
+        ]
+        records = []
+        for rid, model, pathology, subclass, subclass_label, split in rows:
+            stem = f"{pathology}/{split}/run_{model}/000001"
+            records.append(
+                {
+                    "record_id": rid,
+                    "model_id": model,
+                    "pathology": pathology,
+                    "mi_subclass": subclass,
+                    "mi_occlusion_site": subclass.split("_")[0] if subclass else None,
+                    "mi_transmurality": float(subclass.split("_")[1]) if subclass else None,
+                    "mi_region": None,
+                    "pathology_subclass": subclass_label,
+                    "source_split": split,
+                    "fold": {"train": 1, "validation": 2, "test": 3}[split],
+                    "record_number": "000001",
+                    "signal_path": f"WP2_largeDataset_Noise/{stem}_filtered.csv",
+                    "signal_path_raw": f"WP2_largeDataset_Noise/{stem}_raw.csv",
+                    "signal_path_noise": f"WP2_largeDataset_Noise/{stem}_noise.csv",
+                    "atrial_params_path": f"P/{rid}_AtrialParameters.txt",
+                    "ventricular_params_path": f"P/{rid}_VentricularParameters.txt",
+                }
+            )
+        pd.DataFrame(records).to_csv(tmp_path / "ecgbench_metadata.csv", index=False)
+
+        # The parameter files, with the ragged key set the real ones have: MI
+        # records carry an isch[0].* block that no other pathology does.
+        (tmp_path / "P").mkdir(exist_ok=True)
+        for record in records:
+            (tmp_path / record["atrial_params_path"]).write_text(
+                "im.name = Courtemanche\ngeo.atria = cn617_g029\n"
+                "geo.torso = torsoID12\ncv_t.BulkTissue = 591mm/s\n"
+            )
+            ventricular = 'im.name = "MitchellSchaeffer"\nG.torso = 0.22\n'
+            if record["pathology"] == "mi":
+                ventricular += "isch[0].size = 126.018\nisch[0].tag = 1400.0\n"
+            (tmp_path / record["ventricular_params_path"]).write_text(ventricular)
+        return tmp_path
+
+    def test_labels_depend_on_the_pipeline_having_run(self, tmp_path):
+        """No metadata table ships, so the error must say how to generate one."""
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.medalcare_xl import load_labels as medal_labels
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            medal_labels(tmp_path, self._config())
+        message = str(excinfo.value)
+        assert "ecgbench_metadata.csv" in message
+        assert "ecgbench splits --dataset medalcare_xl" in message
+
+    def test_both_label_layers_are_exposed(self, tmp_path):
+        from ecgbench.labels.medalcare_xl import load_labels as medal_labels
+
+        df = medal_labels(self._root(tmp_path), self._config())
+        assert df.index.name == "record_id"
+        assert list(df["pathology"]) == ["mi", "sinus"]          # sorted by index
+        assert list(df["pathology_subclass"]) == ["mi_LAD_1.0", "sinus"]
+        assert list(df["pathology_name"]) == [
+            "myocardial infarction", "normal sinus rhythm"
+        ]
+        assert set(df["sampling_rate"]) == {500}
+
+    def test_all_three_signal_variants_are_reachable(self, tmp_path):
+        """One record in three renderings — the config wires up only `filtered`."""
+        from ecgbench.labels.medalcare_xl import load_labels as medal_labels
+
+        df = medal_labels(self._root(tmp_path), self._config())
+        assert df["signal_path"].str.endswith("_filtered.csv").all()
+        assert df["signal_path_raw"].str.endswith("_raw.csv").all()
+        assert df["signal_path_noise"].str.endswith("_noise.csv").all()
+
+    def test_load_labels_does_not_read_the_parameter_files(self, tmp_path):
+        """33,684 file opens on every ECGDataset(labels=True) would not be free."""
+        from ecgbench.labels.medalcare_xl import load_labels as medal_labels
+
+        root = self._root(tmp_path)
+        # Deleting them must not break the cheap path.
+        for path in (root / "P").glob("*.txt"):
+            path.unlink()
+        df = medal_labels(root, self._config())
+        assert len(df) == 2
+        assert "atrial.im.name" not in df.columns
+
+    def test_simulation_parameters_are_prefixed_per_provider(self, tmp_path):
+        """Both files define im.name and G.torso; an unprefixed concat loses one."""
+        from ecgbench.labels.medalcare_xl import load_simulation_parameters
+
+        df = load_simulation_parameters(self._root(tmp_path), self._config())
+        assert df.index.name == "record_id"
+        assert df.loc["sinus_train_S65_000001", "atrial.im.name"] == "Courtemanche"
+        # Quoted in the ventricular files and bare in the atrial ones.
+        assert (
+            df.loc["sinus_train_S65_000001", "ventricular.im.name"]
+            == "MitchellSchaeffer"
+        )
+        assert not df.columns.duplicated().any()
+
+    def test_absent_parameters_mean_the_pathology_lacks_them(self, tmp_path):
+        """MI adds 14 isch[0].* keys; lbbb/rbbb drop stim[*]; lae drops cv_t.*."""
+        from ecgbench.labels.medalcare_xl import load_simulation_parameters
+
+        df = load_simulation_parameters(self._root(tmp_path), self._config())
+        assert df.loc["mi_LAD_1.0_test_S62_000001", "ventricular.isch[0].tag"] == "1400.0"
+        assert pd.isna(df.loc["sinus_train_S65_000001", "ventricular.isch[0].tag"])
+
+    def test_units_travel_with_the_value_rather_than_being_coerced_away(self, tmp_path):
+        from ecgbench.labels.medalcare_xl import load_simulation_parameters
+
+        df = load_simulation_parameters(self._root(tmp_path), self._config())
+        assert df.loc["sinus_train_S65_000001", "atrial.cv_t.BulkTissue"] == "591mm/s"
+
+    def test_parameters_can_be_restricted_to_one_split(self, tmp_path):
+        from ecgbench.labels.medalcare_xl import load_simulation_parameters
+
+        root = self._root(tmp_path)
+        df = load_simulation_parameters(
+            root, self._config(), record_ids=["sinus_train_S65_000001"]
+        )
+        assert list(df.index) == ["sinus_train_S65_000001"]
+        with pytest.raises(KeyError, match="not in ecgbench_metadata.csv"):
+            load_simulation_parameters(root, self._config(), record_ids=["nope"])
+
+    def test_siginfo_is_deliberately_never_read(self):
+        """Its rows carry no record number for fam/iab/lae and outnumber the files.
+
+        13 of the 186 run directories have more ``siginfo.csv`` rows than records,
+        and for those three pathologies ``info2`` holds a foreign simulation id
+        rather than the record number, so any join is a guess about row order. The
+        per-record ``*_AtrialParameters.txt`` files carry the same anatomy keyed by
+        record number instead. This asserts nobody wires siginfo up later.
+        """
+        from pathlib import Path
+
+        from ecgbench.labels import medalcare_xl as labels_module
+        from ecgbench.splitting.strategies import medalcare_xl as splitter_module
+
+        for module in (labels_module, splitter_module):
+            source = Path(module.__file__).read_text()
+            code = "\n".join(
+                line for line in source.splitlines() if not line.strip().startswith("#")
+            )
+            # Named only in the docstrings that explain the decision.
+            body = code.split('"""')[-1]
+            assert "siginfo" not in body, f"{module.__name__} reads siginfo.csv"

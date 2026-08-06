@@ -1075,3 +1075,65 @@ def test_load_zzu_pecg_config():
     assert config.labels.join_column == "ECG_ID"
     # CC BY 4.0 on figshare: the fold CSVs are publishable.
     assert config.publish_fold_csvs is True
+
+
+def test_load_medalcare_xl_config():
+    """MedalCare-XL: simulated, a transposed CSV layout, and a predefined split."""
+    config = load_config("medalcare_xl")
+    assert config.slug == "medalcare_xl"
+    assert config.version == "1.3"
+    # THE ONLY DATASET IN THIS FORMAT: 12 rows x 5000 columns and NO header, the
+    # transpose of every other CSV dataset here. Reading one with the plain "csv"
+    # reader yields a (5000, 11) array of garbage rather than raising, which is
+    # why it needed its own format rather than a flag.
+    assert config.signal_format == "csv_lead_rows"
+    # The simulator writes millivolts directly — no conversion.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 12
+    assert config.lead_names == ["I", "II", "III", "aVR", "aVL", "aVF",
+                                 "V1", "V2", "V3", "V4", "V5", "V6"]
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    # No metadata table ships at all — the splitter generates this one by walking
+    # the directory tree, so labels depend on `ecgbench splits` having run once.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_id"
+    # There are no patients. This is the ventricular simulation model (S62-S74),
+    # the grouping unit the authors defined the split around.
+    assert config.patient_id_column == "model_id"
+    assert config.signal_path_columns == {500: "signal_path"}
+    assert config.label_column == "pathology_subclass"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "direct"
+    # The release's own train/validation/test directories, taken verbatim as
+    # folds 1/2/3 — so --n-folds has no effect here.
+    assert config.has_predefined_splits is True
+    assert config.predefined_splits is not None
+    assert config.predefined_splits.column == "fold"
+    assert config.predefined_splits.fold_mapping == {
+        "train": [1], "val": [2], "test": [3]
+    }
+    assert config.validation is not None
+    # Uniform: 10 s x 500 Hz for every one of the 16,842 records.
+    assert config.validation.expected_samples == {500: 5000}
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    assert config.labels is not None
+    assert config.labels.source_csv == "ecgbench_metadata.csv"
+    assert config.labels.join_column == "record_id"
+    # CC BY 4.0 on Zenodo: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True
+
+
+def test_medalcare_xl_is_the_only_transposed_csv_dataset():
+    """`csv` and `csv_lead_rows` are not interchangeable, and nothing conflates them.
+
+    The two formats differ by a transpose and a header row, and neither reader
+    raises on the other's files — a `csv` read of a MedalCare-XL record returns a
+    plausibly-shaped array of the wrong thing. This pins which datasets claim
+    which, so a later "tidy up the format names" edit cannot quietly swap one.
+    """
+    assert load_config("medalcare_xl").signal_format == "csv_lead_rows"
+    # Samples in rows under a header naming the leads — the other convention.
+    for slug in ("chapman_shaoxing", "ningbo_iva"):
+        assert load_config(slug).signal_format == "csv"

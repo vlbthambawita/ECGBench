@@ -66,6 +66,10 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
         signal = np.loadtxt(
             record_path, delimiter=",", skiprows=1, dtype=np.float32, ndmin=2
         ).T
+    elif signal_format == "csv_lead_rows":
+        # The transpose of "csv": one ROW per lead, one column per sample, and no
+        # header at all — already the orientation the checks want, so no .T.
+        signal = np.loadtxt(record_path, delimiter=",", dtype=np.float32, ndmin=2)
     elif signal_format == "npy":
         # Records are rows of one shared array per split, so the reference is
         # "<file>.npy:<row>". Memory-mapped, or validating 100,000 records would
@@ -99,7 +103,7 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, npy, hdf5"
         )
 
     if unit_scale != 1.0:

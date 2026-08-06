@@ -220,6 +220,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `sami_trop` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, and **checked** for the same reason: it is the third release from the same telehealth network and the other two disagree with each other |
 | `ikem` | **V1-V6, then II, then I** — 8 signals, no III/aVR/aVL/aVF (exact linear combinations of II and I, and simply not stored). `signal[0]` is V1 and `signal[6]` is **II**, not I. The most unusual order in the catalogue, and the release names none of it — derived from the arrays |
 | `zzu_pecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — **but 1,856 of 14,190 records store only 9 leads**, dropping V2/V4/V6, so `signal[7]` is V2 in one layout and V3 in the other. See below |
+| `medalcare_xl` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, and stated by the release README rather than derived, since the records are **simulated** and there are no headers. Corroborated by the per-record parameter files, which place RA/LA/RL/LL and V1-V6 and nothing else — the augmented leads are computed, not placed |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -561,6 +562,33 @@ why 9 records have no PR/QRS/QT/J-Tpeak. And **secondary T peaks are real here**
 records populate `tpeak_tpeakp_ms`, where ecgdmmld's copy of that column is empty in every
 row. Two PR values are stored as a 32-bit arithmetic wrap and are repaired, flagged by
 `pr_ms_repaired`. See `examples/load_ecgrdvq.py`.
+
+`medalcare_xl` is the only **synthetic** dataset here: 16,842 ECGs produced by
+electrophysiological simulation rather than recorded from anyone. Three consequences.
+Its label is *exact by construction* — the condition the simulator was configured to
+produce — which makes it excellent for pre-training, augmentation and controlled
+ablations, and misleading as a standalone benchmark, since separating these classes
+means separating simulator settings. Its signals are the **only `csv_lead_rows`
+files** in the catalogue: 12 rows × 5000 columns with **no header**, the transpose of
+`chapman_shaoxing` and `ningbo_iva`, and reading one layout with the other's reader
+returns a plausibly-shaped array of the wrong thing rather than raising. And each
+record ships **three times** — raw simulator output, the same with noise, and a
+0.5–150 Hz filtered version — which are one record in three renderings, not three
+records; the config wires up `filtered` and the label loader carries the other two.
+
+Two things it is worth knowing before splitting on it. It uses the **authors' own**
+train/validation/test directories as folds 1/2/3 (so `--n-folds` does nothing and
+there are three fold CSVs, not ten), and their stated guarantee — that a ventricular
+simulation model appears in only one split — holds *within* each condition and fails
+*across* them: model `S64` is test-side for sinus/avblock/lbbb/rbbb/mi and train-side
+for the three atrial conditions, `S67` likewise for validation. Verified at the
+parameter level, and no records are shared, so it is shared anatomy rather than
+duplicate rows; `model_id` is in every fold CSV so you can regroup. Separately, its
+full **simulation parameters** — ~126 keys per record covering the ionic model,
+conductivities, APDs, stimulus sites, ischaemic geometry and electrode positions —
+are the real ground truth and are exposed opt-in via `load_simulation_parameters`,
+not by `labels=True`, which would otherwise open 33,684 files. See
+`examples/load_medalcare_xl.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
