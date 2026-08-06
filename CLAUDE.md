@@ -207,9 +207,11 @@ Version derived from git tags via `hatch-vcs`. Push a `v*` tag to trigger PyPI p
 
 ## CI/CD (GitHub Actions)
 
-- `deploy-pages.yml` — GitHub Pages deploy of `docs/`, **only when `docs/**` changes** on `main`
+- `deploy-pages.yml` — GitHub Pages deploy of `docs/`, on `docs/**` changes on `main` **or `workflow_dispatch`**. It has no tag trigger: the `github-pages` environment rejects tag refs, so a tag-ref run dies at the "waiting" stage before building
 - `deploy-hf-space.yml` — HF Space (`vlbthambawita/ECGBench`, `sdk: static`) on `docs/**` changes or `v*` tags. HF Spaces don't run Jekyll, so the workflow builds `_site/` itself, patches `baseurl: ""` (Spaces serve from root, Pages from `/ECGBench/`), writes `_site/_version.json`, and uploads with `delete_patterns=["*"]`
-- `publish-pypi.yml` — PyPI publish on `v*` tags via Trusted Publishing
+- `publish-pypi.yml` — PyPI publish on `v*` tags via Trusted Publishing, plus a `refresh-pages-version` job that dispatches `deploy-pages.yml` on `main`
+
+Both sites stamp their version badge from `git describe --tags --abbrev=0` **at build time**, so a build triggered by a `docs/**` push races a tag pushed moments later and bakes in the *previous* tag. The HF Space self-corrects because it rebuilds on `v*` tags; Pages cannot, which is why `publish-pypi.yml` dispatches it (issue #60 — the site sat on `v0.42.0` through two releases). Both site deploys are independent of the PyPI upload succeeding.
 
 There is no CI test/lint job — run `pytest` and `ruff`/`black` locally before pushing. Python-only changes deploy nothing until a `v*` tag is pushed.
 

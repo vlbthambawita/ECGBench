@@ -13,11 +13,14 @@ on:
     # protection rules" — the build never even starts.
     #
     # Consequence: the version badge shows the newest tag reachable when the site
-    # was last built, so a release cut without a docs change leaves it one behind.
-    # Two ways to close that gap:
-    #   - Settings -> Environments -> github-pages -> Deployment branches and
-    #     tags: add a tag rule "v*", then restore the tags: trigger here; or
-    #   - run this workflow manually from main after tagging (workflow_dispatch).
+    # was last built, so a release cut without a docs change would leave it one
+    # behind (issue #60). Closed by publish-pypi.yml, which runs on v* tags and
+    # dispatches this workflow on main — see refresh-pages-version there. Keep
+    # the workflow_dispatch trigger below: that dispatch is what uses it.
+    #
+    # Alternative, if that job is ever dropped: Settings -> Environments ->
+    # github-pages -> Deployment branches and tags: add a tag rule "v*", then
+    # restore a tags: trigger here.
   workflow_dispatch:
 
 permissions:

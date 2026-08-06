@@ -44,3 +44,29 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  refresh-pages-version:
+    # Keeps the website's version badge in step with the release.
+    #
+    # deploy-pages.yml has no tag trigger (the github-pages environment rejects
+    # tag refs) and stamps _site/_version.json from `git describe` at build
+    # time, so a release cut without a docs/** change leaves the site
+    # advertising the previous tag — while the HF Space, which does trigger on
+    # tags, moves on. That is the divergence in issue #60.
+    #
+    # Dispatching the workflow runs it against refs/heads/main, a branch ref the
+    # environment allows, and the checkout there picks up the tag we just
+    # pushed. Deliberately not `needs: publish`: the two sites must agree with
+    # each other and with the tag even if the PyPI upload fails, which is how
+    # deploy-hf-space.yml already behaves.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # workflow_dispatch on deploy-pages.yml
+    steps:
+      - name: Dispatch Deploy to GitHub Pages on main
+        env:
+          # workflow_dispatch is one of the two events GITHUB_TOKEN may raise
+          # without hitting the recursive-workflow block, so no PAT is needed.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run deploy-pages.yml --ref main
