@@ -623,3 +623,40 @@ def test_load_echonext_config():
     assert config.publish_fold_csvs is False
     assert "Restricted Health Data License" in config.no_publish_reason
     assert "ecgbench splits --dataset echonext" in config.no_publish_reason
+
+
+def test_load_staffiii_config():
+    """STAFF III: 9 leads with the precordials FIRST, variable length, open licence."""
+    config = load_config("staffiii")
+    assert config.slug == "staffiii"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every record declares gain 1600 adu/mV, so wfdb already returns millivolts.
+    assert config.signal_unit_scale == 1.0
+    # NINE leads. aVR/aVL/aVF are not stored — they are linear combinations of
+    # I and II — and the precordials come first, so signal[0] is V1, not lead I.
+    assert config.leads == 9
+    assert config.lead_names == ["V1", "V2", "V3", "V4", "V5", "V6", "I", "II", "III"]
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    # No machine-readable metadata ships (the annotations are an .xlsx), so
+    # STAFFIIISplitter generates this on first run.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 104 patients over 520 records, five each on average — grouping is mandatory.
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {1000: "signal_path"}
+    assert config.label_column == "recording_type"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # Records run 94,514 to 960,000 samples; an entry here would fail most of them.
+    assert config.validation is not None
+    assert config.validation.expected_leads == 9
+    assert config.validation.expected_samples == {}
+    # The int16 rail sits at exactly +/-20.48 mV (32768/1600); +/-20 catches the
+    # records that clipped, while the +/-10 default would drop 71 of 520.
+    assert config.validation.amplitude_range_mv == (-20.0, 20.0)
+    assert "corrupt_header" in config.validation.checks
+    # ODC-By: the fold CSVs are publishable.
+    assert config.publish_fold_csvs is True

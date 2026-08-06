@@ -2543,3 +2543,165 @@ class TestEchoNextSplitter:
     def test_missing_source_names_the_release(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="physionet.org/content/echonext"):
             self._splitter().load_metadata(tmp_path, None)
+
+
+class TestSTAFFIIISplitter:
+    """STAFF III's binding constraints: patient grouping and an .xlsx source.
+
+    The metadata cache is not an optimisation here — ``validate_dataset``
+    re-reads ``metadata_csv`` with ``pandas.read_csv``, which cannot open the
+    spreadsheet the labels actually live in. If ``load_metadata`` did not write
+    the normalised CSV to disk, validation would have no metadata at all.
+    """
+
+    N_COLUMNS = 29
+
+    def _header(self, rec, n_samples=300000):
+        return (
+            f"{rec} 9 1000 {n_samples} 20:26:00 27/09/1995\n"
+            + "".join(
+                f"{rec}.dat 16+512 1600 12 0 0 0 0  {lead}\n"
+                for lead in ("V1", "V2", "V3", "V4", "V5", "V6", "I", "II", "III")
+            )
+            + "# Age: 52\n# Sex: F\n"
+        )
+
+    def _sheet_row(self, patient, **cells):
+        row = [None] * self.N_COLUMNS
+        row[0], row[1], row[2], row[28] = patient, 52, "f", "no"
+        for column, value in cells.items():
+            row[int(column.lstrip("c"))] = value
+        return row
+
+    def _tree(self, tmp_path, rows, records):
+        """Build a version directory: the spreadsheet plus data/NNNx.hea files."""
+        pytest.importorskip("openpyxl")
+        import pandas as pd
+
+        preamble = [[None] * self.N_COLUMNS for _ in range(10)]
+        pd.DataFrame(preamble + rows).to_excel(
+            tmp_path / "STAFF-III-Database-Annotations.xlsx",
+            header=False,
+            index=False,
+        )
+        (tmp_path / "data").mkdir(exist_ok=True)
+        for rec in records:
+            (tmp_path / "data" / f"{rec}.hea").write_text(
+                self._header(rec), encoding="utf-8"
+            )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="staffiii", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={1000: "signal_path"}, default_sampling_rate=1000,
+            label_column="recording_type", leads=9,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.staffiii import STAFFIIISplitter
+
+        assert isinstance(get_splitter("staffiii"), STAFFIIISplitter)
+
+    def test_builds_patient_id_signal_path_and_phase(self, sample_config, tmp_path):
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [self._sheet_row(1, c3="1a", c4="1b", c6="1c", c7="mid RCA", c26="1d")],
+            ["001a", "001b", "001c", "001d"],
+        )
+        df = get_splitter("staffiii").load_metadata(tree, config)
+
+        assert len(df) == 4
+        # All four recordings are one patient — that is what grouping depends on.
+        assert set(df["patient_id"]) == {"patient001"}
+        # Signals live one level down, so the path carries the data/ prefix.
+        assert sorted(df["signal_path"]) == [
+            "data/001a", "data/001b", "data/001c", "data/001d"
+        ]
+        phases = dict(zip(df["record_name"], df["recording_type"]))
+        assert phases == {"001a": "BR", "001b": "BC", "001c": "BI", "001d": "PR"}
+        assert phases["001c"] == "BI"
+        # Written to disk because validate_dataset re-reads it — and cannot read
+        # the .xlsx the labels came from.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_multi_inflation_records_collapse_to_one_row(self, sample_config, tmp_path):
+        """Nine real records hold 2-3 inflations; the frame stays one row each."""
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [
+                self._sheet_row(
+                    7, c3="7a", c6="7c", c7="dist circ", c10="7c", c11="prox circ"
+                )
+            ],
+            ["007a", "007c"],
+        )
+        df = get_splitter("staffiii").load_metadata(tree, config)
+
+        assert len(df) == 2  # not 3, even though the sheet lists 7c twice
+        inflation = df[df["record_name"] == "007c"].iloc[0]
+        assert inflation["occluded_artery"] == "dist circ;prox circ"
+        assert inflation["artery_territory"] == "LCx;LCx"
+
+    def test_cached_csv_keeps_zero_padded_ids_as_strings(self, sample_config, tmp_path):
+        """Re-reading must not turn 'patient001' into a float or '001a' into 1."""
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [self._sheet_row(1, c3="1a", c6="1c", c7="mid RCA")],
+            ["001a", "001c"],
+        )
+        splitter = get_splitter("staffiii")
+        splitter.load_metadata(tree, config)  # writes the cache
+        cached = splitter.load_metadata(tree, config)  # reads it back
+
+        assert cached["record_name"].tolist() == ["001a", "001c"]
+        assert cached["patient_id"].tolist() == ["patient001", "patient001"]
+        assert cached["signal_path"].tolist() == ["data/001a", "data/001c"]
+
+    def test_stratifies_on_territory_not_on_the_protocol_phase(
+        self, sample_config, tmp_path
+    ):
+        """Folds are patient-grouped, so only patient-level attributes balance.
+
+        Every patient contributes roughly the same mix of phases, so
+        recording_type is near-uniform within a patient and cannot be stratified
+        on; the occluded vessel is what actually varies between patients.
+        """
+        config = self._config(sample_config)
+        rows, records = [], []
+        for patient in range(1, 21):
+            artery = "prox LAD" if patient <= 10 else "prox RCA"
+            rows.append(
+                self._sheet_row(
+                    patient,
+                    **{"c3": f"{patient}a", "c6": f"{patient}c", "c7": artery},
+                )
+            )
+            records += [f"{patient:03d}a", f"{patient:03d}c"]
+        tree = self._tree(tmp_path, rows, records)
+
+        splitter = get_splitter("staffiii")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "artery_territory"
+        assert set(labels) == {"LAD", "RCA"}
+        # Both of a patient's records carry the patient's territory, including
+        # the baseline — that is what keeps the patient in one fold coherent.
+        assert labels[df["record_name"] == "001a"].tolist() == ["LAD"]
+
+    def test_stratification_needs_the_label_loaders_column(self, sample_config):
+        """A raw frame must fail loudly rather than stratify on something else."""
+        import pandas as pd
+
+        config = self._config(sample_config)
+        df = pd.DataFrame({"record_name": ["001a"], "recording_type": ["BR"]})
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("staffiii").get_stratification_labels(df, config)

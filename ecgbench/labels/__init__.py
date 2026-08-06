@@ -108,6 +108,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         norwegian_athlete_ecg,
         ptbdb,
         ptbxl,
+        staffiii,
         wctecgdb,
     )
 
@@ -127,6 +128,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "ecgcipa": ecgcipa.load_labels,
         "ecgdmmld": ecgdmmld.load_labels,
         "ecgrdvq": ecgrdvq.load_labels,
+        "staffiii": staffiii.load_labels,
     }
 
 

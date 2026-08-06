@@ -370,6 +370,28 @@ class TestShippedLeadNames:
         # leads is a count of what lead_names lists, not an assumption of 12.
         assert len(names) == config.leads
 
+    def test_staffiii_stores_nine_leads_with_the_precordials_first(self):
+        """STAFF III inverts the limb-then-chest order every other dataset uses.
+
+        The files store V1-V6 first and then I, II, III — so it cannot go in the
+        parametrised table above, which assumes ``names[:6]`` are the limb leads.
+        aVR, aVL and aVF are absent entirely: they are exact linear combinations
+        of I and II and the depositors did not store them, so ``leads=["aVR"]``
+        must raise rather than return some other lead. Verified identical across
+        all 520 headers.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("staffiii")
+        assert config.leads == 9
+        assert config.lead_names[:6] == ["V1", "V2", "V3", "V4", "V5", "V6"]
+        assert config.lead_names[6:] == ["I", "II", "III"]
+        assert len(config.lead_names) == config.leads
+        # The augmented leads are not stored, so nothing may resolve to them.
+        assert not {"aVR", "aVL", "aVF"} & {n.upper() for n in config.lead_names}
+        # signal[0] is V1 here, which is lead I in every other wfdb dataset.
+        assert config.lead_names[0] != "I"
+
     def test_mhd_declares_the_12_lead_layout_that_only_39_of_53_records_use(self):
         """The MHD dataset ships two channel layouts, and only 0-2 are shared.
 

@@ -1,0 +1,187 @@
+# ECGBench Config: STAFF III Database
+# ===================================
+# https://physionet.org/content/staffiii/1.0.0/
+#
+# 520 recordings from 104 patients undergoing elective coronary angioplasty at
+# Charleston Area Medical Center. Unusually for this catalogue, it is a PROTOCOL
+# dataset rather than a diagnosis dataset: each patient contributed a series of
+# recordings around a single PTCA, and the label is where in that series a
+# recording sits — baseline, during balloon inflation, or recovery. The balloon
+# inflations are prolonged (median 5 min, up to 16 min), so this is one of the
+# few open datasets holding controlled, time-stamped transient myocardial
+# ischaemia with each patient serving as their own control.
+#
+# Three things set it apart, all verified against the files:
+#
+#   - it stores NINE leads, not twelve, and V1-V6 come FIRST. The augmented
+#     leads are not stored because they are linear combinations of I and II;
+#   - record length varies from 94.5 s to 960 s, so expected_samples is empty
+#     and a fixed window= must fit the shortest record;
+#   - one record (089d) is unreadable upstream — its header declares 468,554
+#     samples and the .dat holds 300,000. All 1,189 files match the shipped
+#     SHA256SUMS.txt, so that is the published release, not a bad download.
+
+name: "STAFF III Database"
+slug: "staffiii"
+version: "1.0.0"
+url: "https://physionet.org/content/staffiii/1.0.0/"
+download_url: null  # STAFFIIISplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution, per the PhysioNet landing page
+description: >
+  520 standard-lead ECG recordings from 104 patients undergoing prolonged
+  elective percutaneous transluminal coronary angioplasty (PTCA) at Charleston
+  Area Medical Center, West Virginia, recorded 1995-1996. Each patient
+  contributed a short series of recordings around a single procedure: a baseline
+  on the ward, a baseline in the catheterisation laboratory, one or more
+  recordings during balloon inflation, and recoveries in both locations. The 142
+  balloon-inflation records carry 152 sample-accurate inflation and deflation
+  markers plus 210 contrast-injection markers, and the occluded vessel is
+  recorded for every inflation. Because occlusion is deliberate, timed and
+  performed with the patient as their own control, the dataset is the reference
+  set for transient-ischaemia and ST-change work. Signals are nine leads
+  (V1-V6, I, II, III) at 1,000 Hz with 0.625 uV resolution.
+citation: >
+  Martinez, J.P., Pahlm, O., Ringborn, M., Warren, S., Laguna, P., Sornmo, L.
+  The STAFF III Database: ECGs Recorded During Acutely Induced Myocardial
+  Ischemia. Computing in Cardiology 44 (2017).
+doi: "10.22489/CinC.2017.266-133"
+
+creators:
+  - type: Organization
+    name: "Charleston Area Medical Center, West Virginia"
+    url: "https://www.camc.org/"
+  - type: Organization
+    name: "Lund University"
+    url: "https://www.lu.se/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every record declares a gain of 1600 adu/mV (0.625 uV per LSB) and a baseline
+# of 0, uniform across all 520 records and all 9 leads. wfdb divides by that
+# gain, so p_signal is already millivolts. Verified by reading all 520.
+signal_unit_scale: 1.0
+# NINE, not twelve. aVR, aVL and aVF are exact linear combinations of I and II
+# and were not stored; derive them if you need a 12-lead montage.
+leads: 9
+# Precordials FIRST, then the limb leads — the opposite of every other dataset
+# here. signal[0] is V1, not lead I. Identical in all 520 records; checked, not
+# assumed. Matching in ECGDataset(leads=...) is case-insensitive.
+lead_names: ["V1", "V2", "V3", "V4", "V5", "V6", "I", "II", "III"]
+# Nominal only: 370 of 520 records are exactly 300 s, but the full range is
+# 94.5 s to 960 s. Inflation records are the long ones (median 518 s).
+duration_seconds: 300
+sampling_rates: [1000]
+default_sampling_rate: 1000
+
+# --- File Structure ---
+# No metadata file ships in a machine-readable form — the annotations are an
+# .xlsx (and a duplicate .ods), one wide row per patient. STAFFIIISplitter
+# unpivots it to one row per record on first run, via ecgbench.labels.staffiii.
+# The validation engine re-reads this CSV from disk rather than reusing the
+# splitter's frame, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# 104 patients over 520 records — a mean of 5 records each, minimum 2, maximum
+# 7. Grouping is mandatory: every patient contributed both baselines and
+# inflations, so a record-level split puts the same heart, the same electrodes
+# and the same session in train and test.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  1000: "signal_path"  # "data/001a" — the signal tree is flat, one level down
+
+# --- Labels ---
+label_column: "recording_type"  # BR | BC | BI | PC | PR — the protocol phase
+label_format: "single"
+
+stratification:
+  # STAFFIIISplitter takes stratify_class from the label loader: the patient's
+  # primary occluded-artery territory, pooled so every class holds at least 10
+  # patients. Deliberately NOT recording_type — see attach_stratify_class in
+  # ecgbench/labels/staffiii.py for why a record-level label that is near-uniform
+  # within each patient cannot be stratified on when folds are patient-grouped.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 9
+  # Deliberately EMPTY. Record length genuinely varies (94,514 to 960,000
+  # samples), and check_truncated_signal returns [] when the rate has no entry,
+  # which is the intended way to disable a check that cannot apply. Adding a
+  # 1000 key here would fail every record shorter than it. The one genuinely
+  # truncated record, 089d, is caught by corrupt_header instead — wfdb refuses
+  # to read it at all.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Set from measurement. The ADC rail is +/-32768 at gain 1600, i.e. exactly
+  # +/-20.48 mV, and 37 records touch it — transiently, from catheter and
+  # electrode movement in a working cath lab. The worst affected record (001c)
+  # has its worst lead clipped for 3.8% of samples and no record has a lead
+  # pinned for any sustained stretch, so this is artefact, not a dead lead.
+  # +/-20 flags the 41 records that reached or approached saturation, where
+  # samples were genuinely lost to clipping, while passing the 30 records with
+  # large but unclipped excursions. The usual +/-10 default would exclude 71 of
+  # 520 records (13.7%) for ordinary cath-lab artefact.
+  amplitude_range_mv: [-20.0, 20.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/staffiii.py joins the annotation spreadsheet, the
+# header comments and the .event files. source_csv names the spreadsheet so a
+# missing-file error can point at it, but the module reads the headers and event
+# files too, so there is no single source CSV to declare.
+labels:
+  source_csv: "STAFF-III-Database-Annotations.xlsx"
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "myocardial ischaemia"
+    - "coronary angioplasty"
+    - "PTCA"
+    - "balloon occlusion"
+    - "ST changes"
+    - "9-lead"
+    - "PhysioNet"
+  rai_data_collection: >
+    Recorded in 1995-1996 at Charleston Area Medical Center, West Virginia,
+    during elective percutaneous transluminal coronary angioplasty, using a
+    custom-built equipment prototype (Siemens-Elema AB) at 1,000 Hz with 0.625 uV
+    amplitude resolution. Each patient was recorded on the ward before the
+    procedure, in the catheterisation laboratory before and during balloon
+    inflation, and again after. Balloon inflations were prolonged deliberately as
+    part of the clinical protocol. Occluded vessel, inflation timings and
+    contrast-injection times were transcribed by the depositors into an
+    accompanying spreadsheet, and inflation, deflation and injection instants
+    were annotated in WFDB event files.
+  rai_data_biases: >
+    A single US centre and a single procedure type, so this is a cohort of
+    patients selected for elective angioplasty rather than any general
+    population; the ischaemia is induced and controlled, and does not resemble
+    the onset dynamics of spontaneous coronary occlusion. Sex is skewed male (65
+    of 104 patients). Occluded territory is uneven — 58 inflations in the LAD, 58
+    in the RCA, 33 in the circumflex and 3 in the left main stem — so the rarer
+    territories cannot support per-territory evaluation. Records are not
+    independent: 104 patients contribute 520 recordings, five each on average,
+    which is why folds are grouped by patient. Recording lengths differ by a
+    factor of ten between protocol phases, so any model reading length or
+    duration leaks the phase label. The depositors flagged patients 1, 4, 5, 6
+    and 89 for possible lead or sign reversal without saying which leads, and one
+    record (089d) is unreadable in the published release.
+  rai_personal_sensitive_info: >
+    De-identified. Age and sex are retained per patient, along with the recording
+    date and time of day in the WFDB headers and the location of any prior
+    myocardial infarction. Ages run 32 to 100 and two patients have no age
+    recorded. No names, identifiers or free-text clinical notes are present.

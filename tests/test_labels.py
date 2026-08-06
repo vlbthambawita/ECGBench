@@ -3943,3 +3943,243 @@ class TestSymileMimicLabels:
         from ecgbench.labels import _custom_loaders
 
         assert "symile_mimic" not in _custom_loaders()
+
+
+class TestSTAFFIIILabels:
+    """A wide per-patient spreadsheet, unpivoted to one row per record.
+
+    STAFF III ships no per-record table at all: the annotations are one row per
+    patient with up to five balloon inflations across 29 columns, and the record
+    ids are unpadded file numbers ("7c") that must become record names ("007c").
+    These fixtures rebuild that layout in miniature rather than touching real data.
+    """
+
+    # Positional layout of the real sheet: rows 0-9 are prose and merged
+    # headings, data starts at row 10. Only the columns the loader reads are
+    # filled in; the rest exist so the positional indices line up.
+    N_COLUMNS = 29
+
+    @staticmethod
+    def _row(patient, age, sex, prior_mi, **cells):
+        row = [None] * TestSTAFFIIILabels.N_COLUMNS
+        row[0], row[1], row[2], row[28] = patient, age, sex, prior_mi
+        for column, value in cells.items():
+            row[int(column.lstrip("c"))] = value
+        return row
+
+    def _sheet(self, tmp_path, rows):
+        """Write a spreadsheet with the real file's 10 leading non-data rows."""
+        pytest.importorskip("openpyxl")
+        preamble = [[None] * self.N_COLUMNS for _ in range(10)]
+        frame = pd.DataFrame(preamble + rows)
+        frame.to_excel(
+            tmp_path / "STAFF-III-Database-Annotations.xlsx",
+            header=False,
+            index=False,
+        )
+        return tmp_path
+
+    # -- the vessel mapping, which is pure ----------------------------------
+
+    @pytest.mark.parametrize(
+        ("artery", "territory"),
+        [
+            ("prox LAD", "LAD"),
+            ("mid LAD", "LAD"),
+            ("prox mid LAD", "LAD"),
+            ("LAD diag", "LAD"),
+            ("prox RCA", "RCA"),
+            ("dist RCA", "RCA"),
+            ("prox circ", "LCx"),
+            ("mid circ", "LCx"),
+            ("left main", "LM"),
+            ("", ""),
+            (None, ""),
+        ],
+    )
+    def test_artery_territory_covers_every_shipped_value(self, artery, territory):
+        """All twelve free-text vessel strings in the release map somewhere."""
+        from ecgbench.labels.staffiii import artery_territory
+
+        assert artery_territory(artery) == territory
+
+    def test_unrecognised_artery_becomes_unknown_not_a_wrong_territory(self):
+        """A future release adding a vessel must surface, not be folded into LAD."""
+        from ecgbench.labels.staffiii import UNKNOWN, artery_territory
+
+        assert artery_territory("ramus intermedius") == UNKNOWN
+
+    # -- header parsing ------------------------------------------------------
+
+    HEADER = (
+        "001a 9 1000 300000 20:26:00 27/09/1995\n"
+        "001a.dat 16+512 1600 12 0 0 0 0  V1\n"
+        "001a.dat 16+512 1600 12 0 0 0 0  V2\n"
+        "# Age: 52\n"
+        "# Sex: F\n"
+    )
+
+    def test_header_geometry_reads_length_rate_and_demographics(self, tmp_path):
+        from ecgbench.labels.staffiii import read_header_geometry
+
+        (tmp_path / "001a.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = read_header_geometry(tmp_path / "001a.hea")
+
+        assert fields["n_samples"] == 300000
+        assert fields["sampling_rate"] == 1000
+        assert fields["header_age"] == "52"
+        assert fields["header_sex"] == "F"
+
+    def test_missing_age_comment_is_not_a_parse_failure(self, tmp_path):
+        """Patients 14 and 15 have no '# Age:' line at all."""
+        from ecgbench.labels.staffiii import read_header_geometry
+
+        header = self.HEADER.replace("# Age: 52\n", "")
+        (tmp_path / "014a.hea").write_text(header, encoding="utf-8")
+        fields = read_header_geometry(tmp_path / "014a.hea")
+
+        assert fields["header_age"] == ""  # empty, not None, so the column stays str
+        assert fields["header_sex"] == "F"
+        assert fields["n_samples"] == 300000
+
+    # -- unpivoting the sheet ------------------------------------------------
+
+    def test_file_numbers_are_zero_padded_into_record_names(self, tmp_path):
+        """The sheet writes "7c"; the files are named "007c"."""
+        from ecgbench.labels.staffiii import read_annotation_sheet
+
+        root = self._sheet(
+            tmp_path,
+            [self._row(7, 66, "m", "no", c3="7a", c4="7b", c6="7c", c7="dist circ")],
+        )
+        entries = read_annotation_sheet(root)
+
+        assert sorted(entries["record_name"]) == ["007a", "007b", "007c"]
+
+    def test_one_row_per_inflation_not_per_record(self, tmp_path):
+        """Nine real records hold two or three inflations; the sheet lists each."""
+        from ecgbench.labels.staffiii import read_annotation_sheet
+
+        root = self._sheet(
+            tmp_path,
+            [
+                self._row(
+                    7, 66, "m", "no",
+                    c6="7c", c7="dist circ",
+                    c10="7c", c11="prox circ",
+                )
+            ],
+        )
+        entries = read_annotation_sheet(root)
+        inflations = entries[entries["recording_type"] == "BI"]
+
+        assert len(inflations) == 2
+        assert list(inflations["record_name"]) == ["007c", "007c"]
+        assert list(inflations["recording_index"]) == [1, 2]
+        assert sorted(inflations["occluded_artery"]) == ["dist circ", "prox circ"]
+
+    def test_unused_patient_numbers_yield_no_records(self, tmp_path):
+        """The sheet has 108 rows but 28, 67, 78 and 103 have no files."""
+        from ecgbench.labels.staffiii import read_annotation_sheet
+
+        root = self._sheet(
+            tmp_path,
+            [
+                self._row(1, 52, "f", "no", c3="1a"),
+                self._row(28, None, None, None),  # the grey line: no file numbers
+            ],
+        )
+        entries = read_annotation_sheet(root)
+
+        assert set(entries["patient"]) == {1}
+
+    def test_question_mark_age_becomes_empty(self, tmp_path):
+        """The sheet writes '?' for the two patients with no recorded age."""
+        from ecgbench.labels.staffiii import read_patient_attributes
+
+        root = self._sheet(tmp_path, [self._row(14, "?", "m", "no", c3="14a")])
+        attributes = read_patient_attributes(root)
+
+        assert attributes.loc[14, "age"] == ""
+        assert attributes.loc[14, "sex"] == "M"
+        # "no" is the sheet's own wording for absence, and must not read as missing.
+        assert attributes.loc[14, "prior_mi_location"] == "no"
+        assert attributes.loc[14, "prior_mi"] == "False"
+
+    # -- stratification ------------------------------------------------------
+
+    def _records(self, territories):
+        """One BI record per patient, with the given primary territory."""
+        return pd.DataFrame(
+            {
+                "record_name": [f"{i:03d}c" for i in range(1, len(territories) + 1)],
+                "patient_number": list(range(1, len(territories) + 1)),
+                "recording_type": ["BI"] * len(territories),
+                "recording_index": ["1"] * len(territories),
+                "artery_territory": territories,
+            }
+        )
+
+    def test_stratify_class_is_the_patients_primary_territory(self):
+        from ecgbench.labels.staffiii import attach_stratify_class
+
+        df = attach_stratify_class(self._records(["LAD"] * 10 + ["RCA"] * 10))
+
+        assert set(df["stratify_class"]) == {"LAD", "RCA"}
+        assert df.loc[0, "primary_artery_territory"] == "LAD"
+
+    def test_rare_territories_are_pooled_by_patient_count(self):
+        """LM has 3 inflations across 2 patients in the real release."""
+        from ecgbench.labels.staffiii import OTHER, attach_stratify_class
+
+        df = attach_stratify_class(self._records(["LAD"] * 10 + ["RCA"] * 10 + ["LM"]))
+
+        assert set(df["stratify_class"]) == {"LAD", "RCA", OTHER}
+        # The unpooled territory stays available; only the fold label is pooled.
+        assert df.loc[20, "primary_artery_territory"] == "LM"
+        assert df.loc[20, "stratify_class"] == OTHER
+
+    def test_multi_territory_patient_takes_its_first_inflation(self):
+        """Ten patients had inflations in more than one territory."""
+        from ecgbench.labels.staffiii import attach_stratify_class
+
+        df = self._records(["LAD"] * 10 + ["RCA"] * 10)
+        df.loc[0, "artery_territory"] = "LAD;LM"  # patient 1, two inflations
+        out = attach_stratify_class(df)
+
+        assert out.loc[0, "primary_artery_territory"] == "LAD"
+        assert out.loc[0, "stratify_class"] == "LAD"
+
+    # -- config wiring -------------------------------------------------------
+
+    def test_labels_point_at_the_spreadsheet(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("staffiii").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "STAFF-III-Database-Annotations.xlsx"
+        assert spec.join_column == "record_name"
+
+    def test_it_is_registered_as_a_label_loader(self):
+        """Without this the declarative loader would try read_csv on an .xlsx."""
+        from ecgbench.labels import _custom_loaders
+
+        assert "staffiii" in _custom_loaders()
+
+    def test_missing_spreadsheet_names_the_file_and_where_to_get_it(self, tmp_path):
+        from ecgbench.config import load_config
+        from ecgbench.labels.staffiii import scan_records
+
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "001a.hea").write_text(self.HEADER, encoding="utf-8")
+        load_config("staffiii")
+
+        with pytest.raises(LabelSourceMissingError, match="STAFF-III-Database-Annotations"):
+            scan_records(tmp_path)
+
+    def test_scan_refuses_a_path_with_no_headers(self, tmp_path):
+        """Pointing at the parent of the version directory is the usual mistake."""
+        from ecgbench.labels.staffiii import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="No NNNx.hea headers"):
+            scan_records(tmp_path)

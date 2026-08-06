@@ -159,7 +159,8 @@ Each dataset exposes its own fields — SCP codes plus diagnostic super/subclass
 for PTB-XL, SNOMED-CT codes for `ecg_arrhythmia`, rhythm/beat annotations and
 eleven automated measurements for `chapman_shaoxing`, free-text machine reports
 plus nine interval/axis measurements for `mimic_iv_ecg`, reference beat counts for
-`incartdb`. A dataset that genuinely has none (`mimic_iv_ecg_demo`) raises
+`incartdb`, protocol phase and balloon-occlusion timings for `staffiii`. A dataset
+that genuinely has none (`mimic_iv_ecg_demo`) raises
 `LabelsUnavailableError` naming where labels could come from, rather than
 returning empty columns.
 
@@ -199,6 +200,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ecgdmmld` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — the **opposite spelling to `ecgcipa`**, its sibling release from the same programme; here the median beats agree with the raw records and add VCGMAG, vx, vy, vz |
 | `ecgrdvq` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — same as `ecgdmmld` and again the opposite of `ecgcipa`; its median beats agree too, and add VCGMAG, vx, vy, vz |
 | `echonext` | I, II, III, aVR, aVL, aVF, V1-V6 — **not stated anywhere in the release**; inferred from the signals, since Einthoven's `III = II − I` and the Goldberger relations hold while wrong pairings do not |
+| `staffiii` | **V1-V6 FIRST, then I, II, III** — 9 signals, no aVR/aVL/aVF (derivable from I and II, so the montage is 12-lead clinically but `signal[0]` is V1) |
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -225,7 +227,11 @@ datasets silently crosses two leads. Matching is case-insensitive — `leads=["a
 works on the lowercase datasets too — an unknown lead lists what is available, and
 a duplicate is rejected.
 
-Two datasets are not 12-lead at all. **PTBDB** stores 15 signals, the conventional
+Three datasets are not 12-lead at all. **STAFF III** stores only **9**, and in the
+opposite order to everything else: `V1-V6` first, then `I, II, III`. aVR, aVL and
+aVF are exact linear combinations of I and II and were never stored, so the montage
+is a standard 12-lead one clinically while `signal[0]` is V1 rather than lead I —
+the single most likely way to misread this dataset. **PTBDB** stores 15 signals, the conventional
 twelve plus the three Frank vectorcardiography leads; `leads=` is how you take the
 standard twelve out of it. **`wctecgdb`** stores 37: I/II/III, V1-V6, the three limb
 electrode potentials LA/RA/LL and the six true unipolar chest leads UV1-UV6, each
@@ -261,6 +267,17 @@ alongside the patient diagnosis and free-text per-record findings. Its records a
 1800 s (~44 MB each), so batching needs a `window=`. It is also the
 clearest case for **patient-grouped folds** — 3,166 of its 3,174 RBBB beats come
 from a single patient — see `examples/load_incartdb.py`.
+
+`staffiii` is the one dataset whose label is a **position in a procedure** rather
+than a diagnosis. Each of its 104 patients was recorded before, during and after an
+elective coronary angioplasty, so `recording_type` (`BR`/`BC`/`BI`/`PC`/`PR`) marks
+which recordings were taken while a balloon was occluding a coronary artery — 152
+inflations, 28-595 s each, with sample-accurate inflation, deflation and
+contrast-injection times from the shipped `.event` files. That makes it the
+reference set for transient ischaemia, with each patient as their own control. Two
+traps: its **9 leads start with V1**, and record length correlates strongly with the
+label (inflation records have a median of 518 s against 300 s elsewhere), so window
+to a fixed length before training. See `examples/load_staffiii.py`.
 
 `brugada_huca` is the smallest and cleanest dataset here — 363 records, one per
 subject, all 363 passing validation — and the only one sampled at **100 Hz alone**
@@ -475,8 +492,8 @@ second[0]["signal"].shape   # (12, 2500) -- samples 2500-4999
 
 A window that does not fit raises `WindowOutOfRangeError`, naming the record and
 its true length. Record length is not constant in every dataset — `cpsc_2018`
-runs 6-144 s and `ptbdb` 32-120 s — so a fixed window can fit most records and
-not all.
+runs 6-144 s, `ptbdb` 32-120 s and `staffiii` 94.5-960 s — so a fixed window can
+fit most records and not all.
 
 `window` combines freely with `fold_numbers`, `leads` and `units`; it is applied
 first, then lead selection, then units, then `transform`.
