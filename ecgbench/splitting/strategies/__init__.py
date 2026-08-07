@@ -1,6 +1,7 @@
 """Strategy modules — imported to trigger @register side effects."""
 
 from . import (  # noqa: F401
+    afdb,
     brugada_huca,
     challenge2020,
     challenge2021,

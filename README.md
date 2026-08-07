@@ -223,6 +223,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `medalcare_xl` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, and stated by the release README rather than derived, since the records are **simulated** and there are no headers. Corroborated by the per-record parameter files, which place RA/LA/RL/LL and V1-V6 and nothing else — the augmented leads are computed, not placed |
 
 | `mitdb` | **MLII, V1** in 40 of 48 records — and **not** in the other 8. Two modified chest-placed leads, none of the standard twelve. See below |
+| `afdb` | **`ECG1`, `ECG2`** — the two channels are **not named leads at all**. The release states no electrode placement anywhere, so these are channel positions, and they must not be read as `mitdb`'s MLII/V1 by analogy with its sibling release |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -268,6 +269,32 @@ ds[0]["signal"]    # record 100: MLII from position 0
 
 `record_lead_layouts` is wfdb-only, because no other format names its leads per
 record. Datasets that do not declare it are unaffected.
+
+**And one dataset names no leads whatsoever.** `afdb` — the MIT-BIH Atrial
+Fibrillation Database, sibling to `mitdb` from the same hospital — calls its two
+channels `ECG1` and `ECG2` in every header and states no electrode placement
+anywhere in the release. So `leads=["ECG1"]` selects a **channel position**, not a
+known anatomical lead, and the obvious inference from `mitdb` is not supported by
+anything in the data. Where `mitdb` documents which of MLII/V1/V5 each record holds,
+`afdb` documents nothing, and the honest config is the one that says so.
+
+**One dataset's record ids are zero-padded numbers**, which is a bigger deal than it
+sounds. `afdb`'s records are named `00735`, `03665`, `04015`; read with pandas'
+default type inference they become 735, 3665, 4015, and from there the record id
+stops matching the source, the label join misses, and `data_path / "735"` is not a
+file — so every record fails `corrupt_header` for a reason nothing in the traceback
+mentions. Its config sets `zero_padded_identifiers: true`, which makes every
+metadata and fold-CSV read keep the record-id, patient-id and signal-path columns as
+strings. If you read the published fold CSVs yourself, do the same:
+
+```python
+pd.read_csv("afdb/clean/folds.csv", dtype={"record_name": str, "signal_path": str})
+```
+
+The flag is opt-in, because forcing it on would change `ds[0]["record_id"]` from an
+int to a string for the six datasets whose ids are genuinely numeric. Forgetting it
+is caught rather than remembered: `export_splits` refuses to write a zero-padded
+identifier from a config that has not declared one.
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased
@@ -613,6 +640,26 @@ conductivities, APDs, stimulus sites, ischaemic geometry and electrode positions
 are the real ground truth and are exposed opt-in via `load_simulation_parameters`,
 not by `labels=True`, which would otherwise open 33,684 files. See
 `examples/load_medalcare_xl.py`.
+
+`afdb` is the only dataset here whose **`original` version cannot be iterated**. Two
+of its 25 records — 00735 and 03665 — ship reference rhythm annotations and no signal
+file at all: the release never published their ECG, and their headers declare zero
+signals and zero samples. ECGBench keeps them so `original` matches the published
+record count and flags them invalid so `clean` holds the 23 that can be read, but
+there is nothing to return for them, so `ds[i]` raises and any `DataLoader` over
+`original` fails on the batch containing them. Everywhere else `original` holds
+records that are *flagged* but readable. Take `original` to see what was excluded and
+why, `clean` for anything that reads waveforms — and note that both records' labels
+are real and available either way.
+
+Its label is **AF burden** rather than a diagnosis, since every subject has atrial
+fibrillation: the fraction of annotated time in AF runs from 0.24% to 100% across the
+25 records, over 254.7 hours of two-lead Holter with 623 manually reviewed rhythm
+episodes. The records are 10 h (9,205,760 samples, ~74 MB of float32), so batching
+needs a `window=`; length is not uniform, so the window has to fit inside 06453's
+8,325,000 samples. Folds are stratified on a **binary** 20% burden cut and not on the
+3-class `af_class`, because 25 records over 10 folds leaves no room for a class of 3.
+See `examples/load_afdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

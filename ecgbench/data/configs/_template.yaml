@@ -70,6 +70,14 @@ metadata_csv: ""                  # Path to main metadata CSV, relative to datas
 metadata_csv_separator: ","
 record_id_column: ""              # Column with unique record identifiers
 patient_id_column: null           # Column with patient IDs (null if unavailable or one-record-per-patient)
+zero_padded_identifiers: false    # Set true if ANY record id, patient id or signal
+                                  # path is a zero-padded number ("00735"). pandas
+                                  # reads a column of digits as int and strips the
+                                  # zeros, after which record ids stop matching the
+                                  # source and signal paths stop resolving. afdb is
+                                  # the one dataset that needs it. Forgetting it is
+                                  # caught: export_splits refuses to write a
+                                  # zero-padded identifier while this is false.
 
 signal_path_columns:              # Mapping: sampling_rate -> column_name containing signal file paths
   500: "filename_hr"              # Paths must be relative to dataset root

@@ -1,0 +1,245 @@
+# ECGBench Config: MIT-BIH Atrial Fibrillation Database
+# =====================================================
+# https://physionet.org/content/afdb/1.0.0/
+#
+# 25 long-term two-lead Holter recordings of subjects with atrial fibrillation,
+# mostly paroxysmal, and 623 manually reviewed rhythm episodes over them. The
+# label that matters here is not a diagnosis — every subject has AF — but AF
+# BURDEN: how much of the recording is spent in it. That ranges from 0.2% (05091)
+# to 100% (07162, 07859) across the 25, which is what makes this the reference
+# dataset for AF detection and onset/offset work rather than AF classification.
+#
+# FOUR THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. TWO RECORDS SHIP NO SIGNALS. 00735 and 03665 are in the release's own
+#    RECORDS file and carry real rhythm annotations, but their ECG was never
+#    published and their headers declare 0 signals and 0 samples — notes.txt says
+#    "Signals unavailable". ECGBench keeps them, so `original` has all 25 records
+#    and matches the published count, and validation fails them on corrupt_header
+#    so `clean` has the 23 that can be read. wfdb's message for such a header is
+#    "sampto must be greater than sampfrom", which means "this header declares an
+#    empty record", not "this file is damaged". A CONSEQUENCE WORTH STATING:
+#    `version="original"` is not iterable for this dataset — the two records have
+#    no signal to return, so any DataLoader over it raises. Use it to inspect what
+#    was excluded and why; use `clean` for anything that reads waveforms.
+#
+# 2. RECORD IDS ARE ZERO-PADDED, AND THAT IS LOAD-BEARING. "00735" is not 735.
+#    This is the first dataset in ECGBench whose ids do not survive a naive CSV
+#    round-trip, which is why every metadata and fold-CSV read now goes through
+#    `DatasetConfig.identifier_dtypes()`. Read as numbers, the record id no longer
+#    matches the source, the label join misses, and `data_path / "735"` is not a
+#    file — every record then fails corrupt_header for a reason nothing in the
+#    traceback mentions.
+#
+# 3. THE RECORDS ARE 10 HOURS LONG, SO BATCHING NEEDS `window=`. 9,205,760
+#    samples x 2 leads is 74 MB of float32 per record. Length is NOT uniform:
+#    06453 holds 8,325,000 samples ("Recording ends after about 9 hours, 15
+#    minutes"), so a window must fit inside that to work on every clean record —
+#    and inside neither of the two signal-less records, which is another reason to
+#    use the clean version. See examples/load_afdb.py.
+#
+# 4. THE ANNOTATIONS STOP BEFORE THE SIGNAL DOES. Beat annotation ends at the
+#    nominal 10 h (sample ~9,000,000) while the .dat files hold 9,205,760 samples,
+#    so the last 823 s of each full-length record is unannotated (1,692 s for
+#    04048). A window into that tail returns signal with no reference behind it.
+#    `unannotated_tail_secs` in the labels reports it per record.
+#
+# THE `old/` SUBDIRECTORY IS NOT PART OF THIS DATASET. It holds the pre-2001
+# revisions of all 25 .atr files under the same names. The record list comes from
+# the shipped RECORDS file, and the loader reads annotations from the dataset
+# root, so those cannot leak in. The stray `.hea-`, `.atr-`, `.qrs-` files in the
+# root are superseded copies for the same reason.
+#
+# ALL 155 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt.
+
+name: "MIT-BIH Atrial Fibrillation Database"
+slug: "afdb"
+version: "1.0.0"
+url: "https://physionet.org/content/afdb/1.0.0/"
+download_url: null  # AFDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  25 long-term ECG recordings from human subjects with atrial fibrillation,
+  mostly paroxysmal, recorded at Beth Israel Hospital in Boston and digitised at
+  250 Hz with 12-bit resolution over a 20 mV range. Each record holds two ECG
+  signals, named ECG1 and ECG2 in the headers with no statement of which
+  anatomical leads they are, and runs 10 h 13.7 min; one (06453) stops at 9 h
+  15 min. The reference annotations are rhythm episodes in four codes — atrial
+  fibrillation, atrial flutter, AV junctional rhythm, and N for everything else —
+  manually reviewed, 623 episodes covering 254.7 hours in total. Unaudited
+  automatic beat annotations ship for all 25 records (1,221,559 detections) and
+  manually corrected beat annotations for two of them. Two records, 00735 and
+  03665, ship annotations but no signal files.
+citation: >
+  Moody GB, Mark RG. A new method for detecting atrial fibrillation using R-R
+  intervals. Computers in Cardiology 10:227-230 (1983).
+doi: "10.13026/C2MW2D"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Hospital / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/afdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# THE AMPLITUDE IS UNCALIBRATED BY THE HEADERS' OWN DECLARATION, and this 1.0 is a
+# deliberate choice between two defensible numbers rather than a no-op.
+#
+# Every signal line in every header declares a gain of `0`, which is WFDB's code
+# for "uncalibrated". wfdb therefore falls back to its default of 200 adu/mV and
+# reports the samples as mV, so nothing needs scaling and this stays 1.0.
+#
+# PhysioNet's description says 12-bit over a +/-10 mV range, which implies a true
+# gain of 4096/20 = 204.8 adu/mV — 2.4% finer than the 200 wfdb applies. So the
+# millivolts ECGBench returns are nominally 2.4% larger than that sentence
+# implies, and 0.9765625 here would "correct" it.
+#
+# ECGBench does not, for two reasons. The 200 is what the files themselves lead
+# every tool to, so published work on this database is on that scale and a
+# silent 2.4% divergence would make ECGBench's tensors the odd ones out. And 204.8
+# is derived from one line of prose, not from anything in the data — no record
+# reaches the 12-bit rail (the extreme sample anywhere in the release is 9.065 mV
+# against a full scale of 10.24), so the files cannot arbitrate between the two.
+# Waveform shape is unaffected either way; only absolute calibration is, by 2.4%.
+signal_unit_scale: 1.0
+leads: 2
+# ECG1/ECG2 in all 23 readable headers, and that is genuinely all the release
+# says. Unlike mitdb, which names MLII/V1/V5 and documents its electrode
+# placement, AFDB never states which anatomical leads these are — so
+# ECGDataset(leads=["ECG1"]) selects a channel position, not a known lead.
+# Do NOT map these onto MLII/V1 by analogy with mitdb: nothing supports it.
+lead_names: ["ECG1", "ECG2"]
+# 9,205,760 samples at 250 Hz. NOT uniform — 06453 holds 8,325,000 (33,300 s) and
+# the two signal-less records declare 0. This is the nominal, full-length value.
+duration_seconds: 36823.04
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in any form: the headers carry no comments at all, so
+# there are no demographics to parse and the annotations are the whole story.
+# AFDBSplitter builds this CSV from the .atr and .qrs files on first run, via
+# ecgbench.labels.afdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# THE ONE CONFIG THAT SETS THIS, and it is not optional here. Record names are
+# "00735", "03665", "04015": read with pandas' default inference they become 735,
+# 3665, 4015, and every consumer then looks for records that do not exist. Setting
+# it makes every metadata and fold-CSV read keep these columns as strings.
+# export_splits refuses to write a zero-padded identifier without it, so this
+# cannot be silently dropped by a later edit.
+zero_padded_identifiers: true
+# Null because the release has no subject identifier of any kind — no age, no sex,
+# no tape number, nothing. 25 records from 25 subjects is what PhysioNet states
+# and the most that can be asserted, so folds are stratified but ungrouped. This
+# is a fact about the data, not a skipped field.
+patient_id_column: null
+
+signal_path_columns:
+  250: "signal_path"  # zero-padded record stem, e.g. "00735" — the tree is flat
+
+# --- Labels ---
+label_column: "dominant_rhythm"  # the rhythm holding the most seconds in the record
+label_format: "single"
+
+stratification:
+  # AFDBSplitter takes stratify_class from the label loader: AF burden at or above
+  # 20% (14 records) against below it (11). Binary on purpose — StratifiedKFold
+  # needs at least n_folds members per class, so with 25 records and 10 folds no
+  # class may hold fewer than 10. The 3-level af_class has 3 `sustained` records
+  # and dominant_rhythm has 1 `J`; neither can be spread over 10 folds.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like ptbdb and challenge2021: length varies legitimately.
+  # 06453 stops at 8,325,000 samples against the other 22 records' 9,205,760, and
+  # notes.txt explains why ("Recording ends after about 9 hours, 15 minutes"), so
+  # a 9,205,760 threshold would drop a sound record as truncated. Omitting the
+  # rate disables the check rather than making it fire — `truncated_signal` stays
+  # in the list below only so a future re-release with uniform lengths needs one
+  # line here and not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The 12-bit rail, computed from the hardware: adc_zero 0 at wfdb's fallback gain
+  # of 200 puts every possible sample in [-2048, 2047] adu = [-10.24, 10.235] mV.
+  # Unlike mitdb, NOTHING IN THIS RELEASE REACHES IT — the extreme sample anywhere
+  # is 9.065 mV (08455, ECG1) and no record clips. So this check cannot fire on
+  # AFDB 1.0.0, and that is the intended state: any tighter threshold would just
+  # exclude the highest-amplitude records for having high amplitude. What it does
+  # guard is a mis-scaled copy — microvolts, or a re-release with a declared gain —
+  # which would exceed it by orders of magnitude on the first record.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/afdb.py turns the .atr rhythm episodes into
+# seconds and episode counts per code, AF burden, dominant rhythm and the AF-class
+# bins, and summarises the .qrs/.qrsc beat annotations. There is no source CSV to
+# point at — the annotation files are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "atrial fibrillation"
+    - "atrial flutter"
+    - "AF burden"
+    - "rhythm annotations"
+    - "two-lead"
+    - "Holter"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    25 long-term ambulatory ECG recordings of subjects with atrial fibrillation,
+    obtained at Beth Israel Hospital in Boston and digitised from analog Holter
+    tape at 250 Hz with 12-bit resolution over a 20 mV range. Two channels were
+    recorded per subject; the headers name them ECG1 and ECG2 and state no
+    electrode placement. Rhythm boundaries were annotated manually in four codes
+    (atrial fibrillation, atrial flutter, AV junctional rhythm, and N for all
+    other rhythms), giving 623 episodes over 254.7 hours. Beat locations were
+    marked by an automatic detector and left unaudited for 23 of the 25 records;
+    two records also carry manually corrected beat annotations. The database was
+    assembled to support the R-R interval method for AF detection published by
+    Moody and Mark in 1983, and the signal files for two of the 25 subjects were
+    never released.
+  rai_data_biases: >
+    Every subject in this database has atrial fibrillation, so it measures AF
+    detection and cannot measure AF prevalence: there is no non-AF control group,
+    and a model evaluated only here has never been shown a subject without the
+    condition. The cohort is small — 25 subjects — and each contributes one long
+    recording, so between-subject variation is very limited while within-subject
+    data is abundant, which makes record-level splits essential and any
+    sample-level split meaningless. AF burden is highly skewed and bimodal: 8
+    records spend under 5% of their time in AF and 3 spend over 95%, so a
+    sample-weighted metric is dominated by a handful of records. Atrial flutter
+    (1.6 h) and junctional rhythm (5.4 h) are rare enough to be untrainable as
+    separate classes, and 52% of all junctional rhythm is in one record (03665),
+    which is also one of the two with no signals. Beat annotations for 23 records
+    are unaudited automatic detections rather than reviewed ground truth. The
+    recordings predate modern equipment, were digitised from analog tape in 1992,
+    and come from one hospital; the release documents unreadable blocks in 04043,
+    08405 and 08434. No demographics ship, so no subgroup analysis of any kind is
+    possible from this release alone.
+  rai_personal_sensitive_info: >
+    De-identified, and more thoroughly than most of this catalogue: the headers
+    carry no comments whatsoever — no age, no sex, no medications, no clinical
+    description and no subject or tape identifier. The only per-record fields are
+    the signal specification and, for 19 of the 25, a start time of day with no
+    date. The record names are five-digit numbers from the source institution's
+    own numbering and are the only identifiers present.

@@ -5769,3 +5769,341 @@ class TestMITDBLabels:
         assert "SELECTED_FROM" not in code
         assert "200" not in code
         assert "record_name" not in code
+
+
+class TestAFDBLabels:
+    """MIT-BIH AFDB: the annotations ARE the labels — no CSV, and no header comments.
+
+    Every header in this release is pure signal specification, so unlike mitdb
+    there are no demographics to parse. What the loader has to get right is the
+    rhythm accounting, the two records with no signals, and the fact that the
+    beat annotations are an unaudited detector's output rather than ground truth.
+    """
+
+    HEADER = (
+        "04015 2 250 9205760  9:00:00\n"
+        "04015.dat 212 0 12 0 -55 -27172 0 ECG1\n"
+        "04015.dat 212 0 12 0 -42 -28460 0 ECG2\n"
+    )
+    # 06453: "Recording ends after about 9 hours, 15 minutes" (notes.txt).
+    HEADER_SHORT = (
+        "06453 2 250 8325000 20:00:00\n"
+        "06453.dat 212 0 12 0 -15 -20470 0 ECG1\n"
+        "06453.dat 212 0 12 0 40 -27848 0 ECG2\n"
+    )
+    # 00735 and 03665: "Signals unavailable". Four fields, no signal lines at all.
+    HEADER_NO_SIGNALS = "00735 0 250 0\n"
+    # 08378, 08405, 08455: "No start time".
+    HEADER_NO_START_TIME = (
+        "08378 2 250 9205760\n"
+        "08378.dat 212 0 12 0 -451 28726 0 ECG1\n"
+        "08378.dat 212 0 12 0 -410 -550 0 ECG2\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("afdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the .atr/.qrs files are the source
+        assert spec.join_column == "record_name"
+
+    def test_reads_the_signal_specification_and_the_channel_names(self, tmp_path):
+        from ecgbench.labels.afdb import read_header
+
+        (tmp_path / "04015.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = read_header(tmp_path / "04015.hea")
+
+        assert fields["n_leads"] == 2
+        assert fields["n_samples"] == 9205760
+        assert fields["sampling_rate"] == 250
+        assert fields["start_time"] == "9:00:00"
+        # Read, not assumed — it is the only statement the files make about the
+        # two channels, and it names no anatomical lead.
+        assert fields["lead_names"] == "ECG1|ECG2"
+
+    def test_a_header_declaring_no_signals_is_parsed_rather_than_raising(self, tmp_path):
+        """00735 and 03665 ship annotations and no .dat. Their labels are real."""
+        from ecgbench.labels.afdb import read_header
+
+        (tmp_path / "00735.hea").write_text(self.HEADER_NO_SIGNALS, encoding="utf-8")
+        fields = read_header(tmp_path / "00735.hea")
+
+        assert fields["n_leads"] == 0
+        assert fields["n_samples"] == 0
+        assert fields["sampling_rate"] == 250
+        assert fields["lead_names"] == ""
+        assert fields["start_time"] == ""
+
+    def test_a_missing_start_time_is_empty_rather_than_invented(self, tmp_path):
+        from ecgbench.labels.afdb import read_header
+
+        (tmp_path / "08378.hea").write_text(self.HEADER_NO_START_TIME, encoding="utf-8")
+        assert read_header(tmp_path / "08378.hea")["start_time"] == ""
+
+    def test_rhythm_episodes_are_measured_in_seconds_to_the_next_marker(self, tmp_path):
+        """AF burden is a duration, not a marker count.
+
+        This record has one AFIB marker and two N markers, so counting markers
+        would call it sinus-dominant; by time it is 80% AF.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import summarise_rhythms
+
+        span = 10_000  # 40 s at 250 Hz
+        wfdb.wrann(
+            "04015", "atr",
+            sample=np.array([0, 1_000, 9_000]),
+            symbol=["+", "+", "+"],
+            aux_note=["(N", "(AFIB", "(N"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        out = summarise_rhythms(tmp_path / "04015", span)
+
+        assert out["rhythm_secs_AFIB"] == pytest.approx(32.0)   # 1000 -> 9000
+        assert out["rhythm_secs_N"] == pytest.approx(4.0 + 4.0)  # 0->1000, 9000->end
+        assert out["n_episodes_AFIB"] == 1
+        assert out["n_episodes_N"] == 2
+        assert out["af_burden"] == pytest.approx(0.8)
+        assert out["dominant_rhythm"] == "AFIB"
+        assert out["rhythms"] == "AFIB|N"
+        assert out["longest_af_episode_secs"] == pytest.approx(32.0)
+
+    def test_junctional_rhythm_is_not_counted_as_af(self, tmp_path):
+        """J is an escape rhythm. Counting it would take 03665 from 16% to 68%."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import AF_CODES, summarise_rhythms
+
+        assert set(AF_CODES) == {"AFIB", "AFL"}
+        wfdb.wrann(
+            "03665", "atr",
+            sample=np.array([0, 2_500, 5_000]),
+            symbol=["+", "+", "+"],
+            aux_note=["(N", "(J", "(AFIB"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        out = summarise_rhythms(tmp_path / "03665", 7_500)
+
+        # Three equal thirds, and only the AFIB third counts towards burden.
+        assert out["af_burden"] == pytest.approx(1 / 3)
+        assert out["rhythm_secs_J"] == pytest.approx(10.0)
+
+    def test_atrial_flutter_does_count_as_af(self, tmp_path):
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import summarise_rhythms
+
+        wfdb.wrann(
+            "04908", "atr",
+            sample=np.array([0, 2_500]),
+            symbol=["+", "+"],
+            aux_note=["(N", "(AFL"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        out = summarise_rhythms(tmp_path / "04908", 5_000)
+        assert out["af_burden"] == pytest.approx(0.5)
+
+    def test_beat_counts_come_from_qrs_and_corrected_beats_are_never_substituted(
+        self, tmp_path
+    ):
+        """.qrs is unaudited; .qrsc exists for 05091 and 07859 only.
+
+        Silently preferring .qrsc where it exists would make ``n_beats`` mean two
+        different things in one column.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import summarise_beats
+
+        wfdb.wrann(
+            "05091", "qrs",
+            sample=np.array([250, 500, 750, 1_000]),
+            symbol=["N"] * 4,
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        wfdb.wrann(
+            "05091", "qrsc",
+            sample=np.array([250, 500, 1_000]),  # one false detection removed
+            symbol=["N"] * 3,
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        out = summarise_beats(tmp_path / "05091", 2_000)
+
+        assert out["n_beats"] == 4               # the unaudited count
+        assert out["n_beats_corrected"] == 3.0   # kept alongside, not swapped in
+        assert out["has_corrected_beats"] is True
+        assert out["last_beat_sample"] == 1_000
+        assert out["mean_heart_rate_bpm"] == pytest.approx(60.0)
+
+    def test_no_corrected_beats_is_nan_rather_than_the_unaudited_count(self, tmp_path):
+        import math
+
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import summarise_beats
+
+        wfdb.wrann(
+            "04015", "qrs", sample=np.array([250, 500]), symbol=["N", "N"],
+            fs=250, write_dir=str(tmp_path),
+        )
+        out = summarise_beats(tmp_path / "04015", 1_000)
+
+        assert out["n_beats"] == 2
+        assert out["has_corrected_beats"] is False
+        assert math.isnan(out["n_beats_corrected"])
+
+    def test_the_unannotated_tail_is_reported(self, tmp_path):
+        """Annotation stops at the nominal 10 h; the signal runs 13.7 min longer."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import NOMINAL_SAMPLES, summarise_beats
+
+        assert NOMINAL_SAMPLES == 9_205_760
+        wfdb.wrann(
+            "04015", "qrs", sample=np.array([250, 9_000_000]), symbol=["N", "N"],
+            fs=250, write_dir=str(tmp_path),
+        )
+        out = summarise_beats(tmp_path / "04015", NOMINAL_SAMPLES)
+
+        # (9205760 - 9000000) / 250 — the 823 s every full-length record carries.
+        assert out["unannotated_tail_secs"] == pytest.approx(823.04)
+
+    def test_a_signal_less_record_gets_the_nominal_span_and_has_signals_false(
+        self, tmp_path
+    ):
+        """Its annotations cover the usual 10 h; there is no .dat to measure against.
+
+        has_signals is what tells a reader the span is an assumption rather than a
+        measurement, and it is what the clean version excludes on.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import NOMINAL_SAMPLES, scan_records
+
+        (tmp_path / "00735.hea").write_text(self.HEADER_NO_SIGNALS, encoding="utf-8")
+        (tmp_path / "04015.hea").write_text(self.HEADER, encoding="utf-8")
+        (tmp_path / "RECORDS").write_text("00735\n04015\n", encoding="utf-8")
+        for name in ("00735", "04015"):
+            wfdb.wrann(name, "atr", sample=np.array([0]), symbol=["+"],
+                       aux_note=["(AFIB"], fs=250, write_dir=str(tmp_path))
+            wfdb.wrann(name, "qrs", sample=np.array([250]), symbol=["N"],
+                       fs=250, write_dir=str(tmp_path))
+
+        df = scan_records(tmp_path).set_index("record_name")
+
+        assert bool(df.loc["00735", "has_signals"]) is False
+        assert bool(df.loc["04015", "has_signals"]) is True
+        assert df.loc["00735", "n_samples"] == 0           # what the header says
+        assert df.loc["00735", "rhythm_span_samples"] == NOMINAL_SAMPLES
+        # Its labels are real, which is the reason to keep the record at all.
+        assert df.loc["00735", "af_burden"] == pytest.approx(1.0)
+        # The signal path is the bare stem — the tree is flat.
+        assert df.loc["04015", "signal_path"] == "04015"
+
+    def test_the_old_directory_is_excluded_by_reading_the_records_file(self, tmp_path):
+        """old/ holds the pre-2001 revision of every .atr under the same names.
+
+        The loader reads annotations from the dataset root and takes its record
+        list from RECORDS, so a glob's worth of superseded files cannot leak in.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.afdb import scan_records
+
+        (tmp_path / "04015.hea").write_text(self.HEADER, encoding="utf-8")
+        (tmp_path / "RECORDS").write_text("04015\n", encoding="utf-8")
+        wfdb.wrann("04015", "atr", sample=np.array([0]), symbol=["+"],
+                   aux_note=["(AFIB"], fs=250, write_dir=str(tmp_path))
+        wfdb.wrann("04015", "qrs", sample=np.array([250]), symbol=["N"],
+                   fs=250, write_dir=str(tmp_path))
+        old = tmp_path / "old"
+        old.mkdir()
+        wfdb.wrann("04015", "atr", sample=np.array([0]), symbol=["+"],
+                   aux_note=["(N"], fs=250, write_dir=str(old))
+
+        df = scan_records(tmp_path)
+        assert list(df["record_name"]) == ["04015"]
+        # The current .atr says AFIB; the superseded one in old/ says N.
+        assert df.loc[0, "dominant_rhythm"] == "AFIB"
+
+    def test_a_missing_records_file_names_what_to_download(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.afdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="physionet.org/content/afdb"):
+            scan_records(tmp_path)
+
+    def test_af_class_bins_the_burden_and_stratify_class_is_binary(self):
+        """25 records over 10 folds admits two classes and no more.
+
+        StratifiedKFold needs at least n_folds members per class. af_class has 3
+        `sustained` records in the whole release and dominant_rhythm has 1 `J`, so
+        neither can be spread across 10 folds; the 20% cut gives 14/11.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.afdb import (
+            AF_HIGH,
+            AF_LOW,
+            STRATIFY_AF_BURDEN,
+            attach_stratify_class,
+        )
+
+        df = pd.DataFrame(
+            {
+                "record_name": ["05091", "04908", "04043", "06426", "07162"],
+                "af_burden": [0.0024, 0.0906, 0.2154, 0.9568, 1.0],
+            }
+        )
+        out = attach_stratify_class(df)
+
+        assert list(out["af_class"]) == [
+            "minimal", "paroxysmal", "paroxysmal", "sustained", "sustained",
+        ]
+        assert STRATIFY_AF_BURDEN == 0.20
+        assert list(out["stratify_class"]) == [AF_LOW, AF_LOW, AF_HIGH, AF_HIGH, AF_HIGH]
+
+    def test_a_record_with_no_rhythm_annotation_does_not_break_the_bins(self):
+        """NaN burden must land in `minimal`, not propagate through np.select."""
+        import numpy as np
+        import pandas as pd
+
+        from ecgbench.labels.afdb import AF_LOW, attach_stratify_class
+
+        out = attach_stratify_class(
+            pd.DataFrame({"record_name": ["99999"], "af_burden": [np.nan]})
+        )
+        assert out.loc[0, "af_class"] == "minimal"
+        assert out.loc[0, "stratify_class"] == AF_LOW
+
+    def test_the_splitter_derives_its_label_from_the_label_loader(self):
+        """One derivation, not two — the rule PTB-XL learned the hard way."""
+        from pathlib import Path
+
+        from ecgbench.splitting.strategies import afdb as splitter_module
+
+        assert splitter_module.STRATIFY_COLUMN == "stratify_class"
+        source = Path(splitter_module.__file__).read_text()
+        code = "\n".join(
+            line for line in source.split('"""')[2].splitlines()
+            if not line.strip().startswith("#")
+        )
+        # The threshold and the class names live in the label loader only.
+        assert "STRATIFY_AF_BURDEN" not in code
+        assert "af_burden" not in code
+        assert "0.2" not in code

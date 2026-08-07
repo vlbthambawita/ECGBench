@@ -772,7 +772,7 @@ class ECGDataset(_TorchDataset):
                 filename=f"{self.config.slug}/{self.version}/folds.csv",
                 repo_type="dataset",
             )
-            return self._filter_master(pd.read_csv(master_path), fold_numbers)
+            return self._filter_master(self._read_csv(master_path), fold_numbers)
 
         files_to_load = [
             f"{self.config.slug}/{self.version}/{self.split}/fold_{n}.csv" for n in fold_numbers
@@ -785,9 +785,19 @@ class ECGDataset(_TorchDataset):
                 filename=file_path,
                 repo_type="dataset",
             )
-            dfs.append(pd.read_csv(local_path))
+            dfs.append(self._read_csv(local_path))
 
         return pd.concat(dfs, ignore_index=True)
+
+    def _read_csv(self, path: str | Path) -> pd.DataFrame:
+        """Read a fold CSV, keeping identifier columns as strings.
+
+        The one place every fold-CSV read goes through, so the HF and local paths
+        cannot disagree about a record's id. Without the dtype, pandas turns a
+        zero-padded record id such as ``afdb``'s ``00735`` into 735 and
+        ``__getitem__`` then looks for a record named "735".
+        """
+        return pd.read_csv(path, dtype=self.config.identifier_dtypes())
 
     def _filter_master(self, df: pd.DataFrame, fold_numbers: list[int] | None) -> pd.DataFrame:
         """Filter the master folds.csv by split and/or fold.
@@ -831,7 +841,7 @@ class ECGDataset(_TorchDataset):
             splits_base / "folds.csv",
         ]:
             if candidate.exists():
-                return self._filter_master(pd.read_csv(candidate), fold_numbers)
+                return self._filter_master(self._read_csv(candidate), fold_numbers)
 
         raise FileNotFoundError(
             f"Could not find fold CSVs for split '{self.split}' "
@@ -858,7 +868,7 @@ class ECGDataset(_TorchDataset):
             if not files:
                 raise FileNotFoundError(f"No fold_*.csv files in {split_dir}")
 
-        dfs = [pd.read_csv(f) for f in files]
+        dfs = [self._read_csv(f) for f in files]
         return pd.concat(dfs, ignore_index=True)
 
     def _load_labels(self) -> pd.DataFrame:

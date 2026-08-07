@@ -1466,3 +1466,121 @@ class TestPerRecordLeadLayouts:
         assert {name for layout in layouts for name in layout} == {
             "MLII", "V1", "V2", "V4", "V5"
         }
+
+    def test_afdb_channels_are_positions_and_must_not_be_named_leads(self):
+        """AFDB's headers call its two channels ECG1/ECG2 and name no anatomy.
+
+        Its sibling MIT-BIH Arrhythmia Database documents MLII/V1, and the
+        temptation is to carry that across. Nothing in the AFDB release supports
+        it: there is no electrode placement statement anywhere, so ECG1/ECG2 are
+        channel positions. This pins the config against a "helpful" edit.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("afdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        # One layout in all 23 readable headers, so neither per-record mechanism
+        # applies — and no anatomical lead name appears at all.
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+
+class TestZeroPaddedRecordIds:
+    """Fold CSVs must round-trip identifiers as strings, or afdb silently breaks.
+
+    ``ECGDataset._read_csv`` is the single place every fold-CSV read goes through
+    for exactly this reason. Read with pandas' default inference, afdb's record
+    ``00735`` comes back as 735, ``__getitem__`` builds ``data_path / "735"``, and
+    the failure surfaces as a file-not-found naming a record that does not exist.
+    """
+
+    def _folds_csv(self, path):
+        path.write_text(
+            "record_name,signal_path,fold,default_split\n"
+            "00735,00735,5,train\n"
+            "03665,03665,1,train\n"
+            "04015,04015,9,val\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_read_csv_keeps_leading_zeros(self, tmp_path):
+        from ecgbench.config import load_config
+        from ecgbench.dataset import ECGDataset
+
+        ds = ECGDataset.__new__(ECGDataset)
+        ds.config = load_config("afdb")
+
+        df = ds._read_csv(self._folds_csv(tmp_path / "folds.csv"))
+        assert list(df["record_name"]) == ["00735", "03665", "04015"]
+        assert list(df["signal_path"]) == ["00735", "03665", "04015"]
+        # fold stays numeric, so _filter_master's int comparison still works.
+        assert df["fold"].tolist() == [5, 1, 9]
+
+    def test_the_local_fold_reader_uses_it_too(self, tmp_path):
+        """Both fold-CSV paths must agree about what a record is called."""
+        from ecgbench.config import load_config
+        from ecgbench.dataset import ECGDataset
+
+        split_dir = tmp_path / "clean" / "train"
+        split_dir.mkdir(parents=True)
+        self._folds_csv(split_dir / "fold_5.csv")
+
+        ds = ECGDataset.__new__(ECGDataset)
+        ds.config = load_config("afdb")
+        ds.split = "train"
+
+        df = ds._read_fold_csvs(split_dir, [5])
+        assert list(df["record_name"]) == ["00735", "03665", "04015"]
+
+    def test_an_opted_in_config_protects_every_identifier_column(self):
+        """Opting in must cover the paths too, not only the record id.
+
+        Protecting the id alone would leave ``data_path / "735"`` unresolvable
+        while the id looked right — the worst of both.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("afdb")
+        dtypes = config.identifier_dtypes()
+        assert config.record_id_column in dtypes
+        assert all(column in dtypes for column in config.signal_path_columns.values())
+        assert all(value == "str" for value in dtypes.values())
+
+    def test_export_refuses_a_zero_padded_id_from_a_config_that_did_not_opt_in(self):
+        """The guard that makes the flag impossible to forget.
+
+        Checked at export because after the CSV round-trip the leading zeros are
+        gone and no consumer can tell they were ever there.
+        """
+        from dataclasses import replace
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.export import _check_zero_padded_identifiers
+
+        config = replace(load_config("afdb"), zero_padded_identifiers=False)
+        df = pd.DataFrame({
+            "record_name": ["00735", "04015"],
+            "signal_path": ["00735", "04015"],
+        })
+
+        with pytest.raises(ValueError, match="zero_padded_identifiers"):
+            _check_zero_padded_identifiers(df, config)
+
+        # Opted in, the same frame is fine.
+        _check_zero_padded_identifiers(df, load_config("afdb"))
+
+    def test_the_guard_ignores_ids_that_merely_look_numeric(self):
+        """mitdb's "100" and ptbxl's "1" are not zero-padded and must not trip it."""
+        from ecgbench.config import load_config
+        from ecgbench.splitting.export import _check_zero_padded_identifiers
+
+        config = load_config("mitdb")
+        df = pd.DataFrame({
+            "record_name": ["100", "114", "234"],
+            "patient_id": ["tape1085", "tape750", "tape1960"],
+            "signal_path": ["100", "114", "234"],
+        })
+        _check_zero_padded_identifiers(df, config)  # must not raise

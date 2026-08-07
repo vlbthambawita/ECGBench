@@ -278,7 +278,12 @@ def validate_dataset(
 
     # Read metadata
     csv_path = data_path / config.metadata_csv
-    df = pd.read_csv(csv_path, sep=config.metadata_csv_separator)
+    # dtype= keeps zero-padded identifiers intact; without it a record called
+    # "00735" is read as 735 and its signal path resolves to a file that is not
+    # there. See DatasetConfig.identifier_dtypes.
+    df = pd.read_csv(
+        csv_path, sep=config.metadata_csv_separator, dtype=config.identifier_dtypes()
+    )
 
     check_names = config.validation.checks if config.validation else []
     config_dict = _config_to_dict(config)

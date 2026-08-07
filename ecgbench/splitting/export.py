@@ -89,6 +89,47 @@ def _write_split_csvs(
         logger.debug("Wrote %s (%d records)", fold_path, len(fold_df))
 
 
+def _check_zero_padded_identifiers(master_df: pd.DataFrame, config: DatasetConfig) -> None:
+    """Refuse to export a zero-padded identifier the config has not declared.
+
+    A CSV is the only thing between the frame being exported here and everything
+    that later reads it back, and pandas reads a column of digits as int64. So
+    exporting ``00735`` produces a fold CSV that every consumer — the validation
+    engine, ``ECGDataset``, a user's own ``read_csv`` — silently turns into 735:
+    the record id stops matching the source, the label join misses, and
+    ``data_path / "735"`` is not a file.
+
+    ``DatasetConfig.zero_padded_identifiers`` is what prevents that, and this is
+    what stops a new dataset from needing to remember it. Checked here rather than
+    at read time because by then the leading zeros are already gone and no
+    consumer can tell.
+    """
+    columns = [config.record_id_column, config.patient_id_column]
+    columns.extend(config.signal_path_columns.values())
+
+    for column in dict.fromkeys(c for c in columns if c):
+        if column not in master_df.columns:
+            continue
+        values = master_df[column].dropna().astype(str)
+        padded = values[values.str.fullmatch(r"0\d+")]
+        if padded.empty:
+            continue
+        if not config.zero_padded_identifiers:
+            raise ValueError(
+                f"Column '{column}' holds zero-padded numeric identifiers "
+                f"({', '.join(padded.unique()[:3])}...), but config "
+                f"'{config.slug}' leaves zero_padded_identifiers at False. "
+                "Exported as-is, every reader coerces these to int and drops the "
+                "leading zeros, so record ids stop matching the source and signal "
+                "paths stop resolving. Set 'zero_padded_identifiers: true' in "
+                f"ecgbench/data/configs/{config.slug}.yaml."
+            )
+        logger.debug(
+            "Column '%s' holds %d zero-padded identifiers; kept as strings",
+            column, len(padded),
+        )
+
+
 def export_splits(
     split_result: SplitResult,
     validation_result: ValidationResult,
@@ -153,6 +194,8 @@ def export_splits(
 
     # Sort by record_id for deterministic output
     master_df = master_df.sort_values(config.record_id_column).reset_index(drop=True)
+
+    _check_zero_padded_identifiers(master_df, config)
 
     # --- Original version (minimal columns + quality flags) ---
     original_cols = _minimal_columns(config, include_quality=True)

@@ -68,7 +68,14 @@ def _load_declarative(data_path: Path, config: DatasetConfig) -> pd.DataFrame:
             f"(see {config.url})."
         )
 
-    df = pd.read_csv(csv_path, sep=spec.separator)
+    # The join column holds record ids, so for a zero-padded source it has to be
+    # read as strings — the fold CSVs it joins against are read the same way, and
+    # "00735" must not become 735 on one side only. Empty for every other dataset;
+    # see DatasetConfig.zero_padded_identifiers.
+    dtypes = dict(config.identifier_dtypes())
+    if dtypes:
+        dtypes[spec.join_column] = "str"
+    df = pd.read_csv(csv_path, sep=spec.separator, dtype=dtypes)
     if spec.join_column not in df.columns:
         raise ValueError(
             f"Join column '{spec.join_column}' not in {csv_path}. "
@@ -94,6 +101,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     per-dataset module cannot take the whole package down.
     """
     from ecgbench.labels import (
+        afdb,
         challenge2020,
         challenge2021,
         code15,
@@ -136,6 +144,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "code_test": code_test.load_labels,
         "incartdb": incartdb.load_labels,
         "mitdb": mitdb.load_labels,
+        "afdb": afdb.load_labels,
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,
         "mimic_iv_ecg": mimic_iv_ecg.load_labels,
         "wctecgdb": wctecgdb.load_labels,

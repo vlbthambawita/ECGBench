@@ -149,6 +149,24 @@ class DatasetConfig:
     record_id_column: str = "ecg_id"
     patient_id_column: str | None = None
     signal_path_columns: dict[int, str] = field(default_factory=dict)
+    #: Set when any record id, patient id or signal path is a **zero-padded
+    #: number**, which pandas would otherwise coerce to int on read and strip.
+    #: ``afdb`` is the case: its records are named ``00735``, ``03665``, ``04015``.
+    #: Read as numbers those become 735, 3665, 4015 — the id no longer matches the
+    #: source, the label join misses, and ``data_path / "735"`` is not a file, so
+    #: every record fails ``corrupt_header`` for a reason nothing in the traceback
+    #: mentions.
+    #:
+    #: Opt-in rather than universal because forcing it on would change the type of
+    #: ``ds[0]["record_id"]`` from int to str for the six datasets whose ids are
+    #: genuinely numeric (``mitdb``, ``brugada_huca``, ``code15``, ``code_test``,
+    #: ``ningbo_iva``, ``ptbxl``) and silently invalidate the values quoted on
+    #: their dataset pages. Making identifiers uniformly strings everywhere is a
+    #: defensible change, but it is a separate one.
+    #:
+    #: Forgetting it is guarded rather than remembered: ``export_splits`` raises if
+    #: it exports a zero-padded identifier from a config that left this False.
+    zero_padded_identifiers: bool = False
 
     # Labels (required)
     label_column: str = ""
@@ -180,6 +198,22 @@ class DatasetConfig:
 
     # Croissant
     croissant: CroissantConfig = field(default_factory=CroissantConfig)
+
+    def identifier_dtypes(self) -> dict[str, str]:
+        """Columns to read as strings, for ``pandas.read_csv(dtype=...)``.
+
+        Empty unless :attr:`zero_padded_identifiers` is set — see there for why
+        this is opt-in rather than universal. Every read of a metadata or fold CSV
+        goes through this, so the exported CSVs, the validation engine and
+        ``ECGDataset`` cannot disagree about what a record is called. Unknown keys
+        are ignored by pandas, so the result is safe to hand to any CSV whatever
+        columns it actually has.
+        """
+        if not self.zero_padded_identifiers:
+            return {}
+        columns = [self.record_id_column, self.patient_id_column]
+        columns.extend(self.signal_path_columns.values())
+        return {column: "str" for column in columns if column}
 
 
 _CONFIGS_DIR = Path(__file__).parent / "data" / "configs"
@@ -327,6 +361,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         record_id_column=raw["record_id_column"],
         patient_id_column=raw.get("patient_id_column"),
         signal_path_columns=_parse_signal_path_columns(raw.get("signal_path_columns")),
+        zero_padded_identifiers=bool(raw.get("zero_padded_identifiers", False)),
         label_column=raw["label_column"],
         label_format=raw.get("label_format", "single"),
         stratification=_parse_stratification(raw.get("stratification")),

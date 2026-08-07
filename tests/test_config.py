@@ -1203,3 +1203,147 @@ def test_mitdb_is_the_only_config_declaring_per_record_lead_layouts():
         if load_config(slug).record_lead_layouts
     ]
     assert declaring == ["mitdb"]
+
+
+def test_load_afdb_config():
+    """MIT-BIH AFDB: two unnamed channels, 10 h records, uncalibrated amplitude."""
+    config = load_config("afdb")
+    assert config.slug == "afdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a gain of 0 — WFDB's "uncalibrated" — so wfdb falls
+    # back to its default 200 adu/mV and reports mV. Nothing to rescale.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # ECG1/ECG2 are CHANNEL POSITIONS. The release states no electrode placement
+    # anywhere, so these must not be "corrected" to MLII/V1 by analogy with mitdb.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    assert config.signal_path_columns == {250: "signal_path"}
+    # No metadata ships at all: AFDBSplitter generates this from the .atr/.qrs files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the release carries no subject identifier of any kind — not
+    # even a tape number, which is what mitdb groups on.
+    assert config.patient_id_column is None
+    # A single layout, so neither per-record lead mechanism applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # Openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Records are named 00735, 03665, 04015 — the only dataset needing this.
+    assert config.zero_padded_identifiers is True
+
+
+def test_afdb_disables_the_truncation_check_because_length_varies():
+    """06453 stops at 8,325,000 samples against the other 22 records' 9,205,760.
+
+    notes.txt explains it ("Recording ends after about 9 hours, 15 minutes"), so a
+    9,205,760 threshold would drop a sound record as truncated. An empty
+    expected_samples DISABLES the check — check_truncated_signal returns [] when
+    the rate has no key — which is the intended escape hatch, as in ptbdb.
+    """
+    config = load_config("afdb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_afdb_amplitude_range_is_the_twelve_bit_rail():
+    """Set from the hardware: adc_zero 0 at gain 200 gives [-2048, 2047] adu.
+
+    Unlike mitdb, nothing in this release reaches it — the extreme sample anywhere
+    is 9.065 mV — so the check cannot fire on AFDB 1.0.0. It guards a mis-scaled
+    copy, not signal quality, and a tighter range would only exclude the
+    highest-amplitude records for having high amplitude.
+    """
+    config = load_config("afdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.235)
+    assert low == pytest.approx(-2048 / 200.0)
+    assert high == pytest.approx(2047 / 200.0)
+
+
+class TestIdentifierDtypes:
+    """Record ids, patient ids and signal paths are identifiers, not numbers.
+
+    afdb is the dataset that forced this: its records are named 00735, 03665,
+    04015 and so on. Read with pandas' default type inference they become 735,
+    3665, 4015 — the id no longer matches the source, the label join misses, and
+    ``data_path / "735"`` is not a file, so every record fails corrupt_header for
+    a reason nothing in the traceback mentions.
+    """
+
+    def test_it_is_opt_in_and_afdb_is_the_only_dataset_opting_in(self):
+        """Universal string ids would change ds[0]["record_id"] for six datasets.
+
+        mitdb, brugada_huca, code15, code_test, ningbo_iva and ptbxl all have
+        genuinely numeric ids whose values are quoted as ints on their dataset
+        pages. Making identifiers uniformly strings is defensible but is a separate
+        change, so the coercion guard is opt-in and only the dataset that needs it
+        opts in.
+        """
+        opting_in = [
+            slug for slug in list_available_configs()
+            if load_config(slug).zero_padded_identifiers
+        ]
+        assert opting_in == ["afdb"]
+        # And a dataset that has not opted in is left exactly as it was.
+        assert load_config("mitdb").identifier_dtypes() == {}
+
+    def test_covers_record_patient_and_every_signal_path_column(self):
+        from dataclasses import replace
+
+        config = replace(load_config("ptbxl"), zero_padded_identifiers=True)
+        dtypes = config.identifier_dtypes()
+
+        assert dtypes[config.record_id_column] == "str"
+        assert dtypes[config.patient_id_column] == "str"
+        for column in config.signal_path_columns.values():
+            assert dtypes[column] == "str"
+
+    def test_omits_a_null_patient_id_column(self):
+        """afdb has no patient column; a None key would make read_csv raise."""
+        config = load_config("afdb")
+        assert config.patient_id_column is None
+        assert None not in config.identifier_dtypes()
+        assert config.identifier_dtypes() == {
+            "record_name": "str",
+            "signal_path": "str",
+        }
+
+    def test_zero_padded_ids_survive_a_csv_round_trip(self, tmp_path):
+        """The actual regression: without the dtype, "00735" comes back as 735."""
+        import pandas as pd
+
+        config = load_config("afdb")
+        path = tmp_path / "folds.csv"
+        path.write_text(
+            "record_name,signal_path,fold,default_split\n"
+            "00735,00735,5,train\n"
+            "04015,04015,9,val\n",
+            encoding="utf-8",
+        )
+
+        # What pandas does unaided, and why this helper exists:
+        naive = pd.read_csv(path)
+        assert list(naive["record_name"]) == [735, 4015]
+
+        kept = pd.read_csv(path, dtype=config.identifier_dtypes())
+        assert list(kept["record_name"]) == ["00735", "04015"]
+        assert list(kept["signal_path"]) == ["00735", "04015"]
+        # Non-identifier columns are untouched, so fold stays comparable as an int.
+        assert kept["fold"].tolist() == [5, 9]
+
+    def test_unknown_columns_are_ignored_rather_than_raising(self, tmp_path):
+        """A dataset's CSV need not carry every column the config names."""
+        import pandas as pd
+
+        config = load_config("afdb")
+        path = tmp_path / "partial.csv"
+        path.write_text("record_name,fold\n00735,5\n", encoding="utf-8")
+
+        df = pd.read_csv(path, dtype=config.identifier_dtypes())
+        assert list(df["record_name"]) == ["00735"]
