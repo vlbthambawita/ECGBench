@@ -458,6 +458,43 @@ def _resolve_leads(
     return indices, resolved
 
 
+def _layout_union(layouts: list[list[str]]) -> list[str]:
+    """Every lead name any layout holds, first-seen order, case-insensitively unique.
+
+    Used only to validate a ``leads=`` request at construction time when the
+    release uses several layouts: a name in none of them is a typo and should
+    fail immediately, while a name in some of them is legitimate and is resolved
+    per record later.
+    """
+    seen: dict[str, str] = {}
+    for layout in layouts:
+        for name in layout:
+            seen.setdefault(str(name).strip().lower(), name)
+    return list(seen.values())
+
+
+def _stored_lead_names(record_path: str, signal_format: str, slug: str) -> list[str]:
+    """The lead names *this* record stores, read from its own header.
+
+    Only WFDB names its leads per record. A release that declares
+    ``record_lead_layouts`` in any other format has no way to say which layout a
+    given record uses, so this refuses rather than picking one.
+    """
+    if signal_format != "wfdb":
+        raise ValueError(
+            f"'{slug}' declares record_lead_layouts, but signal_format "
+            f"'{signal_format}' stores no lead names per record, so there is "
+            "nothing to resolve a request against. Only wfdb records name their "
+            "own leads."
+        )
+    import wfdb
+
+    names = list(wfdb.rdheader(record_path).sig_name or [])
+    if not names:
+        raise ValueError(f"Header for {record_path!r} names no leads.")
+    return names
+
+
 class ECGDataset(_TorchDataset):
     """PyTorch Dataset for loading any ECG dataset supported by ECGBench.
 
@@ -489,7 +526,10 @@ class ECGDataset(_TorchDataset):
         metadata_source: "hf" (download fold CSVs from HuggingFace) or "local".
         leads: select and reorder leads by name, e.g. ``["I", "II", "V5"]``.
                Case-insensitive; needs ``lead_names`` in the dataset's config.
-               The signal's first dimension becomes ``len(leads)``.
+               The signal's first dimension becomes ``len(leads)``. Where a
+               release uses more than one layout (``zzu_pecg``, ``mitdb``) the
+               names are re-resolved per record, and a record whose layout lacks
+               a requested lead raises rather than substituting another.
         units: "mV" (default) or "uV" — applied after lead selection and before
                ``transform``. Never affects validation or the exported folds.
         labels: attach per-record labels and metadata as ``sample["labels"]``.
@@ -587,10 +627,21 @@ class ECGDataset(_TorchDataset):
         self._requested_leads: list[str] | None = None
         self._declared_n_leads = len(self.config.lead_names) if self.config.lead_names else None
         self._alt_lead_index: dict[int, list[int]] = {}
+        # Per-record-path indices, for a release whose records store the same
+        # number of leads under different names. See _lead_index_for().
+        self._path_lead_index: dict[str, list[int]] = {}
         if leads is not None:
-            self._lead_index, names = _resolve_leads(
-                leads, self.config.lead_names, self.config.slug
+            # With several layouts in play the declared order answers for none of
+            # them, so the request is checked against the union — a name in no
+            # layout is a typo and fails here — and the indices are re-resolved
+            # per record at read time. _lead_index is then only a "selection is
+            # active" marker; _lead_index_for never returns it.
+            available = (
+                _layout_union(self.config.record_lead_layouts)
+                if self.config.record_lead_layouts
+                else self.config.lead_names
             )
+            self._lead_index, names = _resolve_leads(leads, available, self.config.slug)
             self._requested_leads = list(leads)
             # The resolved *names* are the same whatever layout a record uses —
             # that is the point of selecting by name — so this stays valid even
@@ -600,24 +651,63 @@ class ECGDataset(_TorchDataset):
         # Labels: loaded once and aligned to this split, never per __getitem__.
         self.labels_df = self._load_labels() if labels else None
 
-    def _lead_index_for(self, n_stored: int, record_id: Any) -> list[int]:
+    def _lead_index_for(
+        self, n_stored: int, record_id: Any, record_path: str | None = None
+    ) -> list[int]:
         """Row indices for the requested leads in a record storing ``n_stored`` of them.
 
-        Almost always the indices resolved once in ``__init__``. The exception is a
-        release that does not use one layout throughout: ``zzu_pecg`` stores 12
-        leads for 12,334 records and 9 for the other 1,856, dropping V2, V4 and V6,
-        so position 7 is V2 in the first layout and V3 in the second. Taking the
-        declared indices there would return a different physical lead without any
-        error, which is the failure this method exists to prevent.
+        Almost always the indices resolved once in ``__init__``. Two releases in
+        the catalogue do not use one layout throughout, and they break it in
+        different ways:
 
-        A dataset that declares no ``alternate_lead_names`` is asserting that it
-        uses one layout throughout, so the declared indices are used as before and
-        an out-of-range one is caught by the caller's "too few leads" check. Once a
-        dataset declares even one alternate it is asserting that layout *varies*,
-        and then a count matching none of them raises: guessing which layout a
-        record uses is exactly the guess that produces silently crossed leads.
+        - ``zzu_pecg`` varies the lead **count** — 12 leads for 12,334 records and
+          9 for the other 1,856, dropping V2, V4 and V6, so position 7 is V2 in
+          the first layout and V3 in the second. ``alternate_lead_names`` maps the
+          count to the layout.
+        - ``mitdb`` varies the **names** at a constant count — all 48 records store
+          2 leads, but 8 store something other than MLII/V1 and record 114 stores
+          them reversed. A count-keyed map cannot see that at all, so
+          ``record_lead_layouts`` instead says "layout varies, read it from the
+          record", and the names come from the record's own header.
+
+        Either way, taking the declared indices would return a different physical
+        lead with no error, which is the failure this method exists to prevent. A
+        dataset declaring neither field asserts one layout throughout and keeps
+        the previous behaviour exactly, including the caller's "too few leads"
+        check on an out-of-range index.
         """
         assert self._lead_index is not None  # only called when selection is active
+
+        if self.config.record_lead_layouts:
+            assert self._requested_leads is not None
+            if record_path is None:
+                raise ValueError(
+                    f"'{self.config.slug}' resolves leads from each record's own "
+                    "header, but no record path was supplied."
+                )
+            cached = self._path_lead_index.get(record_path)
+            if cached is not None:
+                return cached
+            stored = _stored_lead_names(
+                record_path, self.config.signal_format, self.config.slug
+            )
+            try:
+                index, _ = _resolve_leads(
+                    self._requested_leads, stored, self.config.slug
+                )
+            except ValueError as e:
+                # The zzu_pecg "absent lead" case, one layer down: refuse rather
+                # than hand back whichever lead happens to sit at that index.
+                # .item() because a numeric record id arrives as a numpy scalar,
+                # and "Record np.int64(102)" helps nobody.
+                name = record_id.item() if hasattr(record_id, "item") else record_id
+                raise ValueError(
+                    f"Record {name!r} stores {stored}, and this dataset uses "
+                    f"more than one lead layout. {e}"
+                ) from e
+            self._path_lead_index[record_path] = index
+            return index
+
         alternates = self.config.alternate_lead_names or {}
         if not alternates or self._declared_n_leads is None:
             return self._lead_index
@@ -849,7 +939,7 @@ class ECGDataset(_TorchDataset):
 
         if self._lead_index is not None:
             lead_index = self._lead_index_for(
-                signal.shape[0], row.get(self.config.record_id_column)
+                signal.shape[0], row.get(self.config.record_id_column), full_path
             )
             if signal.shape[0] <= max(lead_index):
                 raise ValueError(

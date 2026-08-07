@@ -3723,3 +3723,158 @@ class TestMedalCareXLSplitter:
         again = self._splitter().load_metadata(root, config)
         assert again["record_id"].tolist() == df["record_id"].tolist()
         assert again["record_number"].tolist() == df["record_number"].tolist()
+
+
+class TestMITDBSplitter:
+    """48 records, 47 subjects, and one pair that must not be separated."""
+
+    def _header(self, rec, tape, leads=("MLII", "V1"), speed=1):
+        return (
+            f"{rec} 2 360 650000\n"
+            + "".join(
+                f"{rec}.dat 212 200 11 1024 1000 0 0 {lead}\n" for lead in leads
+            )
+            + f"# 68 M {tape} 2851 x{speed}\n"
+            "# Digoxin\n"
+            "# The PVCs are uniform.\n"
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: [(rec, tape, leads)] -> flat headers, .atr each, plus RECORDS."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, tape, leads in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, tape, leads), encoding="utf-8"
+            )
+            wfdb.wrann(
+                rec, "atr",
+                sample=np.array([100, 200, 300, 400]),
+                symbol=["+", "N", "N", "V"],
+                aux_note=["(N", "", "", ""],
+                fs=360,
+                write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, _, _ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="mitdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={360: "signal_path"}, default_sampling_rate=360,
+            label_column="dominant_rhythm", leads=2,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.mitdb import MITDBSplitter
+
+        assert isinstance(get_splitter("mitdb"), MITDBSplitter)
+
+    def test_builds_tape_grouping_signal_paths_and_beat_counts(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        # 201 and 202 came off the same analog tape, which is the whole reason
+        # this dataset has 47 subjects and not 48.
+        tree = self._tree(
+            tmp_path,
+            [("201", 1960, ("MLII", "V1")), ("202", 1960, ("MLII", "V1")),
+             ("100", 1085, ("MLII", "V1"))],
+        )
+        df = get_splitter("mitdb").load_metadata(tree, config)
+
+        assert df.loc[df.record_name == "201", "patient_id"].item() == "tape1960"
+        assert df.loc[df.record_name == "202", "patient_id"].item() == "tape1960"
+        assert df["patient_id"].nunique() == 2  # 3 records, 2 tapes
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["100", "201", "202"]
+        # '+' is a rhythm change, not a beat.
+        assert df["n_beats"].tolist() == [3, 3, 3]
+        assert df["beat_V"].tolist() == [1, 1, 1]
+        assert df["n_rhythm_changes"].tolist() == [1, 1, 1]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_the_per_record_lead_layout_reaches_the_metadata(
+        self, sample_config, tmp_path
+    ):
+        """Record 114 stores V5 then MLII, and a user must be able to see that."""
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [("100", 1085, ("MLII", "V1")), ("114", 750, ("V5", "MLII")),
+             ("102", 1525, ("V5", "V2"))],
+        )
+        df = get_splitter("mitdb").load_metadata(tree, config).set_index("record_name")
+
+        assert df.loc["100", "lead_names"] == "MLII|V1"
+        assert df.loc["114", "lead_names"] == "V5|MLII"
+        assert df.loc["102", "lead_names"] == "V5|V2"
+
+    def test_stratification_is_the_two_documented_halves(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.mitdb import RANDOM_SAMPLE, SELECTED
+
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [("100", 1085, ("MLII", "V1")), ("124", 1199, ("MLII", "V4")),
+             ("200", 1953, ("MLII", "V1")), ("234", 1971, ("MLII", "V1"))],
+        )
+        splitter = get_splitter("mitdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "record_group"
+        assert labels.tolist() == [RANDOM_SAMPLE, RANDOM_SAMPLE, SELECTED, SELECTED]
+
+    def test_missing_stratify_column_is_an_error_not_a_silent_fallback(
+        self, sample_config
+    ):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("mitdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["100"]}), config
+            )
+
+    def test_the_two_records_from_one_tape_never_span_a_fold(
+        self, sample_config, tmp_path
+    ):
+        """The concrete leakage this dataset can produce, and the guard against it.
+
+        Ungrouped, 201 and 202 land in different folds most of the time; grouped,
+        never. It is one subject out of 47, but it is the only one there is.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        records = [("201", 1960, ("MLII", "V1")), ("202", 1960, ("MLII", "V1"))]
+        records += [(str(100 + i), 1000 + i, ("MLII", "V1")) for i in range(1, 9)]
+        records += [(str(200 + i), 2000 + i, ("MLII", "V1")) for i in range(3, 13)]
+        tree = self._tree(tmp_path, records)
+
+        splitter = get_splitter("mitdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assigned = pd.concat(
+            [frame.assign(fold=number) for number, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        folds = assigned.set_index("record_name")["fold"]
+        assert folds["201"] == folds["202"]
+        spanning = assigned.groupby("patient_id")["fold"].nunique()
+        assert (spanning == 1).all()
+        assert result.group_column == "patient_id"

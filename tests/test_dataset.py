@@ -471,6 +471,32 @@ class TestShippedLeadNames:
             "V1", "V2", "V3", "V4", "V5", "V6",
         }
 
+    def test_mitdb_declares_a_predominant_layout_because_it_has_no_single_one(self):
+        """MIT-BIH is the one dataset where ``lead_names`` cannot be the whole truth.
+
+        It stores two modified chest-placed leads, not any of the standard twelve,
+        so it cannot go in the parametrised table above. More importantly the
+        layout is not constant: counted over the 48 headers, 40 records store
+        MLII/V1, two each store MLII/V5, MLII/V2 and V5/V2, one stores MLII/V4,
+        and record 114 stores V5/MLII — the same pair as the majority, reversed.
+        ``lead_names`` is therefore the *predominant* layout and
+        ``record_lead_layouts`` carries the rest; see TestPerRecordLeadLayouts for
+        what that changes at read time.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("mitdb")
+        assert config.leads == 2
+        assert config.lead_names == ["MLII", "V1"]
+        assert len(config.lead_names) == config.leads
+        # Not a standard 12-lead name among them: MLII is a modified limb lead II
+        # taken from chest electrodes, and there are no augmented leads at all.
+        assert not {"aVR", "aVL", "aVF", "I", "II", "III"} & set(config.lead_names)
+        # signal[0] is a limb-type lead in 46 records and a chest lead in 2, which
+        # is exactly why an index cannot stand in for a name here.
+        assert ["V5", "V2"] in config.record_lead_layouts
+        assert ["V5", "MLII"] in config.record_lead_layouts
+
     def test_staffiii_stores_nine_leads_with_the_precordials_first(self):
         """STAFF III inverts the limb-then-chest order every other dataset uses.
 
@@ -1256,3 +1282,187 @@ class TestAlternateLeadLayouts:
         assert config.lead_names[0] != "I"
         # And it has no alternate layout — all 98,130 records store the same 8.
         assert config.alternate_lead_names is None
+
+
+class TestPerRecordLeadLayouts:
+    """A release whose records store the same NUMBER of leads under different NAMES.
+
+    ZZU-pECG varies the lead count, which a count-keyed ``alternate_lead_names``
+    map can resolve. MIT-BIH does not: all 48 of its records hold exactly 2
+    leads, but 40 store MLII/V1 and the other 8 store MLII/V5, MLII/V2, MLII/V4,
+    V5/V2 — or, for record 114, the predominant pair *reversed*. There is no
+    count to key on, so ``record_lead_layouts`` says "layout varies, read it from
+    the record" and ``ECGDataset`` resolves the requested names against each
+    record's own header. These tests pin that.
+    """
+
+    def _ds(self, root, config, **kwargs):
+        from dataclasses import replace
+
+        from ecgbench.dataset import ECGDataset
+
+        from .conftest import MITDB_LAYOUTS
+
+        config = replace(
+            config,
+            signal_format="wfdb",
+            leads=2,
+            lead_names=list(MITDB_LAYOUTS[0]),
+            record_lead_layouts=kwargs.pop(
+                "record_lead_layouts", [list(layout) for layout in MITDB_LAYOUTS]
+            ),
+        )
+        return ECGDataset(
+            config,
+            split="train",
+            version="clean",
+            data_path=root,
+            metadata_source="local",
+            **kwargs,
+        )
+
+    def test_unselected_reads_are_untouched(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """Without leads=, nothing is re-indexed and every record loads as stored."""
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config)
+        assert tuple(ds[0]["signal"].shape) == (2, 5000)
+        assert tuple(ds[2]["signal"].shape) == (2, 5000)
+
+    def test_a_reversed_record_still_returns_the_lead_that_was_asked_for(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """Record 1 stores V5 then MLII — mitdb's record 114, whose signals are reversed.
+
+        This is the failure the mechanism exists for. Both records store 2 leads,
+        so nothing about the shape distinguishes them, and an index-based
+        selection returns V5 where MLII was asked for with no error at all.
+        """
+        from .conftest import CANONICAL_LEAD_INDEX
+
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["MLII"])
+        assert ds.lead_names == ("MLII",)
+        normal = ds[0]["signal"]  # MLII, V1 — MLII at position 0
+        reversed_ = ds[1]["signal"]  # V5, MLII — MLII at position 1
+        assert tuple(normal.shape) == tuple(reversed_.shape) == (1, 5000)
+        expected = CANONICAL_LEAD_INDEX["MLII"]
+        assert normal[0, 0].item() == pytest.approx(expected, abs=1e-3)
+        # The point: the same physical lead from a record that stores it second.
+        # Taking index 0 here would return V5 (10.0).
+        assert reversed_[0, 0].item() == pytest.approx(expected, abs=1e-3)
+        assert reversed_[0, 0].item() != pytest.approx(
+            CANONICAL_LEAD_INDEX["V5"], abs=1e-3
+        )
+
+    def test_a_lead_absent_from_a_records_layout_raises_rather_than_substituting(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """Record 2 stores V5/V2 and has no MLII — mitdb's records 102 and 104.
+
+        Both positions hold a valid lead, so there is nothing an index-based
+        selection could complain about; it would simply return V5.
+        """
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["MLII"])
+        assert ds[0]["signal"].shape[0] == 1  # fine where MLII exists
+        with pytest.raises(ValueError, match="more than one lead layout"):
+            ds[2]["signal"]
+
+    def test_a_lead_in_no_layout_at_all_fails_at_construction(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """A typo should not wait until the first __getitem__ to surface.
+
+        The request is checked against the union of the declared layouts, so a
+        name that no record could ever hold fails immediately.
+        """
+        with pytest.raises(ValueError, match="V6"):
+            self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["V6"])
+
+    def test_a_lead_in_only_some_layouts_is_accepted_at_construction(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """V2 is in one layout of four, and asking for it is legitimate.
+
+        Resolving against ``lead_names`` alone would reject it out of hand, even
+        though a record storing V2 exists — which is why construction checks the
+        union and read time checks the record.
+        """
+        from .conftest import CANONICAL_LEAD_INDEX
+
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["V2"])
+        assert ds.lead_names == ("V2",)
+        assert ds[2]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V2"], abs=1e-3
+        )
+        # ...and refused for a record that does not store it.
+        with pytest.raises(ValueError, match="more than one lead layout"):
+            ds[0]["signal"]
+
+    def test_resolution_is_cached_per_record_path(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """One header read per record, not one per __getitem__."""
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["MLII"])
+        assert ds._path_lead_index == {}
+        ds[0]["signal"]
+        ds[0]["signal"]
+        assert len(ds._path_lead_index) == 1
+        ds[1]["signal"]
+        # Different records, different resolutions — 0 for one, 1 for the other.
+        assert sorted(ds._path_lead_index.values()) == [[0], [1]]
+
+    def test_declaring_no_layouts_keeps_the_original_behaviour(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """Every other dataset in the catalogue asserts one layout throughout.
+
+        Without the field the declared indices are used unchanged, which is
+        precisely the silent substitution — asserted here so a future edit cannot
+        quietly make the field a no-op and still pass.
+        """
+        from .conftest import CANONICAL_LEAD_INDEX
+
+        ds = self._ds(
+            tmp_varied_lead_name_dataset,
+            sample_config,
+            record_lead_layouts=None,
+            leads=["MLII"],
+        )
+        assert ds[0]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["MLII"], abs=1e-3
+        )
+        # The reversed record hands back V5, with no error. That is the bug.
+        assert ds[1]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V5"], abs=1e-3
+        )
+
+    def test_a_format_with_no_per_record_lead_names_refuses(
+        self, tmp_varied_lead_name_dataset, sample_config
+    ):
+        """Only wfdb names its leads per record; anything else has nothing to read."""
+        from dataclasses import replace
+
+        ds = self._ds(tmp_varied_lead_name_dataset, sample_config, leads=["MLII"])
+        ds.config = replace(ds.config, signal_format="csv")
+        with pytest.raises(ValueError, match="stores no lead names per record"):
+            ds._lead_index_for(2, "rec_0", "irrelevant")
+
+    def test_mitdb_lead_names_are_the_predominant_layout_and_not_the_only_one(self):
+        """The shipped config must carry the layouts, or the guard never engages."""
+        from ecgbench.config import load_config
+
+        config = load_config("mitdb")
+        assert config.lead_names == ["MLII", "V1"]
+        assert config.leads == 2
+        layouts = config.record_lead_layouts
+        assert config.lead_names in layouts
+        # Every layout holds 2 leads, which is exactly why a count-keyed map is
+        # useless here.
+        assert {len(layout) for layout in layouts} == {2}
+        assert config.alternate_lead_names is None
+        # MLII is absent from one layout entirely — records 102 and 104.
+        assert any("MLII" not in layout for layout in layouts)
+        # Five distinct lead names across the release.
+        assert {name for layout in layouts for name in layout} == {
+            "MLII", "V1", "V2", "V4", "V5"
+        }

@@ -127,6 +127,18 @@ class DatasetConfig:
     #: it. A record whose lead count matches neither ``lead_names`` nor a key
     #: here is an error rather than a guess.
     alternate_lead_names: dict[int, list[str]] | None = None
+    #: Every lead layout the release uses, in the files' own order, for a dataset
+    #: whose records store the **same number** of leads under **different names**.
+    #: ``alternate_lead_names`` cannot express that — it is keyed by lead count —
+    #: so this is the other half of the same problem. ``mitdb`` is the case: all
+    #: 48 records store 2 leads, but 8 of them use a layout other than MLII/V1,
+    #: and record 114's two signals are reversed (V5 then MLII), so ``signal[0]``
+    #: is a limb lead in 46 records and a chest lead in 2. Declaring this makes
+    #: ``ECGDataset(leads=...)`` resolve the requested **names** against each
+    #: record's own header rather than against ``lead_names``, and raise for a
+    #: record whose layout lacks a requested lead instead of returning whatever
+    #: sits at that index. ``lead_names`` stays the predominant layout.
+    record_lead_layouts: list[list[str]] | None = None
     duration_seconds: float = 10.0
     sampling_rates: list[int] = field(default_factory=lambda: [500])
     default_sampling_rate: int = 500
@@ -300,6 +312,11 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         alternate_lead_names=(
             {int(k): list(v) for k, v in raw["alternate_lead_names"].items()}
             if raw.get("alternate_lead_names")
+            else None
+        ),
+        record_lead_layouts=(
+            [list(layout) for layout in raw["record_lead_layouts"]]
+            if raw.get("record_lead_layouts")
             else None
         ),
         duration_seconds=raw.get("duration_seconds", 10.0),

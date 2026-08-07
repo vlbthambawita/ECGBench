@@ -5545,3 +5545,227 @@ class TestMedalCareXLLabels:
             # Named only in the docstrings that explain the decision.
             body = code.split('"""')[-1]
             assert "siginfo" not in body, f"{module.__name__} reads siginfo.csv"
+
+
+class TestMITDBLabels:
+    """Two mandatory comment lines plus wrapped free text, and .atr episodes."""
+
+    HEADER = (
+        "202 2 360 650000\n"
+        "202.dat 212 200 11 1024 1024 -29350 0 MLII\n"
+        "202.dat 212 200 11 1024 1049 -32096 0 V1\n"
+        "# 68 M 1960 2851 x1\n"
+        "# Digoxin, Hydrochlorthiazide, Inderal, KCl\n"
+        "# The PVCs are uniform and late-cycle.  This record was taken from the\n"
+        "# same analog tape as record 201.\n"
+    )
+    # Record 114, whose two signals are reversed, with no description line and no
+    # medications — 9 of the 48 real records stop after the medications line.
+    HEADER_REVERSED = (
+        "114 2 360 650000\n"
+        "114.dat 212 200 11 1024 1015 -11371 0 V5\n"
+        "114.dat 212 200 11 1024 1027 -13230 0 MLII\n"
+        "# 72 F 750 1629 x2\n"
+        "# None\n"
+    )
+    # Records 103 and 219 record age as -1 rather than omitting it.
+    HEADER_UNKNOWN_AGE = (
+        "103 2 360 650000\n"
+        "103.dat 212 200 11 1024 976 -6407 0 MLII\n"
+        "103.dat 212 200 11 1024 1026 -32104 0 V2\n"
+        "# -1 M 742 654 x1\n"
+        "# Diapres, Xyloprim\n"
+    )
+
+    def test_labels_come_from_headers_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("mitdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # headers + .atr files are the source
+        assert spec.join_column == "record_name"
+
+    def test_parses_demographics_provenance_and_wrapped_free_text(self, tmp_path):
+        from ecgbench.labels.mitdb import parse_header_comments
+
+        (tmp_path / "202.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "202.hea")
+
+        assert fields["age"] == 68.0
+        assert fields["sex"] == "M"
+        # Field 3 is the analog tape, and therefore the subject: 201 and 202 share
+        # 1960, which is what makes 48 records into 47 subjects.
+        assert fields["patient_id"] == "tape1960"
+        # Field 4 is the Del Mar Avionics recorder — recorder H in the directory.
+        assert fields["recorder"] == "2851"
+        assert fields["digitised_at_double_speed"] is False
+        assert fields["medications"] == "Digoxin, Hydrochlorthiazide, Inderal, KCl"
+        # The line break in the source is typographic, so the text is rejoined.
+        assert fields["description"] == (
+            "The PVCs are uniform and late-cycle.  This record was taken from the "
+            "same analog tape as record 201."
+        )
+
+    def test_no_description_line_is_not_a_parse_failure(self, tmp_path):
+        """9 of the 48 records stop after medications; the rest must still parse."""
+        from ecgbench.labels.mitdb import parse_header_comments
+
+        (tmp_path / "114.hea").write_text(self.HEADER_REVERSED, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "114.hea")
+
+        assert fields["age"] == 72.0
+        assert fields["sex"] == "F"
+        assert fields["patient_id"] == "tape750"
+        assert fields["digitised_at_double_speed"] is True
+        # "None" is the release's way of saying no medications.
+        assert fields["medications"] == ""
+        assert fields["description"] == ""
+
+    def test_unknown_age_becomes_nan_rather_than_minus_one(self, tmp_path):
+        """Records 103 and 219 write -1. Kept as a number it drags every mean down."""
+        import math
+
+        from ecgbench.labels.mitdb import parse_header_comments
+
+        (tmp_path / "103.hea").write_text(self.HEADER_UNKNOWN_AGE, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "103.hea")
+
+        assert math.isnan(fields["age"])
+        assert fields["sex"] == "M"
+        assert fields["patient_id"] == "tape742"
+
+    def test_lead_names_are_read_per_record_including_the_reversed_one(self, tmp_path):
+        """Record 114 stores V5 then MLII, and the column must say so."""
+        from ecgbench.labels.mitdb import parse_lead_names
+
+        (tmp_path / "202.hea").write_text(self.HEADER, encoding="utf-8")
+        (tmp_path / "114.hea").write_text(self.HEADER_REVERSED, encoding="utf-8")
+
+        assert parse_lead_names(tmp_path / "202.hea") == ["MLII", "V1"]
+        assert parse_lead_names(tmp_path / "114.hea") == ["V5", "MLII"]
+
+    def test_non_beat_markers_are_counted_separately_from_beats(self, tmp_path):
+        """The published beat total is 109,494 and the .atr files hold 112,647 rows.
+
+        The 3,153 difference is rhythm changes, signal-quality changes, artefact
+        and comment markers. Adding any of them to ``n_beats`` is how the wrong
+        total gets quoted.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.mitdb import summarise_annotations
+
+        wfdb.wrann(
+            "100", "atr",
+            sample=np.array([100, 200, 300, 400, 500, 600, 700]),
+            symbol=["+", "N", "V", "~", "/", "|", '"'],
+            aux_note=["(N", "", "", "", "", "", "MISSB"],
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "100")
+
+        assert counts["beat_N"] == 1
+        assert counts["beat_V"] == 1
+        assert counts["beat_/"] == 1
+        assert counts["n_beats"] == 3
+        assert counts["n_annotations"] == 7
+        assert counts["n_rhythm_changes"] == 1
+        assert counts["n_signal_quality_changes"] == 1
+        assert counts["n_isolated_artifacts"] == 1
+        assert counts["n_comment_annotations"] == 1
+        assert counts["note_MISSB"] == 1
+
+    def test_rhythm_episodes_are_measured_in_seconds_to_the_next_marker(self, tmp_path):
+        """A rhythm annotation opens an episode; the last runs to the end of the record.
+
+        Counting the markers instead would say this record is mostly AFIB, when
+        by time it is mostly sinus.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        from ecgbench.labels.mitdb import RECORD_SAMPLES, summarise_annotations
+
+        wfdb.wrann(
+            "201", "atr",
+            sample=np.array([0, 3600, 7200]),
+            symbol=["+", "+", "+"],
+            aux_note=["(N", "(AFIB", "(N"],
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "201")
+
+        assert counts["rhythm_secs_AFIB"] == pytest.approx(10.0)
+        # 10 s before the AFIB plus everything after it, to the end of the record.
+        assert counts["rhythm_secs_N"] == pytest.approx(
+            10.0 + (RECORD_SAMPLES - 7200) / 360
+        )
+        # Two markers each, so a count-based winner would be a coin toss.
+        assert counts["dominant_rhythm"] == "N"
+        assert counts["rhythms"] == "N|AFIB"
+        assert counts["dominant_rhythm_fraction"] > 0.99
+
+    def test_the_x_mitdb_extracts_are_excluded_by_reading_the_records_file(self, tmp_path):
+        """x_mitdb/ holds 600 s copies of records already in the release.
+
+        They correlate 1.0 with their parent over all 216,000 samples, so
+        including them would put the same recording in the partition twice. The
+        loader takes its record list from the shipped RECORDS file, which names
+        them nowhere — a glob would pick them up.
+        """
+        from ecgbench.labels.mitdb import scan_records
+
+        (tmp_path / "202.hea").write_text(self.HEADER, encoding="utf-8")
+        (tmp_path / "114.hea").write_text(self.HEADER_REVERSED, encoding="utf-8")
+        extracts = tmp_path / "x_mitdb"
+        extracts.mkdir()
+        (extracts / "x_114.hea").write_text(self.HEADER_REVERSED, encoding="utf-8")
+        (tmp_path / "RECORDS").write_text("202\n114\n", encoding="utf-8")
+
+        df = scan_records(tmp_path)
+        assert sorted(df["record_name"]) == ["114", "202"]
+
+    def test_a_missing_records_file_names_what_to_download(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.mitdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="physionet.org/content/mitdb"):
+            scan_records(tmp_path)
+
+    def test_stratification_is_the_databases_own_two_halves(self, tmp_path):
+        """100-124 were chosen at random; 200-234 were selected for rare phenomena."""
+        import pandas as pd
+
+        from ecgbench.labels.mitdb import RANDOM_SAMPLE, SELECTED, attach_stratify_class
+
+        df = pd.DataFrame({"record_name": ["100", "124", "200", "234"]})
+        out = attach_stratify_class(df)
+
+        assert list(out["record_group"]) == [
+            RANDOM_SAMPLE, RANDOM_SAMPLE, SELECTED, SELECTED
+        ]
+        # The splitter reads stratify_class and never recomputes the mapping, so
+        # the exposed label and the fold label cannot drift.
+        assert list(out["stratify_class"]) == list(out["record_group"])
+
+    def test_the_splitter_derives_its_label_from_the_label_loader(self):
+        """One derivation, not two — the rule PTB-XL learned the hard way."""
+        from pathlib import Path
+
+        from ecgbench.splitting.strategies import mitdb as splitter_module
+
+        source = Path(splitter_module.__file__).read_text()
+        # It reads the column the label loader attaches...
+        assert splitter_module.STRATIFY_COLUMN == "stratify_class"
+        # ...and nowhere reimplements where that column comes from. Only the
+        # module docstring may mention the record ranges, as prose.
+        code = "\n".join(
+            line for line in source.split('"""')[2].splitlines()
+            if not line.strip().startswith("#")
+        )
+        assert "SELECTED_FROM" not in code
+        assert "200" not in code
+        assert "record_name" not in code

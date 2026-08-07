@@ -48,6 +48,19 @@ alternate_lead_names: {}          # Only if records DON'T all store the same lea
                                   # V3 for those records. With it, ECGDataset
                                   # re-resolves the requested names per record and
                                   # raises if a lead is absent from that layout.
+record_lead_layouts: []           # The other half of that problem: records storing
+                                  # the SAME number of leads under DIFFERENT names,
+                                  # which a count-keyed map cannot express. List
+                                  # every layout the release uses, e.g.
+                                  #   - ["MLII", "V1"]
+                                  #   - ["V5", "MLII"]
+                                  # mitdb is the one case: all 48 records hold 2
+                                  # leads, 8 of them not MLII/V1, and record 114
+                                  # stores the two reversed. Declaring this makes
+                                  # ECGDataset read each record's own header to
+                                  # resolve leads=, and raise for a record whose
+                                  # layout lacks a requested lead. wfdb only —
+                                  # no other format names leads per record.
 duration_seconds: 10              # Nominal recording duration in seconds
 sampling_rates: [500]             # Available sampling rates in Hz
 default_sampling_rate: 500        # Which rate to use by default

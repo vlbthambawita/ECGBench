@@ -222,6 +222,8 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `zzu_pecg` | I, II, III, **AVR, AVL, AVF**, V1-V6 (uppercase) — **but 1,856 of 14,190 records store only 9 leads**, dropping V2/V4/V6, so `signal[7]` is V2 in one layout and V3 in the other. See below |
 | `medalcare_xl` | I, II, III, aVR, aVL, aVF, V1-V6 — standard, and stated by the release README rather than derived, since the records are **simulated** and there are no headers. Corroborated by the per-record parameter files, which place RA/LA/RL/LL and V1-V6 and nothing else — the augmented leads are computed, not placed |
 
+| `mitdb` | **MLII, V1** in 40 of 48 records — and **not** in the other 8. Two modified chest-placed leads, none of the standard twelve. See below |
+
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
 the full one — it drops V2, V4 and V6, so stored position 7 is V2 in one and V3 in the
@@ -244,6 +246,28 @@ A dataset that declares no `alternate_lead_names` — every other one — is ass
 single layout, and behaves exactly as before. Note that batching `zzu_pecg` needs
 `leads=` as well as `window=`: a batch mixing 9- and 12-lead records cannot be
 stacked.
+
+**And one dataset varies the lead *names* at a constant lead count**, which a
+count-keyed map cannot express at all. Every one of `mitdb`'s 48 records stores
+exactly 2 leads, but only 40 store `MLII, V1`: two each store `MLII, V5`, `MLII, V2`
+and `V5, V2`, one stores `MLII, V4`, and record 114 stores `V5, MLII` — the
+predominant pair reversed, which the source documents as something that happens in
+clinical practice. So `signal[0]` is a limb-type lead in 46 records and a chest lead
+in 2, and nothing about a signal's shape says which. The config lists every layout in
+`record_lead_layouts`, and `ECGDataset` then reads each record's own header to
+resolve the requested names:
+
+```python
+ds = ECGDataset("mitdb", split="train", data_path="...",
+                window=(0, 3600), leads=["MLII"])
+
+ds[0]["signal"]    # record 100: MLII from position 0
+                   # record 114: MLII from position 1 -- an index returns V5
+                   # record 102: ValueError -- it stores V5/V2 and has no MLII
+```
+
+`record_lead_layouts` is wfdb-only, because no other format names its leads per
+record. Datasets that do not declare it are unaffected.
 
 **One dataset has no physical units at all.** `echonext` ships waveforms its
 publisher median-filtered, percentile-clipped and standardised with an unreleased

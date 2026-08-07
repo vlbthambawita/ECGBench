@@ -1137,3 +1137,69 @@ def test_medalcare_xl_is_the_only_transposed_csv_dataset():
     # Samples in rows under a header naming the leads — the other convention.
     for slug in ("chapman_shaoxing", "ningbo_iva"):
         assert load_config(slug).signal_format == "csv"
+
+
+def test_load_mitdb_config():
+    """MIT-BIH: two leads, but not the same two in every record."""
+    config = load_config("mitdb")
+    assert config.slug == "mitdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Format 212 at a gain of 200 adu/mV in all 48 headers; wfdb divides by it.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # The PREDOMINANT layout — 40 of 48 records — not the only one.
+    assert config.lead_names == ["MLII", "V1"]
+    assert config.sampling_rates == [360]
+    assert config.signal_path_columns == {360: "signal_path"}
+    # No metadata ships: MITDBSplitter generates this from headers + .atr files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 47 subjects over 48 records — 201 and 202 share analog tape 1960.
+    assert config.patient_id_column == "patient_id"
+    # Uniform length, so truncation is checked: 650,000 samples at 360 Hz.
+    assert config.validation.expected_samples == {360: 650000}
+    # Narrowed from the usual +/-10 because the ADC cannot reach it: 11 bits at
+    # 200 adu/mV is a full scale of -5.120 to +5.115 mV, so any wider range makes
+    # this check unable to fire at all. At the rail it flags the three records
+    # that saturate it (103, 116, 223).
+    assert config.validation.amplitude_range_mv == (-5.11, 5.11)
+
+
+def test_mitdb_declares_every_lead_layout_in_the_release():
+    """The one dataset whose records store the same COUNT of leads under different names.
+
+    ``alternate_lead_names`` is keyed by lead count, so it cannot express this at
+    all: all 48 records hold 2 leads. Without ``record_lead_layouts``,
+    ``leads=["MLII"]`` resolves to index 0 and silently returns V5 for records
+    102, 104 and 114.
+    """
+    config = load_config("mitdb")
+    layouts = config.record_lead_layouts
+    assert layouts is not None
+    # Counted from the 48 headers, and each is a distinct 2-lead layout.
+    assert len(layouts) == 6
+    assert all(len(layout) == 2 for layout in layouts)
+    assert len(set(map(tuple, layouts))) == 6
+    # The declared order must itself be one of them, or nothing matches 40 records.
+    assert config.lead_names in layouts
+    # Record 114 stores its two signals reversed, which the source documents as a
+    # thing arrhythmia detectors should cope with. Both orders are present.
+    assert ["MLII", "V5"] in layouts
+    assert ["V5", "MLII"] in layouts
+    # A count-keyed map would have nothing to key on, so it must stay unset.
+    assert config.alternate_lead_names is None
+
+
+def test_mitdb_is_the_only_config_declaring_per_record_lead_layouts():
+    """A second one would need the same evidence: layouts counted from the headers.
+
+    This is not a style rule. Declaring the field switches ``ECGDataset`` from
+    resolving leads once to reading every record's header, so it should appear
+    only where the layout genuinely varies.
+    """
+    declaring = [
+        slug for slug in list_available_configs()
+        if load_config(slug).record_lead_layouts
+    ]
+    assert declaring == ["mitdb"]

@@ -1,0 +1,196 @@
+# ECGBench Config: MIT-BIH Arrhythmia Database
+# ============================================
+# https://physionet.org/content/mitdb/1.0.0/
+#
+# The reference arrhythmia benchmark: 48 half-hour two-channel excerpts from the
+# Beth Israel Hospital Holter collection, with 109,494 manually reviewed beat
+# annotations. Four things set it apart in this catalogue, all verified against
+# the files:
+#
+#   - LEAD LAYOUT VARIES BETWEEN RECORDS at a constant lead count. 40 records
+#     store MLII/V1; the other 8 store MLII/V5, MLII/V2, MLII/V4 or V5/V2, and
+#     record 114 stores its two signals REVERSED (V5 then MLII). Selecting a lead
+#     by index is wrong for 8 of 48 records, so this is the one config using
+#     `record_lead_layouts` — see the block below.
+#   - it is LONG: 650,000 samples per record, so batching needs `window=`;
+#   - the ADC is 11-bit at 200 adu/mV, so full scale is exactly +/-5.12 mV and no
+#     sample can lie outside it. `amplitude_range_mv` is set at the rail, which
+#     is the only value at which the check can do anything at all;
+#   - its primary product is reference BEAT and RHYTHM annotations, not a
+#     record-level diagnosis.
+#
+# The `x_mitdb/` subdirectory ships 23 more records. They are NOT part of this
+# dataset: each is the first 600 s of a record already here with the baseline
+# removed (correlation 1.0 against the parent over all 216,000 samples). The
+# record list comes from the shipped RECORDS file, which excludes them.
+
+name: "MIT-BIH Arrhythmia Database"
+slug: "mitdb"
+version: "1.0.0"
+url: "https://physionet.org/content/mitdb/1.0.0/"
+download_url: null  # MITDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # from the PhysioNet landing page; the mirror has no LICENSE file
+description: >
+  48 half-hour excerpts of two-channel ambulatory ECG, digitised at 360 Hz from
+  Holter tapes recorded at the Beth Israel Hospital Arrhythmia Laboratory between
+  1975 and 1979. 23 records (100-124) were chosen at random from a set of over
+  4000 recordings to be representative of routine clinical material; the other 25
+  (200-234) were selected to include rare but clinically important phenomena that
+  a small random sample would not contain. Each record carries reference
+  annotations independently marked by two cardiologists and resolved by
+  consensus: 109,494 beats across fifteen types, plus rhythm episodes, signal
+  quality changes and artefact markers. The upper signal is usually a modified
+  limb lead II and the lower a modified V1, but not always, and in record 114 the
+  two are reversed.
+citation: >
+  Moody, G.B., Mark, R.G. The impact of the MIT-BIH Arrhythmia Database. IEEE
+  Engineering in Medicine and Biology Magazine 20(3):45-50 (2001).
+doi: "10.13026/C2F305"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Hospital Arrhythmia Laboratory / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/mitdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 11-bit format 212 at a gain of 200 adu/mV, identical in all 48 records. wfdb
+# divides by the header gain, so p_signal is already millivolts. Verified by
+# reading all 48.
+signal_unit_scale: 1.0
+leads: 2
+# The PREDOMINANT layout — 40 of 48 records. It is not the whole story, which is
+# what record_lead_layouts below is for. Do not index leads positionally here.
+lead_names: ["MLII", "V1"]
+# Every layout in the release, counted from the 48 headers:
+#   MLII/V1  40 records
+#   MLII/V5   2  (100, 123)
+#   MLII/V2   2  (103, 117)
+#   V5/V2     2  (102, 104 — surgical dressings made a modified II impossible)
+#   MLII/V4   1  (124)
+#   V5/MLII   1  (114 — the signals are reversed, which the source documents as
+#                 something arrhythmia detectors should be able to cope with)
+# Declaring these makes ECGDataset(leads=...) read each record's own header and
+# resolve the requested NAMES against it, and raise for a record whose layout
+# lacks a requested lead rather than returning whichever signal sits at that
+# index. Without it, leads=["MLII"] returns V5 for records 102, 104 and 114.
+record_lead_layouts:
+  - ["MLII", "V1"]
+  - ["MLII", "V5"]
+  - ["MLII", "V2"]
+  - ["V5", "V2"]
+  - ["MLII", "V4"]
+  - ["V5", "MLII"]
+duration_seconds: 1805.6  # 650,000 samples at 360 Hz, uniform across all 48
+sampling_rates: [360]
+default_sampling_rate: 360
+
+# --- File Structure ---
+# No metadata file ships in a machine-readable form. MITDBSplitter builds one from
+# the header comments and the .atr annotations on first run, via
+# ecgbench.labels.mitdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# 47 subjects over 48 records: 201 and 202 were cut from the same analog tape,
+# which the shipped directory states and the tape number in the header confirms.
+# Grouping matters exactly once, but ungrouped those two split across folds ~90%
+# of the time.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  360: "signal_path"  # bare record stem, e.g. "100" — the tree is flat
+
+# --- Labels ---
+label_column: "dominant_rhythm"  # rhythm holding the most seconds in the record
+label_format: "single"
+
+stratification:
+  # MITDBSplitter takes stratify_class from the label loader: the database's own
+  # two halves, records 100-124 (chosen at random) against 200-234 (selected for
+  # rare phenomena), 23 against 25. Deliberately coarse — with 48 records over 10
+  # folds nothing finer can be spread across them, and dominant_rhythm has a
+  # class of size 1.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # Uniform: all 48 records are exactly 650,000 samples, so unlike ptbdb and
+  # challenge2021 the truncation check can be switched on.
+  expected_samples:
+    360: 650000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Set from the hardware, not from the usual +/-10 default. Format 212 at 11 bits
+  # with adc_zero 1024 and a gain of 200 gives a full scale of exactly -5.120 to
+  # +5.115 mV, so ANY range wider than that is a check that provably never fires.
+  # At the rail it does something real: it flags the three records that saturate
+  # the ADC — 103 (V2), 116 (MLII) and 223 (V1), each clipping 0.04-0.14% of
+  # samples. The next-highest peak in the release is 4.94 mV (200), so this
+  # threshold separates the saturating records from every other one cleanly.
+  # There are no NaN samples and no flat leads anywhere in this release.
+  amplitude_range_mv: [-5.11, 5.11]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/mitdb.py parses the header comments and summarises
+# the .atr reference annotations into per-record beat counts, rhythm durations and
+# artefact markers. There is no source CSV to point at — the headers and
+# annotations are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "arrhythmia"
+    - "Holter"
+    - "beat annotations"
+    - "rhythm annotations"
+    - "two-lead"
+    - "ambulatory"
+    - "PhysioNet"
+  rai_data_collection: >
+    Excerpted from over 4000 24-hour ambulatory ECG recordings obtained by the
+    Beth Israel Hospital Arrhythmia Laboratory between 1975 and 1979, about 60%
+    of them from inpatients. 23 records were drawn at random, using a table of
+    random numbers to select first a tape and then a half-hour segment of it, and
+    excluded only if neither channel was of adequate quality for human analysis.
+    The remaining 25 were selected from the same collection to include complex
+    ventricular, junctional and supraventricular arrhythmias and conduction
+    abnormalities. The analog tapes were played back on a Del Mar Avionics model
+    660 and digitised at 360 Hz with 11-bit resolution over a 10 mV range. Each
+    record was annotated independently by two or more cardiologists, and
+    disagreements were resolved to produce the reference annotations.
+  rai_data_biases: >
+    Not a population sample. Half the database was deliberately selected for rare
+    phenomena, so arrhythmia prevalence here reflects the selection criteria and
+    not any clinical population; the other half is a random sample of one
+    hospital's Holter workload in the late 1970s. 47 subjects contribute 48
+    records, so between-subject variation is very limited. Beat classes are
+    extremely imbalanced: 75,052 normal beats against 2 supraventricular
+    premature beats, and several classes are concentrated in one or two records
+    (all 472 ventricular flutter waves are in record 207, 427 of the 428
+    missed-beat markers are in record 231, and the 7,028 paced beats come from
+    just 4 records). Recording predates modern equipment, and recorder-specific
+    artefact is real: nine analog recorders were used, one accounting for 13 of
+    the 48 records, and the two channels can be skewed by up to 40 ms relative to
+    each other. Subjects were medicated as clinically indicated, mostly with
+    digoxin and quinidine.
+  rai_personal_sensitive_info: >
+    De-identified. Age, sex, medications and a per-record clinical description are
+    retained in the WFDB header comments, along with the analog tape and recorder
+    numbers; the tape number is what makes subject-grouped folds possible. Age is
+    recorded as -1 for two records. No other identifiers are present.

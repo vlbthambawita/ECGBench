@@ -505,11 +505,70 @@ def tmp_wfdb_signal_dataset(tmp_path) -> Path:
     return tmp_path
 
 
+#: MIT-BIH's layouts, reduced to the four distinct shapes that matter: the
+#: predominant one, record 114's reversal of it, one with no MLII at all, and one
+#: substituting a different chest lead. The first three are ordered so that
+#: ``_write_fold_tree`` puts all of them in the train split.
+MITDB_LAYOUTS = [
+    ["MLII", "V1"],
+    ["V5", "MLII"],
+    ["V5", "V2"],
+    ["MLII", "V5"],
+]
+
+
+@pytest.fixture
+def tmp_varied_lead_name_dataset(tmp_path) -> Path:
+    """A wfdb dataset whose records store the same lead COUNT under different NAMES.
+
+    This is MIT-BIH's shape, and the one ``alternate_lead_names`` cannot express:
+    every record here holds exactly 2 leads, so there is no count to key a layout
+    map on. Record 1 stores ``V5, MLII`` — the predominant pair reversed — which
+    is mitdb record 114, and record 2 has no MLII at all, which is mitdb records
+    102 and 104. Records 0-2 are the train split, so one ``ECGDataset`` spans all
+    three cases.
+
+    Values are ``CANONICAL_LEAD_INDEX[name] + sample/10000`` as in
+    ``tmp_mixed_lead_dataset``, so a returned row identifies the *physical* lead
+    rather than merely its shape.
+    """
+    wfdb = pytest.importorskip("wfdb")
+
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    # Five records over five folds; layout 0 repeats so train spans two layouts.
+    layouts = [*MITDB_LAYOUTS, MITDB_LAYOUTS[0]]
+    for r, layout in enumerate(layouts):
+        rid = f"rec_{r}"
+        signal = np.empty((5000, len(layout)), dtype=np.float64)
+        for position, name in enumerate(layout):
+            signal[:, position] = CANONICAL_LEAD_INDEX[name] + np.arange(5000) / 10_000.0
+        wfdb.wrsamp(
+            rid,
+            fs=500,
+            units=["mV"] * len(layout),
+            sig_name=list(layout),
+            p_signal=signal,
+            fmt=["16"] * len(layout),
+            adc_gain=[1000.0] * len(layout),
+            baseline=[0] * len(layout),
+            write_dir=str(records),
+        )
+        record_ids.append(rid)
+        paths.append(f"records/{rid}")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path
+
+
 #: Canonical index of each lead name, so a fixture signal's value identifies the
 #: physical lead it holds regardless of which position stores it.
 CANONICAL_LEAD_INDEX = {
     "I": 0, "II": 1, "III": 2, "AVR": 3, "AVL": 4, "AVF": 5,
     "V1": 6, "V2": 7, "V3": 8, "V4": 9, "V5": 10, "V6": 11,
+    # MIT-BIH's modified limb lead II, which is not one of the standard twelve.
+    "MLII": 12,
 }
 
 TWELVE_LEAD_LAYOUT = ["I", "II", "III", "AVR", "AVL", "AVF",
