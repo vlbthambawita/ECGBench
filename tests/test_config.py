@@ -1428,3 +1428,54 @@ class TestIdentifierDtypes:
 
         df = pd.read_csv(path, dtype=config.identifier_dtypes())
         assert list(df["record_name"]) == ["00735"]
+
+
+def test_load_challenge2017_config():
+    """Challenge 2017: the first single-lead dataset, variable length, revised labels."""
+    config = load_config("challenge2017")
+    assert config.slug == "challenge2017"
+    assert config.version == "1.0.0"
+    # WFDB headers wrapping MATLAB v4 .mat files (format "16+24").
+    assert config.signal_format == "wfdb"
+    # All 8,528 signal lines declare gain 1000/mV, so wfdb already yields mV.
+    assert config.signal_unit_scale == 1.0
+    # One channel. The whole point of the dataset: consumer single-lead ECG.
+    assert config.leads == 1
+    # The header calls it "ECG", not "I". The device produces a nominal lead I
+    # (LA-RA) equivalent, but the paper says many traces are inverted (RA-LA)
+    # because the hardware does not enforce orientation, so the source's own
+    # name is the only honest one.
+    assert config.lead_names == ["ECG"]
+    assert config.sampling_rates == [300]
+    assert config.default_sampling_rate == 300
+    assert config.signal_path_columns == {300: "signal_path"}
+    # No metadata ships — only RECORDS and headerless REFERENCE.csv files, so
+    # Challenge2017Splitter generates one.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # No patient identifiers, and unlike most such datasets this one cannot even
+    # assert one record per person: the recordings came from members of the
+    # public who had bought a handheld device.
+    assert config.patient_id_column is None
+    # Record ids are "A00001" — alphanumeric, so pandas keeps them as strings.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "class_name"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    # The shipped validation/ directory is a byte-identical 300-record duplicate
+    # of part of training/, not a held-out split, so there is nothing predefined
+    # to honour. Asserted so nobody "completes" the block later.
+    assert config.has_predefined_splits is False
+    assert config.predefined_splits is None
+    assert config.validation is not None
+    assert config.validation.expected_leads == 1
+    # Records run 2,714 to 18,286 samples (9.05-60.95 s) in 1,487 distinct
+    # lengths, so any entry here would fail thousands of legitimate records.
+    assert config.validation.expected_samples == {}
+    # The device's stated range is +-5 mV and the observed extremes are
+    # -10.636 mV to +8.318 mV, so this flags exactly one record rather than
+    # being widened to hide it.
+    assert config.validation.amplitude_range_mv == (-10.0, 10.0)
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True

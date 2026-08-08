@@ -102,6 +102,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     """
     from ecgbench.labels import (
         afdb,
+        challenge2017,
         challenge2020,
         challenge2021,
         code15,
@@ -138,6 +139,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "medalcare_xl": medalcare_xl.load_labels,
         "mhd_effect_ecg_mri": mhd_effect_ecg_mri.load_labels,
         "norwegian_athlete_ecg": norwegian_athlete_ecg.load_labels,
+        "challenge2017": challenge2017.load_labels,
         "challenge2020": challenge2020.load_labels,
         "challenge2021": challenge2021.load_labels,
         "cpsc_2018": cpsc_2018.load_labels,

@@ -1467,6 +1467,29 @@ class TestPerRecordLeadLayouts:
             "MLII", "V1", "V2", "V4", "V5"
         }
 
+    def test_challenge2017_declares_the_single_channel_name_its_headers_use(self):
+        """The one single-lead dataset here, and its channel is called "ECG", not "I".
+
+        The AliveCor device produces a nominal lead I (LA-RA) equivalent, so "I"
+        is the tempting name — but the challenge paper states that "many of the
+        ECGs were inverted (RA-LA) since the device did not require the user to
+        rotate it in any particular orientation", and all 8,528 headers name the
+        channel ``ECG``. Naming it "I" would let it be stacked with 12-lead data
+        by name while an unknown fraction of the records carry the opposite sign.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("challenge2017")
+        assert config.leads == 1
+        assert config.lead_names == ["ECG"]
+        assert len(config.lead_names) == config.leads
+        # Emphatically not a 12-lead name, and specifically not lead I.
+        assert "I" not in config.lead_names
+        assert not {"I", "II", "III", "aVR", "aVL", "aVF"} & set(config.lead_names)
+        # And no alternate layout: one channel in every record.
+        assert not config.alternate_lead_names
+        assert not config.record_lead_layouts
+
     def test_afdb_channels_are_positions_and_must_not_be_named_leads(self):
         """AFDB's headers call its two channels ECG1/ECG2 and name no anatomy.
 

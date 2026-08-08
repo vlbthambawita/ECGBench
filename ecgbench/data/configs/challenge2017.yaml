@@ -1,0 +1,212 @@
+# ECGBench Config: PhysioNet/CinC Challenge 2017 (AF classification)
+# ===================================================================
+# "AF Classification from a short single lead ECG recording"
+# https://physionet.org/content/challenge-2017/1.0.0/
+#
+# This is the 8,528-record PUBLIC TRAINING SET. The challenge used 12,186
+# recordings; the other 3,658 are the hidden test set, which was never released.
+# Nothing here reproduces the challenge's own scoring split.
+#
+# THE SHIPPED "validation/" DIRECTORY IS NOT A SPLIT. It holds 300 records whose
+# .mat files are byte-identical to their training/ counterparts (checked, all
+# 300) — the paper calls it "300 records (3.5%) of training set just to ensure
+# the algorithm produced the expected results". Treating it as held-out data
+# means evaluating on training data. The label loader flags those records as
+# `in_challenge_validation_subset` so they can be excluded; they are NOT given a
+# predefined split here.
+#
+# VERIFIED. All 17,066 files under training/ check out against the release's own
+# MD5SUMS, and all 610 under validation/ against its SHA256SUMS.
+#
+# LABELS WERE REVISED TWICE, AND THE FILE NUMBERING IS OFF BY ONE FROM THE
+# PAPER'S. Four REFERENCE-v<N>.csv ship; REFERENCE.csv is byte-identical to -v3
+# and is the authoritative label. The paper's Table 2 calls shipped v0/v2/v3
+# "V1"/"V2"/"V3" and does not tabulate shipped v1 at all. All four are exposed by
+# ecgbench/labels/challenge2017.py. 412 of 8,528 labels changed between v0 and v3.
+
+name: "PhysioNet/CinC Challenge 2017 (AF Classification)"
+slug: "challenge2017"
+version: "1.0.0"
+url: "https://physionet.org/content/challenge-2017/1.0.0/"
+# PhysioNet serves this as a directory tree with a per-directory training2017.zip
+# rather than one archive of the whole release, and the pipeline needs the
+# training/ subdirectory layout plus validation/RECORDS. Pass --data-path.
+download_url: null
+license: "ODC-By 1.0"
+description: >
+  The public training set of the PhysioNet/Computing in Cardiology Challenge
+  2017: 8,528 single-lead ECG recordings donated by AliveCor, each taken by a
+  member of the public holding a handheld two-electrode device in their hands, so
+  the trace is nominally a lead I equivalent. Recordings are 9-61 s long
+  (typically 30 s) at 300 Hz, band-limited to 0.5-40 Hz. Each is labelled with
+  exactly one of four rhythm classes — normal, atrial fibrillation, other rhythm,
+  or too noisy to classify — which makes this the reference benchmark for AF
+  detection from consumer single-lead ECG rather than from clinical 12-lead. The
+  labels were revised twice during the competition using the entrants' own
+  disagreement to find contentious records, and all four shipped label versions
+  are exposed. No demographics and no patient identifier ship. The 3,658-record
+  hidden test set was never released.
+citation: >
+  Clifford, G.D., Liu, C., Moody, B., Lehman, L.H., Silva, I., Li, Q., Johnson,
+  A.E., Mark, R.G. AF classification from a short single lead ECG recording: the
+  PhysioNet/Computing in Cardiology Challenge 2017. Computing in Cardiology 44,
+  1-4 (2017).
+doi: "10.22489/CinC.2017.065-469"
+
+creators:
+  - type: Organization
+    name: "AliveCor Inc."
+    url: "https://www.alivecor.com/"
+  - type: Organization
+    name: "Emory University"
+  - type: Organization
+    name: "Massachusetts Institute of Technology"
+  - type: Organization
+    name: "Southeast University, Nanjing"
+
+# --- Signal Properties ---
+# WFDB headers wrapping MATLAB v4 .mat files (format "16+24" — the 24 is the
+# .mat preamble offset). wfdb.rdrecord reads them directly.
+signal_format: "wfdb"
+# Every one of the 8,528 signal lines declares 1000/mV, so wfdb's p_signal is
+# already millivolts. Checked, not assumed.
+signal_unit_scale: 1.0
+leads: 1
+# The header names the single channel "ECG" in all 8,528 records — it does NOT
+# say "I". The paper describes the device as producing "a lead I (LA-RA)
+# equivalent ECG", but also that "many of the ECGs were inverted (RA-LA) since
+# the device did not require the user to rotate it in any particular
+# orientation". So the polarity is unknown per record and the source's own name
+# is the honest one. Do not rename this to "I" and mix it with 12-lead data
+# without accounting for the sign.
+lead_names: ["ECG"]
+# Nominal only: 30 s is the modal length (5,977 of 8,528 records). Records are
+# NOT uniform — 2,714 to 18,286 samples, i.e. 9.05 s to 60.95 s, in 1,487
+# distinct lengths. See the validation block and the window= note in the example.
+duration_seconds: 30
+# One rate for the whole dataset — 300 Hz in all 8,528 headers.
+sampling_rates: [300]
+default_sampling_rate: 300
+
+# --- File Structure ---
+# No metadata file of any kind ships — the release has RECORDS (a path list) and
+# REFERENCE.csv (headerless record,code pairs) and nothing else.
+# Challenge2017Splitter builds one from those plus the WFDB headers on first run,
+# via ecgbench.labels.challenge2017, and caches it here. The validation engine
+# re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# No patient identifiers ship, and unlike most one-record-per-patient datasets
+# this one cannot even assert that: the recordings came from members of the
+# public who had bought an AliveCor device, and nothing in the release says
+# whether one person contributed more than one. Folds are therefore stratified
+# but UNGROUPED, and a repeat contributor would straddle folds undetectably.
+# That is a limitation of the source; see the dataset page.
+patient_id_column: null
+# Record ids are "A00001" — alphanumeric, so pandas keeps them as strings and
+# nothing is lost. Left false deliberately, not by omission.
+zero_padded_identifiers: false
+
+signal_path_columns:
+  300: "signal_path"  # e.g. training/A00/A00001.mat
+
+# --- Labels ---
+label_column: "class_name"
+label_format: "single"
+
+stratification:
+  # Challenge2017Splitter stratifies on stratify_class from the label loader,
+  # which is the four-class label unchanged — no reduction and no pooling. The
+  # rarest class (noisy) has 279 records, about 28 per fold.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# There is no reproducible predefined split. The challenge's train/test division
+# cannot be reproduced because only the training set was published, and the
+# shipped validation/ directory is a byte-identical 300-record duplicate of part
+# of training/ rather than a held-out set. See the header comment.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # Deliberately EMPTY. Length genuinely varies — 1,487 distinct values between
+  # 2,714 and 18,286 samples — and check_truncated_signal returns [] for a rate
+  # with no entry, which is the intended way to disable a check that cannot
+  # apply. Any value here would fail thousands of legitimate records.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Millivolts. The device's stated dynamic range is +-5 mV, and the observed
+  # extremes over all 8,528 records are -10.636 mV (A04894) to +8.318 mV, so a
+  # +-10 mV range flags exactly ONE record — A04894, a genuine rail-hitting
+  # excursion on a handheld recording, not a units error. Kept at the standard
+  # range rather than widened to make that record disappear.
+  amplitude_range_mv: [-10.0, 10.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/challenge2017.py reads RECORDS, all four
+# REFERENCE-v<N>.csv files, REFERENCE.csv and the per-record headers. There is no
+# single source CSV to point at, and the label history needs deriving, so this is
+# not expressible declaratively. Labels do NOT depend on `ecgbench splits` having
+# generated the metadata cache first — the loader reads the shipped files.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "atrial fibrillation"
+    - "PhysioNet/CinC Challenge 2017"
+    - "single-lead"
+    - "AliveCor"
+    - "rhythm classification"
+    - "signal quality"
+  rai_data_collection: >
+    12,186 recordings were donated by AliveCor, of which the 8,528 here are the
+    public training set. Each was recorded by a member of the public who had
+    bought one of three generations of AliveCor's single-channel handheld device
+    and held one electrode in each hand, giving a nominal lead I (LA-RA)
+    equivalent — though the device does not enforce orientation, so an unknown
+    number of traces are inverted. The device recorded for an average of 30 s
+    after a basic signal-quality check, transmitted the data acoustically to a
+    phone over a 19 kHz carrier, and the result was digitised at 44.1 kHz/24-bit
+    and stored as 300 Hz 16-bit files band-limited to 0.5-40 Hz. Labels were
+    supplied by AliveCor via an outsourced labelling company with about 10%
+    over-read, then revised twice: once by visually rechecking every recording for
+    unclassifiable noise, and once by ranking the whole dataset by disagreement
+    among the top-performing challenge entries and having eight ECG experts
+    independently relabel the 1,129 most contentious recordings.
+  rai_data_biases: >
+    A self-selected consumer cohort, not a clinical one: every recording comes
+    from someone who bought a handheld AF-screening device, so the population is
+    skewed towards people with a reason to suspect an arrhythmia and towards those
+    who could afford the hardware. No demographics ship, so none of that can be
+    measured or corrected for. Classes are strongly imbalanced (5,076 normal
+    against 279 noisy) and the four-class taxonomy collapses every non-AF
+    abnormality into a single "other" bucket, so a model trained here cannot
+    distinguish among them. Record length correlates with the label — noisy
+    recordings average 24.4 s against 32-34 s for the other classes — so a model
+    given whole records can learn duration instead of rhythm unless recordings are
+    windowed. Electrode orientation is not recorded and many traces are inverted,
+    which is a label-independent source of variance. Label noise is substantial
+    and acknowledged by the organisers: over the 1,129 most-disputed recordings
+    eight experts reached Fleiss' kappa of only 0.245, and 412 of the 8,528
+    training labels changed between the first and last shipped reference file.
+  rai_personal_sensitive_info: >
+    De-identified by the providers before release. No age, sex, subject identifier
+    or clinical text ships — the WFDB headers carry no comment lines at all, which
+    also means recordings contributed by the same person cannot be kept out of
+    separate folds, since nothing identifies them. The header timestamp is
+    de-identified rather than removed: the date is 1/<month>/2000 in every record,
+    with only the month varying, and the time field's hour distribution is not a
+    24-hour clock. It should not be read as a recording time.

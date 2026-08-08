@@ -3,6 +3,7 @@
 from . import (  # noqa: F401
     afdb,
     brugada_huca,
+    challenge2017,
     challenge2020,
     challenge2021,
     chapman,

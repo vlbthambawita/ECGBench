@@ -4049,3 +4049,141 @@ class TestLTAFDBSplitter:
         assert len(assigned) == 15
         # Every class reaches every fold, which is what stratification buys here.
         assert assigned.groupby("fold")["af_class"].nunique().tolist() == [3] * 5
+
+
+class TestChallenge2017Splitter:
+    """Single-lead AF challenge: no metadata file, no identifiers, four classes."""
+
+    def _write(self, root, records):
+        """Minimal release tree: RECORDS, headers, and the four REFERENCE files."""
+        training = root / "training"
+        training.mkdir(parents=True, exist_ok=True)
+        for relative, code in records:
+            (training / relative).parent.mkdir(parents=True, exist_ok=True)
+            name = relative.rsplit("/", 1)[-1]
+            (training / f"{relative}.hea").write_text(
+                f"{name} 1 300 9000 05:05:15 1/05/2000 \n"
+                f"{name}.mat 16+24 1000/mV 16 0 -127 0 0 ECG \n",
+                encoding="utf-8",
+            )
+        (training / "RECORDS").write_text(
+            "".join(f"{r}\n" for r, _ in records), encoding="utf-8"
+        )
+        body = "".join(f"{r},{c}\n" for r, c in records)
+        for name in ("REFERENCE.csv", "REFERENCE-v0.csv", "REFERENCE-v1.csv",
+                     "REFERENCE-v2.csv", "REFERENCE-v3.csv"):
+            (training / name).write_text(body, encoding="utf-8")
+        return root
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="challenge2017", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={300: "signal_path"}, default_sampling_rate=300,
+            label_column="class_name", leads=1,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.challenge2017 import Challenge2017Splitter
+
+        assert isinstance(get_splitter("challenge2017"), Challenge2017Splitter)
+
+    def test_builds_signal_paths_from_the_subdirectory_tree_and_caches_csv(
+        self, sample_config, tmp_path
+    ):
+        """Records live in A00/…/A08 subdirectories, unlike the flat CPSC mirror."""
+        config = self._config(sample_config)
+        tree = self._write(tmp_path, [("A00/A00001", "N"), ("A08/A08528", "~")])
+        df = get_splitter("challenge2017").load_metadata(tree, config)
+
+        paths = dict(zip(df["record_name"], df["signal_path"]))
+        assert paths["A00001"] == "training/A00/A00001.mat"
+        assert paths["A08528"] == "training/A08/A08528.mat"
+        # Written to disk because validate_dataset re-reads it rather than
+        # reusing this frame.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_cached_csv_keeps_the_tilde_class_code_as_a_string(
+        self, sample_config, tmp_path
+    ):
+        """"~" survives the CSV round trip — it is a label, not a missing value."""
+        config = self._config(sample_config)
+        tree = self._write(tmp_path, [("A00/A00001", "~")])
+        splitter = get_splitter("challenge2017")
+
+        first = splitter.load_metadata(tree, config)
+        cached = splitter.load_metadata(tree, config)  # now reads the cache
+
+        assert first.loc[0, "class_code"] == "~"
+        assert cached.loc[0, "class_code"] == "~"
+        assert cached.loc[0, "class_name"] == "noisy"
+        assert cached.loc[0, "record_name"] == "A00001"
+
+    def test_stratification_uses_the_four_classes_unreduced(
+        self, sample_config, tmp_path
+    ):
+        """Records are single-label and the rarest class has 279 records upstream,
+        so nothing is pooled and nothing is reduced."""
+        config = self._config(sample_config)
+        tree = self._write(tmp_path, [
+            ("A00/A00001", "N"), ("A00/A00002", "A"),
+            ("A00/A00003", "O"), ("A00/A00004", "~"),
+        ])
+        splitter = get_splitter("challenge2017")
+        labels = splitter.get_stratification_labels(
+            splitter.load_metadata(tree, config), config
+        )
+
+        assert labels.name == "rhythm_class"
+        assert set(labels) == {"normal", "atrial_fibrillation", "other_rhythm", "noisy"}
+        assert "OTHER" not in set(labels)
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        import pandas as pd
+
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("challenge2017").get_stratification_labels(
+                pd.DataFrame({"record_name": ["A00001"]}), self._config(sample_config)
+            )
+
+    def test_folds_are_ungrouped_because_nothing_identifies_a_contributor(
+        self, sample_config, tmp_path
+    ):
+        """No identifiers ship, and this release does not even claim one record
+        per person — the recordings came from members of the public who had bought
+        a handheld device. So the engine uses plain StratifiedKFold, and a repeat
+        contributor would straddle folds undetectably. That is a fact about the
+        data, and the dataset page says so.
+        """
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        codes = ["N", "A", "O", "~"]
+        records = [(f"A00/A{i:05d}", codes[i % 4]) for i in range(20)]
+        tree = self._write(tmp_path, records)
+
+        splitter = get_splitter("challenge2017")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert result.group_column is None
+        assigned = pd.concat(
+            [frame.assign(fold=number) for number, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 20
+        # Every class reaches every fold, which is what stratification buys here.
+        assert assigned.groupby("fold")["class_name"].nunique().tolist() == [4] * 5
+
+    def test_missing_release_raises_rather_than_splitting_nothing(
+        self, sample_config, tmp_path
+    ):
+        from ecgbench.labels import LabelSourceMissingError
+
+        with pytest.raises(LabelSourceMissingError, match="RECORDS"):
+            get_splitter("challenge2017").load_metadata(
+                tmp_path, self._config(sample_config)
+            )

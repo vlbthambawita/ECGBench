@@ -6393,3 +6393,265 @@ class TestLTAFDBLabels:
         # not invented and not silently redefining the release.
         assert df["record_name"].tolist() == ["00"]
         assert df.loc[0, "signal_path"] == "00"
+
+
+class TestChallenge2017Labels:
+    """Four rhythm classes, four shipped label versions, and a numbering trap."""
+
+    def _write(self, root, records, *, validation=None, versions=(0, 1, 2, 3)):
+        """Build a minimal release tree: RECORDS, headers and every REFERENCE file.
+
+        ``records`` maps ``"A00/A00001"`` to a ``{version_or_'final': code}`` dict.
+        """
+        training = root / "training"
+        training.mkdir(parents=True, exist_ok=True)
+        for relative in records:
+            (training / relative).parent.mkdir(parents=True, exist_ok=True)
+            name = relative.rsplit("/", 1)[-1]
+            n_samples = records[relative].get("n_samples", 9000)
+            (training / f"{relative}.hea").write_text(
+                f"{name} 1 300 {n_samples} 05:05:15 1/05/2000 \n"
+                f"{name}.mat 16+24 1000/mV 16 0 -127 0 0 ECG \n",
+                encoding="utf-8",
+            )
+        (training / "RECORDS").write_text(
+            "".join(f"{r}\n" for r in records), encoding="utf-8"
+        )
+        for version in versions:
+            (training / f"REFERENCE-v{version}.csv").write_text(
+                "".join(
+                    f"{r},{records[r].get(version, records[r]['final'])}\n"
+                    for r in records
+                ),
+                encoding="utf-8",
+            )
+        (training / "REFERENCE.csv").write_text(
+            "".join(f"{r},{records[r]['final']}\n" for r in records), encoding="utf-8"
+        )
+        if validation is not None:
+            (root / "validation").mkdir(parents=True, exist_ok=True)
+            (root / "validation" / "RECORDS").write_text(
+                "".join(f"{r}\n" for r in validation), encoding="utf-8"
+            )
+        return root
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="challenge2017", record_id_column="record_name",
+            patient_id_column=None, leads=1,
+        )
+
+    def test_labels_come_from_the_shipped_reference_files_not_a_csv_column(self):
+        """No metadata file ships — RECORDS and headerless REFERENCE.csv are it."""
+        from ecgbench.config import load_config
+
+        spec = load_config("challenge2017").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None
+        assert spec.join_column == "record_name"
+
+    def test_four_classes_including_the_tilde_that_means_unclassifiable(self):
+        from ecgbench.labels.challenge2017 import CLASS_NAMES
+
+        assert CLASS_NAMES == {
+            "N": "normal",
+            "A": "atrial_fibrillation",
+            "O": "other_rhythm",
+            "~": "noisy",
+        }
+        # "~" is a real label, not a missing value: 279 records carry it, and it
+        # is the class the challenge's second relabelling pass created.
+        assert CLASS_NAMES["~"] == "noisy"
+
+    def test_shipped_version_numbers_are_one_behind_the_papers(self):
+        """Shipped v0/v2/v3 are the paper's V1/V2/V3; shipped v1 is not in it at all.
+
+        This is the trap: "v1" names a different file depending on whether you
+        read the paper or the directory, and citing it unqualified is ambiguous.
+        The counts that establish the mapping are in the module docstring.
+        """
+        from ecgbench.labels.challenge2017 import PAPER_VERSION_NAMES, REFERENCE_VERSIONS
+
+        assert REFERENCE_VERSIONS == (0, 1, 2, 3)
+        assert PAPER_VERSION_NAMES[0] == "V1"
+        assert PAPER_VERSION_NAMES[2] == "V2"
+        assert PAPER_VERSION_NAMES[3] == "V3"
+        # Shipped v1 is a real file with no name in the paper's table.
+        assert PAPER_VERSION_NAMES[1] is None
+
+    def test_reference_prefix_is_stripped_so_both_shipped_copies_agree(self, tmp_path):
+        """training/REFERENCE.csv carries "A00/A00001"; the root copies do not."""
+        from ecgbench.labels.challenge2017 import read_reference
+
+        prefixed = tmp_path / "prefixed.csv"
+        prefixed.write_text("A00/A00001,N\nA08/A08528,~\n", encoding="utf-8")
+        bare = tmp_path / "bare.csv"
+        bare.write_text("A00001,N\nA08528,~\n", encoding="utf-8")
+
+        assert read_reference(prefixed).to_dict() == {"A00001": "N", "A08528": "~"}
+        assert read_reference(bare).to_dict() == read_reference(prefixed).to_dict()
+
+    def test_header_is_parsed_without_assuming_its_uniform_fields(self, tmp_path):
+        from ecgbench.labels.challenge2017 import read_header
+
+        path = tmp_path / "A00001.hea"
+        path.write_text(
+            "A00001 1 300 18286 05:05:15 1/05/2000 \n"
+            "A00001.mat 16+24 1000/mV 16 0 -237 0 0 ECG \n",
+            encoding="utf-8",
+        )
+        header = read_header(path)
+
+        assert header["record_name"] == "A00001"
+        assert header["n_leads"] == 1
+        assert header["sampling_rate"] == 300
+        assert header["n_samples"] == 18286  # the longest record in the release
+        assert header["storage_format"] == "16+24"  # MATLAB v4, 24-byte preamble
+        assert header["adc_gain"] == "1000/mV"
+        assert header["baseline"] == -237
+        assert header["lead_name"] == "ECG"
+        # De-identified and kept verbatim rather than parsed into a datetime.
+        assert header["header_timestamp"] == "05:05:15 1/05/2000"
+
+    def test_every_shipped_label_version_is_exposed_and_revision_flagged(
+        self, sample_config, tmp_path
+    ):
+        """A record relabelled mid-competition must keep its whole history."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {
+            # Relabelled twice: N -> ~ -> ~ -> A. Three distinct labels.
+            "A00/A00001": {0: "N", 1: "~", 2: "~", 3: "A", "final": "A"},
+            # Never touched.
+            "A00/A00002": {"final": "N"},
+        })
+        df = load_labels(root, self._config(sample_config))
+
+        assert df.loc["A00001", "class_code"] == "A"
+        assert df.loc["A00001", "class_name"] == "atrial_fibrillation"
+        assert df.loc["A00001", "is_af"]
+        assert [df.loc["A00001", f"class_code_v{v}"] for v in range(4)] == \
+            ["N", "~", "~", "A"]
+        assert df.loc["A00001", "label_revised"]
+        assert df.loc["A00001", "n_distinct_labels"] == 3
+
+        assert not df.loc["A00002", "label_revised"]
+        assert df.loc["A00002", "n_distinct_labels"] == 1
+
+    def test_final_reference_wins_over_the_versioned_files(self, sample_config, tmp_path):
+        """REFERENCE.csv is byte-identical to -v3 upstream; the loader must not
+        silently prefer a versioned file if a future release breaks that."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {
+            "A00/A00001": {0: "N", 1: "N", 2: "N", 3: "N", "final": "O"},
+        })
+        df = load_labels(root, self._config(sample_config))
+
+        assert df.loc["A00001", "class_code"] == "O"
+        assert df.loc["A00001", "class_code_v3"] == "N"
+
+    def test_validation_subset_is_flagged_because_it_duplicates_training(
+        self, sample_config, tmp_path
+    ):
+        """The 300 validation/ records are byte-identical copies, not held-out data.
+
+        Flagging them is the only safe treatment: they take part in the folds
+        like any other record, and the flag exists so a comparison against
+        published challenge results can exclude them.
+        """
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(
+            tmp_path,
+            {"A00/A00001": {"final": "N"}, "A00/A00002": {"final": "A"}},
+            validation=["A00001"],
+        )
+        df = load_labels(root, self._config(sample_config))
+
+        assert df.loc["A00001", "in_challenge_validation_subset"]
+        assert not df.loc["A00002", "in_challenge_validation_subset"]
+
+    def test_signal_paths_include_the_training_prefix_and_the_mat_suffix(
+        self, sample_config, tmp_path
+    ):
+        """RECORDS lists "A00/A00001"; the path has to reach from the dataset root."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {"A08/A08528": {"final": "~"}})
+        df = load_labels(root, self._config(sample_config))
+
+        assert df.loc["A08528", "signal_path"] == "training/A08/A08528.mat"
+        assert df.loc["A08528", "class_name"] == "noisy"
+        assert df.loc["A08528", "is_noisy"]
+
+    def test_duration_is_derived_per_record_because_length_varies(
+        self, sample_config, tmp_path
+    ):
+        """9.05 s to 60.95 s in 1,487 distinct lengths — length is not nuisance."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {
+            "A00/A00001": {"final": "N", "n_samples": 2714},   # shortest in release
+            "A00/A00002": {"final": "N", "n_samples": 18286},  # longest in release
+        })
+        df = load_labels(root, self._config(sample_config))
+
+        assert df.loc["A00001", "duration_seconds"] == pytest.approx(9.0467, abs=1e-4)
+        assert df.loc["A00002", "duration_seconds"] == pytest.approx(60.9533, abs=1e-4)
+
+    def test_stratify_class_is_the_real_label_not_a_reduction(
+        self, sample_config, tmp_path
+    ):
+        """Single-label data, so the fold label and the training target coincide."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {
+            "A00/A00001": {"final": "N"}, "A00/A00002": {"final": "~"},
+        })
+        df = load_labels(root, self._config(sample_config))
+
+        assert (df["stratify_class"] == df["class_name"]).all()
+
+    def test_a_record_listed_but_not_labelled_raises(
+        self, sample_config, tmp_path
+    ):
+        """A partial label file must not silently produce an unlabelled record."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {"A00/A00001": {"final": "N"}})
+        (root / "training" / "REFERENCE.csv").write_text("A00/A99999,N\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="A00001"):
+            load_labels(root, self._config(sample_config))
+
+    def test_a_header_disagreeing_with_the_record_list_raises(self, sample_config, tmp_path):
+        """The two must agree, or signal paths and labels are joined on a lie."""
+        from ecgbench.labels.challenge2017 import load_labels
+
+        root = self._write(tmp_path, {"A00/A00001": {"final": "N"}})
+        (root / "training" / "A00" / "A00001.hea").write_text(
+            "A09999 1 300 9000 05:05:15 1/05/2000 \n"
+            "A09999.mat 16+24 1000/mV 16 0 -127 0 0 ECG \n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="A09999"):
+            load_labels(root, self._config(sample_config))
+
+    def test_missing_release_names_the_file_and_where_to_get_it(self, sample_config):
+        from pathlib import Path
+
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.challenge2017 import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="RECORDS"):
+            scan_records(Path("/nonexistent/challenge-2017/1.0.0"))
+
+    def test_variable_length_dataset_disables_the_truncation_check(self):
+        """2,714 to 18,286 samples — expected_samples must stay empty."""
+        from ecgbench.config import load_config
+
+        assert load_config("challenge2017").validation.expected_samples == {}

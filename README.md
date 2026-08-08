@@ -224,6 +224,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 
 | `mitdb` | **MLII, V1** in 40 of 48 records — and **not** in the other 8. Two modified chest-placed leads, none of the standard twelve. See below |
 | `afdb` | **`ECG1`, `ECG2`** — the two channels are **not named leads at all**. The release states no electrode placement anywhere, so these are channel positions, and they must not be read as `mitdb`'s MLII/V1 by analogy with its sibling release |
+| `challenge2017` | **`ECG` — one channel, and it is not called `I`.** The AliveCor device gives a nominal lead I (LA-RA) equivalent, but it does not enforce orientation, so the paper reports that **many traces are inverted (RA-LA)** and no record says which. The source's own channel name is the only honest one; naming it `I` would let it be stacked with 12-lead lead I while an unknown fraction carries the opposite sign |
 | `ltafdb` | **`ECG1`, `ECG2`** — worse than `afdb`: every header calls **both** channels `ECG`, the same string twice, so there is nothing to tell them apart by. These two names are positions ECGBench assigns so `leads=` works at all. Again not MLII/V1 |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
@@ -673,6 +674,23 @@ needs a `window=`; length is not uniform, so the window has to fit inside 06453'
 8,325,000 samples. Folds are stratified on a **binary** 20% burden cut and not on the
 3-class `af_class`, because 25 records over 10 folds leaves no room for a class of 3.
 See `examples/load_afdb.py`.
+
+`challenge2017` is the first **single-lead** dataset here, and the only one whose
+label vocabulary includes "unusable signal": its 8,528 handheld AliveCor recordings are
+labelled normal / AF / other rhythm / **too noisy to classify**, so signal quality is
+part of the task rather than something to preprocess away. Three things to know before
+using it. Its one channel is called **`ECG`, not `I`** — the device gives a lead I
+equivalent but does not enforce orientation, so the paper reports that many traces are
+inverted and no record says which. Records run **9.05–60.95 s in 1,487 distinct
+lengths**, so batching needs a `window=` sized to the shortest (2,714 samples), and
+length *correlates with the label*, so a model fed whole records can learn duration
+instead of rhythm. And the shipped **`validation/` directory is not a split** — its 300
+`.mat` files are byte-identical to `training/` records, so it takes part in the folds
+and is flagged `in_challenge_validation_subset` for exclusion instead. Labels ship in
+four revisions, all exposed: 412 of 8,528 changed between the first and last, almost
+entirely into the noisy class, and the shipped file numbers are one behind the paper's
+V1/V2/V3. No demographics or patient identifiers exist at all, so folds are stratified
+but **ungrouped**. See `examples/load_challenge2017.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
