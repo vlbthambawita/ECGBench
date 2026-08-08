@@ -1266,6 +1266,87 @@ def test_afdb_amplitude_range_is_the_twelve_bit_rail():
     assert high == pytest.approx(2047 / 200.0)
 
 
+def test_load_ltafdb_config():
+    """LTAFDB: two identically named channels, day-long records, real ADC gains."""
+    config = load_config("ltafdb")
+    assert config.slug == "ltafdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # The headers declare 50 distinct measured gains and wfdb applies them, so the
+    # samples arrive in genuine mV. This is NOT afdb's uncalibrated-fallback case.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # POSITIONS, not names the files use: every header calls both channels "ECG".
+    # Spelled to match afdb so cross-dataset code sees one convention, and they
+    # must not be "corrected" to MLII/V1 by analogy with mitdb.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [128]
+    assert config.default_sampling_rate == 128
+    assert config.signal_path_columns == {128: "signal_path"}
+    # No metadata ships at all: LTAFDBSplitter generates this from .atr/.qrs.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the release carries no subject identifier of any kind — the
+    # headers have no comment lines at all.
+    assert config.patient_id_column is None
+    # One layout in all 84 headers, so neither per-record lead mechanism applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Records are named 00, 01, 03, 05, 06, 07, 08 — read as ints they become
+    # 0, 1, 3, 5, 6, 7, 8 and stop naming anything.
+    assert config.zero_padded_identifiers is True
+
+
+def test_ltafdb_disables_the_truncation_check_because_length_varies():
+    """55 distinct record lengths, from 2,826,240 to 12,142,080 samples.
+
+    No single threshold separates a truncated record from a short one, so an empty
+    expected_samples DISABLES the check — check_truncated_signal returns [] when
+    the rate has no key — which is the intended escape hatch, as in ptbdb and afdb.
+    """
+    config = load_config("ltafdb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_ltafdb_amplitude_range_is_the_rail_of_the_loosest_gain():
+    """12 bits over 20 mV confines a sample to +/-2048 adu; the mV rail moves.
+
+    The gain varies per record and per channel, so a single range has to
+    accommodate the loosest of them (75.0188 adu/mV) or it fires on a sound
+    record. Nothing in the release comes near it — the observed extreme is
+    -10.599 to +11.583 mV — so like afdb this guards a mis-scaled copy rather
+    than signal quality.
+    """
+    config = load_config("ltafdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-27.3, 27.3)
+    # The 12-bit rail at the loosest gain in the release, to one decimal place.
+    assert high == pytest.approx(2048 / 75.0188, abs=0.02)
+
+
+def test_ltafdb_and_afdb_name_their_channels_the_same_way_for_different_reasons():
+    """Both expose ECG1/ECG2, but only afdb's headers actually say so.
+
+    afdb's headers spell the two channels ECG1 and ECG2; ltafdb's call both of
+    them "ECG", and two identically named channels cannot be resolved by name at
+    all. ECGBench declares positional names for ltafdb so leads= works and so the
+    two databases present one convention. Neither release states an electrode
+    placement, so both are channel positions either way — and neither may be
+    mapped onto mitdb's MLII/V1.
+    """
+    afdb = load_config("afdb")
+    ltafdb = load_config("ltafdb")
+    assert afdb.lead_names == ltafdb.lead_names == ["ECG1", "ECG2"]
+    assert afdb.leads == ltafdb.leads == 2
+    for config in (afdb, ltafdb):
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+
 class TestIdentifierDtypes:
     """Record ids, patient ids and signal paths are identifiers, not numbers.
 
@@ -1276,20 +1357,20 @@ class TestIdentifierDtypes:
     a reason nothing in the traceback mentions.
     """
 
-    def test_it_is_opt_in_and_afdb_is_the_only_dataset_opting_in(self):
+    def test_it_is_opt_in_and_only_the_datasets_needing_it_opt_in(self):
         """Universal string ids would change ds[0]["record_id"] for six datasets.
 
         mitdb, brugada_huca, code15, code_test, ningbo_iva and ptbxl all have
         genuinely numeric ids whose values are quoted as ints on their dataset
         pages. Making identifiers uniformly strings is defensible but is a separate
-        change, so the coercion guard is opt-in and only the dataset that needs it
-        opts in.
+        change, so the coercion guard is opt-in and only the datasets that need it
+        opt in: afdb (00735, 03665, 04015) and ltafdb (00, 01, 03, 05, 06, 07, 08).
         """
-        opting_in = [
+        opting_in = sorted(
             slug for slug in list_available_configs()
             if load_config(slug).zero_padded_identifiers
-        ]
-        assert opting_in == ["afdb"]
+        )
+        assert opting_in == ["afdb", "ltafdb"]
         # And a dataset that has not opted in is left exactly as it was.
         assert load_config("mitdb").identifier_dtypes() == {}
 

@@ -1,0 +1,282 @@
+# ECGBench Config: Long Term AF Database (LTAFDB)
+# ================================================
+# https://physionet.org/content/ltafdb/1.0.0/
+#
+# 84 two-lead Holter recordings of subjects with paroxysmal or sustained atrial
+# fibrillation, typically 24-25 hours each, digitised at 128 Hz. 1,960.6 hours of
+# ECG in total — by far the largest annotated AF recording set in this catalogue,
+# and about eight times the 254.7 hours of `afdb`.
+#
+# What makes it worth having is the annotation layer rather than the signals:
+# 8,995,973 manually verified beat annotations and 53,704 rhythm episodes in nine
+# codes, contributed by MEDICALgorithmics in 2012, four years after the
+# recordings. `afdb` ships 623 rhythm episodes and unaudited beats. So AFDB is the
+# AF-detection benchmark and this is the one you use when you need reference
+# beats at scale, or AF burden measured over a whole day rather than ten hours.
+#
+# SIX THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. RECORD IDS ARE ZERO-PADDED, AND THAT IS LOAD-BEARING. The records are named
+#    "00", "01", "03", "05", "06", "07", "08" and then 10..208. Read with pandas'
+#    default inference the first seven become 0, 1, 3, 5, 6, 7, 8 — at which point
+#    the id no longer names a record, the label join misses, and
+#    `data_path / "0"` is not a file, so EVERY record fails corrupt_header for a
+#    reason nothing in the traceback mentions. `zero_padded_identifiers: true`
+#    below routes every metadata and fold-CSV read through
+#    `DatasetConfig.identifier_dtypes()`. This is the second dataset to need it,
+#    after afdb.
+#
+# 2. THE HEADERS NAME BOTH CHANNELS "ECG" — the same string twice, in all 84
+#    headers, with no electrode placement stated anywhere in the release. Two
+#    identically named channels cannot be told apart by name, so `lead_names`
+#    below declares the POSITIONAL names ECG1/ECG2, which is a deviation from the
+#    usual rule of spelling leads as the source spells them and is called out
+#    here because of it. They are channel positions either way; afdb's headers
+#    happen to spell the same two positions ECG1/ECG2 themselves. Do NOT map
+#    either onto MLII/V1 by analogy with mitdb — nothing in the release supports
+#    it.
+#
+# 3. THE ADC GAINS ARE REAL AND VARY PER RECORD AND PER CHANNEL, unlike afdb's.
+#    50 distinct measured values, sometimes different for the two channels of one
+#    record (record 100 is 88.968 and 131.062). wfdb applies each header's own
+#    gain, so samples arrive in genuine millivolts and `signal_unit_scale` stays
+#    1.0 — there is no calibration argument to have here, which there is for afdb.
+#    ONE GAIN IS ANOMALOUS AND IS NOT CORRECTED: record 62's ECG1 declares
+#    1123.6 adu/mV, where the other 167 signal lines run 75.0188 to 222.222. Its
+#    raw swing is normal (2,756 adu peak-to-peak, against a release median of
+#    1,220 and a maximum of 2,808), so that gain turns the largest raw excursion
+#    in the release into its smallest calibrated one, 2.45 mV peak-to-peak against
+#    a median of 6.65. ECGBench reports what the header declares, because a
+#    silently "corrected" record would disagree with every other tool reading the
+#    same file — but anything comparing absolute amplitudes ACROSS records should
+#    exclude record 62's ECG1 or rescale it. Its ECG2 is unaffected (202.429).
+#
+# 4. RECORDS ARE A FULL DAY LONG, SO BATCHING NEEDS `window=`. The median record
+#    is 11,059,200 samples x 2 leads, 88 MB of float32. Length is very much NOT
+#    uniform: 55 distinct lengths, from 2,826,240 samples (record 30, 6.13 h) to
+#    12,142,080 (record 70, 26.35 h). A window must fit inside the shortest.
+#
+# 5. THE SIGNAL RUNS PAST THE ANNOTATIONS, BY HOURS IN SOME RECORDS. Both
+#    annotators stop at the same place, so this is a property of the recording:
+#    35 of the 84 records carry more than ten minutes of unannotated signal at
+#    the end and record 117 carries 8.05 hours of it, a third of the record.
+#    `unannotated_tail_secs` in the labels reports it per record. A window into
+#    that tail returns signal with no reference behind it.
+#
+# 6. THERE IS NO ATRIAL FLUTTER CODE. afdb annotates N/AFIB/AFL/J; this release
+#    annotates nine codes and AFL is not one of them, while ventricular bigeminy,
+#    trigeminy, atrial bigeminy, sinus bradycardia, SVT, VT and idioventricular
+#    rhythm are. So `af_burden` here is AFIB alone. The two databases' burdens
+#    carry the same name and are computed over different code sets.
+#
+# EVERY FIGURE HERE WAS RECOMPUTED AND CHECKED AGAINST THE RELEASE'S OWN
+# `tables.shtml`: all 336 beat counts (84 records x N/A/V/Q) and all 756 rhythm
+# cells (84 x nine codes, episodes and duration) agree. The single exception is
+# record 20's AFIB duration, where the published 24:19:08 is 1.1 s short because
+# the table predates the `20.hea` correction the landing page credits to Mariano
+# Llamedo Soria. The shipped header is the authority.
+#
+# ALL 339 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt.
+
+name: "Long Term AF Database"
+slug: "ltafdb"
+version: "1.0.0"
+url: "https://physionet.org/content/ltafdb/1.0.0/"
+download_url: null  # LTAFDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  84 long-term ECG recordings of subjects with paroxysmal or sustained atrial
+  fibrillation, contributed by Steven Swiryn and colleagues at Northwestern
+  University and digitised at Boston's Beth Israel Deaconess Medical Center. Each
+  record holds two simultaneously recorded ECG signals at 128 Hz with 12-bit
+  resolution over a 20 mV range; the headers name both channels "ECG" and state
+  no electrode placement. Durations vary from 6.1 to 26.4 hours and are typically
+  24-25, giving 1,960.6 hours in total. The reference `.atr` annotations —
+  8,995,973 typed beats and 53,704 rhythm episodes in nine codes — were produced
+  by MEDICALgorithmics' PocketECG algorithm and manually verified by their ECG
+  technicians, and contributed to PhysioNet in 2012. Unaudited `sqrs` detections
+  ship alongside them in `.qrs`, together with 81 hand-placed markers for
+  spontaneous AF terminations, which are what the AF Termination Challenge
+  Database's one-minute excerpts were cut around.
+citation: >
+  Petrutiu S, Sahakian AV, Swiryn S. Abrupt changes in fibrillatory wave
+  characteristics at the termination of paroxysmal atrial fibrillation in humans.
+  Europace 9(7):466-470 (2007).
+doi: "10.13026/C2QG6Q"
+
+creators:
+  - type: Organization
+    name: "Northwestern University; MEDICALgorithmics Ltd"
+    url: "https://physionet.org/content/ltafdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 1.0 because the headers declare genuine per-signal gains and wfdb applies them.
+# This is NOT the afdb situation, where every gain field reads 0 ("uncalibrated")
+# and wfdb falls back to a nominal 200 adu/mV. Here 50 distinct measured gains
+# appear across the 168 signal lines — 167 of them between 75.0188 and 222.222
+# adu/mV, plus the record 62 anomaly noted above — so the conversion to
+# millivolts is the recording equipment's own and needs no scaling here.
+# `adc_gains` in the labels carries the per-record pair.
+signal_unit_scale: 1.0
+leads: 2
+# POSITIONAL NAMES, NOT NAMES THE FILES USE. Every signal line in every header
+# ends in the bare description "ECG", for both channels — see point 2 above. The
+# release states no electrode placement, so these are channel positions, and they
+# are spelled ECG1/ECG2 to match afdb so cross-dataset code sees one convention.
+# `ECGDataset(leads=["ECG1"])` therefore selects channel 0, not a known lead.
+lead_names: ["ECG1", "ECG2"]
+# Median record length: 11,059,200 samples at 128 Hz. NOT uniform, and not close
+# to it — 55 distinct lengths across the 84 records, from 2,826,240 (record 30) to
+# 12,142,080 (record 70). This is the nominal 24 h, not a value to validate on.
+duration_seconds: 86400.0
+sampling_rates: [128]
+default_sampling_rate: 128
+
+# --- File Structure ---
+# No metadata file ships in any form: the headers carry no comment lines at all,
+# so there are no demographics to parse and the annotations are the whole story.
+# LTAFDBSplitter builds this CSV from the .atr and .qrs files on first run, via
+# ecgbench.labels.ltafdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# NOT OPTIONAL HERE — see point 1 above. Seven of the 84 record names begin with
+# a zero ("00" through "08"), and pandas' default inference destroys them.
+# export_splits refuses to write a zero-padded identifier while this is false, so
+# it cannot be silently dropped by a later edit.
+zero_padded_identifiers: true
+# Null because the release has no subject identifier of any kind — no age, no
+# sex, no tape number, nothing. 84 records from 84 subjects is what PhysioNet
+# states and the most that can be asserted, so folds are stratified but ungrouped.
+# This is a fact about the data, not a skipped field.
+patient_id_column: null
+
+signal_path_columns:
+  128: "signal_path"  # zero-padded record stem, e.g. "00" — the tree is flat
+
+# --- Labels ---
+label_column: "dominant_rhythm"  # the rhythm holding the most seconds in the record
+label_format: "single"
+
+stratification:
+  # LTAFDBSplitter takes stratify_class from the label loader: af_class, the
+  # three-level AF-burden bin (minimal 18 / paroxysmal 33 / sustained 33). Unlike
+  # afdb this does NOT have to be coarsened to a binary label — StratifiedKFold
+  # needs at least n_folds members per class and all three clear 10 comfortably,
+  # so the fold label and the label a reader wants are the same column.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like ptbdb, challenge2021 and afdb: length varies
+  # legitimately and widely. 55 distinct record lengths span 2,826,240 to
+  # 12,142,080 samples, so no single threshold can distinguish a truncated record
+  # from a short one. Omitting the rate disables the check rather than making it
+  # fire — `truncated_signal` stays in the list below only so a future re-release
+  # with uniform lengths needs one line here and not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The widest 12-bit rail in the release, computed from the hardware rather than
+  # guessed. PhysioNet describes 12 bits over a 20 mV range, so a sample is
+  # confined to +/-2048 adu — and the raw files bear that out, with every sample
+  # of all 168 channels inside [-1497, 1398]. In millivolts that rail moves with
+  # the header gain, and the loosest gain is 75.0188 adu/mV, giving +/-27.3 mV.
+  # A single range has to accommodate the loosest record or it fires on a sound
+  # one, so that is what this is.
+  #
+  # The observed extreme anywhere in the release is -10.599 mV (record 100, ECG1)
+  # to +11.583 mV (record 34, ECG1), so nothing comes close to tripping it and
+  # that is the intended state: any tighter threshold would just exclude the
+  # highest-amplitude records for having high amplitude. What it guards is a
+  # mis-scaled copy — microvolts, or a re-release with the gains dropped — which
+  # would exceed it by orders of magnitude on the first record.
+  amplitude_range_mv: [-27.3, 27.3]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ltafdb.py turns the .atr episodes into seconds and
+# episode counts per code, AF burden and the AF-class bins, counts the typed
+# reference beats, and summarises the .qrs detections and AF-termination markers
+# separately. There is no source CSV to point at — the annotation files are the
+# source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "atrial fibrillation"
+    - "AF burden"
+    - "AF termination"
+    - "rhythm annotations"
+    - "beat annotations"
+    - "two-lead"
+    - "Holter"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    84 long-term ambulatory ECG recordings of subjects with paroxysmal or
+    sustained atrial fibrillation, collected by Steven Swiryn and colleagues at
+    Northwestern University and digitised and automatically annotated at Boston's
+    Beth Israel Deaconess Medical Center. Two channels were recorded per subject
+    at 128 Hz with 12-bit resolution over a 20 mV range; the headers name both
+    channels "ECG" and state no electrode placement. Recordings run 6.1 to 26.4
+    hours, typically 24-25, for 1,960.6 hours in total. The reference annotations
+    were produced in 2012 — four years after the signals were published — by
+    MEDICALgorithmics Ltd of Warsaw, using their PocketECG analysis system
+    (FDA 510(k) K112921) and then manually verified by their ECG technicians, a
+    project coordinated by Michal Tadeusiak. They comprise 8,995,973 typed beats
+    and 53,704 rhythm episodes in nine codes. A separate, unaudited set of `sqrs`
+    detections ships alongside, into which Swiryn and George Moody manually
+    inserted 81 markers for spontaneous AF terminations lasting at least a minute;
+    those markers were used to cut the 80 one-minute excerpts of the AF
+    Termination Challenge Database.
+  rai_data_biases: >
+    Every subject in this database has atrial fibrillation, so it measures AF
+    detection and burden estimation and cannot measure AF prevalence: there is no
+    non-AF control group, and a model evaluated only here has never been shown a
+    subject without the condition. Exactly one of the 84 records (30) contains no
+    annotated AF at all, and it is also the shortest at 6.1 hours. The cohort is
+    small — 84 subjects — and each contributes one very long recording, so
+    within-subject data is abundant while between-subject variation is limited;
+    record-level splits are essential and any sample-level split is meaningless.
+    AF burden is strongly bimodal: 19 records are in AF for essentially the whole
+    recording and 18 spend under 5% of it there, so a sample-weighted metric is
+    dominated by the sustained group. Among the nine annotated rhythms, AFIB
+    (1,030.9 h) and sinus rhythm (828.6 h) hold almost everything, while
+    idioventricular rhythm (0.13 h), ventricular tachycardia (0.40 h) and
+    ventricular trigeminy (1.71 h) are far too rare to train on as classes. The AF
+    termination markers exist only in records 00-75; the 100- and 200-series carry
+    none, so a model trained on terminations sees roughly half the database. Beat
+    annotations are verified reference annotations, but they were produced by one
+    vendor's algorithm and reviewed by one team, so systematic detector behaviour
+    is shared across every record. The signal outlasts the annotation in 35 of the
+    84 records, by up to 8.05 hours, and any window into that tail has no
+    reference behind it. The recordings are from one institution, were digitised
+    from analog Holter tape, and carry no demographics, so no subgroup analysis of
+    any kind is possible from this release alone.
+  rai_personal_sensitive_info: >
+    De-identified, and unusually thoroughly: the headers carry no comment lines
+    whatsoever — no age, no sex, no medications, no clinical description and no
+    subject or tape identifier. The only per-record fields are the signal
+    specification and a start timestamp. That timestamp is more complete than in
+    most of this catalogue: it carries a calendar date as well as a time of day,
+    with all 84 records dated between January 2003 and May 2005. Those dates are
+    recording session dates rather than dates of birth or care episodes, and no
+    other field can be joined to them. The record names are one- to three-digit
+    numbers from the source institution's own numbering and are the only
+    identifiers present.

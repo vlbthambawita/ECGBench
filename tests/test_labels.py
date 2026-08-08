@@ -6107,3 +6107,289 @@ class TestAFDBLabels:
         assert "STRATIFY_AF_BURDEN" not in code
         assert "af_burden" not in code
         assert "0.2" not in code
+
+
+class TestLTAFDBLabels:
+    """Long Term AF Database: the annotations ARE the labels, at nine million beats.
+
+    Every header in this release is pure signal specification with no comment
+    lines, so as in afdb there are no demographics to parse. What the loader has
+    to get right here is different: nine rhythm codes rather than four, typed
+    reference beats rather than an unaudited detector's, an annotation-file
+    terminator that can sit past the end of the record, and record ids that stop
+    naming anything the moment they are read as numbers.
+    """
+
+    HEADER = (
+        "00 2 128 9661440  9:30:00 31/01/2003\n"
+        "00.dat 16 166.945/mV 0 0 -1 -8202 0 ECG\n"
+        "00.dat 16 173.01/mV 0 0 3 6311 0 ECG\n"
+    )
+    # Record 62: ECG1 declares a gain 5.5x anything else in the release.
+    HEADER_ODD_GAIN = (
+        "62 2 128 11443200 20:48:00 18/07/2003\n"
+        "62.dat 16 1123.6/mV 0 0 19 -25326 0 ECG\n"
+        "62.dat 16 202.429/mV 0 0 -8 19706 0 ECG\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("ltafdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the .atr/.qrs files are the source
+        assert spec.join_column == "record_name"
+
+    def test_reads_the_signal_specification_the_date_and_the_gains(self, tmp_path):
+        from ecgbench.labels.ltafdb import read_header
+
+        (tmp_path / "00.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = read_header(tmp_path / "00.hea")
+
+        assert fields["n_leads"] == 2
+        assert fields["n_samples"] == 9661440
+        assert fields["sampling_rate"] == 128
+        assert fields["start_time"] == "9:30:00"
+        # Unlike afdb, every header here carries a calendar date as well.
+        assert fields["start_date"] == "31/01/2003"
+        # BOTH channels are called "ECG" — read, not assumed. This is why the
+        # config declares the positional names ECG1/ECG2 instead: two identically
+        # named channels cannot be resolved by name.
+        assert fields["lead_names"] == "ECG|ECG"
+        # Real measured gains, which afdb does not have (it declares 0).
+        assert fields["adc_gains"] == "166.945|173.01"
+
+    def test_the_anomalous_gain_is_reported_rather_than_corrected(self, tmp_path):
+        """Record 62's ECG1 declares 1123.6 adu/mV against a release max of 222.222.
+
+        Silently "fixing" it would make ECGBench disagree with every other tool
+        reading the same file. Exposing it is what lets a user exclude the channel
+        when comparing absolute amplitudes across records.
+        """
+        from ecgbench.labels.ltafdb import read_header
+
+        (tmp_path / "62.hea").write_text(self.HEADER_ODD_GAIN, encoding="utf-8")
+        fields = read_header(tmp_path / "62.hea")
+
+        assert fields["adc_gains"] == "1123.6|202.429"
+
+    def test_rhythm_codes_cover_nine_and_exclude_flutter(self):
+        """afdb annotates AFL; this release does not, and af_burden differs for it.
+
+        The two databases' af_burden columns carry the same name and are computed
+        over different code sets — the sort of thing that silently corrupts a
+        pooled analysis, so it is asserted rather than left to a docstring.
+        """
+        from ecgbench.labels import afdb as afdb_labels
+        from ecgbench.labels import ltafdb as ltafdb_labels
+
+        assert set(ltafdb_labels.RHYTHM_NAMES) == {
+            "N", "AFIB", "SVTA", "VT", "B", "T", "IVR", "AB", "SBR"
+        }
+        assert "AFL" not in ltafdb_labels.RHYTHM_NAMES
+        assert ltafdb_labels.AF_CODES == ("AFIB",)
+        # afdb folds flutter in; this one has none to fold.
+        assert "AFL" in afdb_labels.AF_CODES
+        assert set(ltafdb_labels.AF_CODES) < set(afdb_labels.AF_CODES)
+
+    def test_t_means_different_things_to_the_two_annotators(self):
+        """`T` is an AF termination in .qrs and ventricular trigeminy in .atr."""
+        from ecgbench.labels.ltafdb import AF_TERMINATION_SYMBOL, RHYTHM_NAMES
+
+        assert AF_TERMINATION_SYMBOL == "T"
+        assert RHYTHM_NAMES["T"] == "ventricular trigeminy"
+
+    def _write(self, tmp_path, rec, n_samples, atr, qrs=None, header=None):
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        (tmp_path / f"{rec}.hea").write_text(
+            header or (
+                f"{rec} 2 128 {n_samples} 9:30:00 31/01/2003\n"
+                f"{rec}.dat 16 202.429/mV 0 0 -1 -8202 0 ECG\n"
+                f"{rec}.dat 16 202.429/mV 0 0 3 6311 0 ECG\n"
+            ),
+            encoding="utf-8",
+        )
+        wfdb.wrann(
+            rec, "atr",
+            sample=np.array(atr["sample"]), symbol=atr["symbol"],
+            aux_note=atr.get("aux_note"), fs=128, write_dir=str(tmp_path),
+        )
+        if qrs:
+            wfdb.wrann(
+                rec, "qrs",
+                sample=np.array(qrs["sample"]), symbol=qrs["symbol"],
+                fs=128, write_dir=str(tmp_path),
+            )
+        return tmp_path
+
+    def test_rhythm_seconds_close_the_last_episode_at_the_record_end(self, tmp_path):
+        """PhysioNet's own tables do this, which is what makes the figures checkable.
+
+        The last episode has no annotation after it, so it runs to the end of the
+        signal. Following that convention is how ECGBench reproduces
+        `tables.shtml` cell for cell.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import summarise_annotations
+
+        n_samples = 128 * 1000  # 1,000 s
+        self._write(
+            tmp_path, "00", n_samples,
+            atr={"sample": [0, 10, 128 * 400, 128 * 410],
+                 "symbol": ["+", "N", "+", "N"],
+                 "aux_note": ["(N", "", "(AFIB", ""]},
+        )
+        out = summarise_annotations(tmp_path / "00", n_samples)
+
+        assert out["rhythm_secs_N"] == pytest.approx(400.0)
+        # 1000 - 400, i.e. closed at the record end rather than the last annotation.
+        assert out["rhythm_secs_AFIB"] == pytest.approx(600.0)
+        assert out["af_burden"] == pytest.approx(0.6)
+        assert out["dominant_rhythm"] == "AFIB"
+        assert out["n_episodes_N"] == 1 and out["n_episodes_AFIB"] == 1
+        # The denominator is stated rather than left to be inferred.
+        assert out["rhythm_annotated_secs"] == pytest.approx(1000.0)
+
+    def test_the_denominator_excludes_the_unclassified_lead_in(self, tmp_path):
+        """Nothing classifies the stretch before the first rhythm annotation.
+
+        Over the release that lead-in is 25.7 of 1,960.6 recorded hours, so
+        af_burden divides by annotated rhythm time, not by record time.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import summarise_annotations
+
+        n_samples = 128 * 1000
+        self._write(
+            tmp_path, "20", n_samples,
+            atr={"sample": [128 * 100, 128 * 101],  # first episode 100 s in
+                 "symbol": ["+", "N"],
+                 "aux_note": ["(AFIB", ""]},
+        )
+        out = summarise_annotations(tmp_path / "20", n_samples)
+
+        assert out["rhythm_annotated_secs"] == pytest.approx(900.0)
+        assert out["rhythm_secs_AFIB"] == pytest.approx(900.0)
+        # 900/900, not 900/1000 — the lead-in is unclassified, not non-AF.
+        assert out["af_burden"] == pytest.approx(1.0)
+
+    def test_typed_beats_are_counted_and_rhythm_changes_are_not(self, tmp_path):
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import summarise_annotations
+
+        n_samples = 128 * 1000
+        self._write(
+            tmp_path, "00", n_samples,
+            atr={"sample": [0, 10, 20, 30, 40, 50],
+                 "symbol": ["+", "N", "A", "V", "Q", "N"],
+                 "aux_note": ["(N", "", "", "", "", ""]},
+        )
+        out = summarise_annotations(tmp_path / "00", n_samples)
+
+        assert out["beat_N"] == 2
+        assert out["beat_A"] == out["beat_V"] == out["beat_Q"] == 1
+        assert out["n_beats"] == 5  # the '+' is a rhythm change, not a beat
+        assert out["n_rhythm_changes"] == 1
+
+    def test_an_out_of_range_terminator_is_excluded_from_every_measurement(
+        self, tmp_path
+    ):
+        """Record 30's .atr ends 2.98 h past the end of its own signal.
+
+        That marker is the annotation file's terminator; its position is not a
+        claim about the signal. Counting it would make the comment total disagree
+        with the release's published 1, and using it would report a negative
+        unannotated tail.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import summarise_annotations
+
+        n_samples = 128 * 1000
+        self._write(
+            tmp_path, "30", n_samples,
+            atr={"sample": [0, 10, 128 * 900, n_samples + 128 * 500],
+                 "symbol": ["+", "N", "N", '"'],
+                 "aux_note": ["(N", "", "", "\x01 Aux"]},
+        )
+        out = summarise_annotations(tmp_path / "30", n_samples)
+
+        # Out of range, so not counted — this is what matches the published table.
+        assert out["n_comment_annotations"] == 0
+        # And the tail is measured from the last BEAT, so it stays non-negative.
+        assert out["last_beat_sample"] == 128 * 900
+        assert out["unannotated_tail_secs"] == pytest.approx(100.0)
+
+    def test_detector_output_is_summarised_separately_from_the_reference(
+        self, tmp_path
+    ):
+        """.qrs beats are unaudited and all labelled N; never add them to n_beats."""
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import summarise_annotations, summarise_detector
+
+        n_samples = 128 * 1000
+        self._write(
+            tmp_path, "00", n_samples,
+            atr={"sample": [0, 10, 20], "symbol": ["+", "N", "V"],
+                 "aux_note": ["(N", "", ""]},
+            qrs={"sample": [10, 20, 30, 40], "symbol": ["N", "N", "|", "T"]},
+        )
+        reference = summarise_annotations(tmp_path / "00", n_samples)
+        detector = summarise_detector(tmp_path / "00")
+
+        assert reference["n_beats"] == 2
+        assert detector["n_detections"] == 2
+        assert detector["n_detector_artifacts"] == 1
+        assert detector["n_af_terminations"] == 1
+        # Disjoint keys, so no caller can accidentally sum them.
+        assert not set(reference) & set(detector)
+
+    def test_af_class_bins_burden_and_is_the_fold_label_unchanged(self):
+        import numpy as np
+        import pandas as pd
+
+        from ecgbench.labels.ltafdb import attach_stratify_class
+
+        df = pd.DataFrame({
+            "record_name": ["30", "00", "01", "12", "70"],
+            "af_burden": [0.0, 0.0490, 0.5, 0.9511, np.nan],
+        })
+        out = attach_stratify_class(df)
+
+        assert out["af_class"].tolist() == [
+            "minimal", "minimal", "paroxysmal", "sustained", "minimal"
+        ]
+        # Unlike afdb, the fold label is not a coarsened copy — it IS af_class.
+        assert out["stratify_class"].tolist() == out["af_class"].tolist()
+
+    def test_missing_records_file_names_the_file_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.ltafdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="RECORDS"):
+            scan_records(tmp_path)
+
+    def test_the_record_list_comes_from_records_not_a_glob(self, tmp_path):
+        """A partial download of this 3.4 GB release looks like a smaller database.
+
+        Taking the list from RECORDS makes the missing files a logged warning
+        rather than a silently smaller dataset.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.ltafdb import scan_records
+
+        n_samples = 128 * 1000
+        self._write(
+            tmp_path, "00", n_samples,
+            atr={"sample": [0, 10], "symbol": ["+", "N"], "aux_note": ["(AFIB", ""]},
+            qrs={"sample": [10, 20], "symbol": ["N", "N"]},
+        )
+        (tmp_path / "RECORDS").write_text("00\n99\n", encoding="utf-8")
+
+        df = scan_records(tmp_path)
+
+        # 99 is named by RECORDS but absent from disk: skipped with a warning,
+        # not invented and not silently redefining the release.
+        assert df["record_name"].tolist() == ["00"]
+        assert df.loc[0, "signal_path"] == "00"

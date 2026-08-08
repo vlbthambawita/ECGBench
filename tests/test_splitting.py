@@ -3878,3 +3878,174 @@ class TestMITDBSplitter:
         spanning = assigned.groupby("patient_id")["fold"].nunique()
         assert (spanning == 1).all()
         assert result.group_column == "patient_id"
+
+
+class TestLTAFDBSplitter:
+    """84 records, three AF classes, and record ids that must stay strings."""
+
+    def _header(self, rec, n_samples=11059200, gains=("202.429", "202.429")):
+        return (
+            f"{rec} 2 128 {n_samples} 9:30:00 31/01/2003\n"
+            + "".join(
+                f"{rec}.dat 16 {gain}/mV 0 0 -1 -8202 0 ECG\n" for gain in gains
+            )
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: [(rec, af_fraction)] -> headers, .atr + .qrs each, plus RECORDS.
+
+        The .atr opens an AFIB episode covering ``af_fraction`` of the record and
+        an N episode for the rest, which is what af_burden is computed from.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        n_samples = 11059200
+        for rec, af in records:
+            (tmp_path / f"{rec}.hea").write_text(self._header(rec), encoding="utf-8")
+            # Clamped so the two episodes stay ordered and non-empty at af=0 and
+            # af=1; the resulting burden is then within 1e-5 of the requested one.
+            boundary = min(max(int(n_samples * (1.0 - af)), 30), n_samples - 100)
+            wfdb.wrann(
+                rec, "atr",
+                sample=np.array([10, 20, boundary, boundary + 10]),
+                symbol=["+", "N", "+", "N"],
+                aux_note=["(N", "", "(AFIB", ""],
+                fs=128,
+                write_dir=str(tmp_path),
+            )
+            wfdb.wrann(
+                rec, "qrs",
+                sample=np.array([100, 200, 300]),
+                symbol=["N", "T", "N"],
+                fs=128,
+                write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, _ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ltafdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={128: "signal_path"}, default_sampling_rate=128,
+            label_column="dominant_rhythm", leads=2, zero_padded_identifiers=True,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ltafdb import LTAFDBSplitter
+
+        assert isinstance(get_splitter("ltafdb"), LTAFDBSplitter)
+
+    def test_builds_burden_signal_paths_and_beat_counts(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("00", 0.0), ("01", 0.5), ("100", 1.0)])
+
+        df = get_splitter("ltafdb").load_metadata(tree, config).set_index("record_name")
+
+        # Leading zeros survive the frame the splitter hands back.
+        assert set(df.index) == {"00", "01", "100"}
+        assert df.loc["00", "af_burden"] == pytest.approx(0.0, abs=0.001)
+        assert df.loc["01", "af_burden"] == pytest.approx(0.5, abs=0.001)
+        assert df.loc["100", "af_burden"] == pytest.approx(1.0, abs=0.001)
+        assert df.loc["00", "af_class"] == "minimal"
+        assert df.loc["01", "af_class"] == "paroxysmal"
+        assert df.loc["100", "af_class"] == "sustained"
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["00", "01", "100"]
+        # '+' is a rhythm change, not a beat; the .atr N annotations are the beats.
+        assert df["n_beats"].tolist() == [2, 2, 2]
+        assert df["n_rhythm_changes"].tolist() == [2, 2, 2]
+        # .qrs is summarised separately and never folded into n_beats.
+        assert df["n_detections"].tolist() == [2, 2, 2]
+        assert df["n_af_terminations"].tolist() == [1, 1, 1]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_the_cached_csv_round_trip_keeps_leading_zeros(
+        self, sample_config, tmp_path
+    ):
+        """The second call reads the CSV back, which is where the zeros die.
+
+        Without ``dtype=config.identifier_dtypes()`` record "00" returns as 0 and
+        ``data_path / "0"`` is not a file — every record then fails corrupt_header
+        for a reason nothing in the traceback mentions.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("00", 0.1), ("08", 0.9), ("122", 0.5)])
+
+        splitter = get_splitter("ltafdb")
+        splitter.load_metadata(tree, config)  # writes the cache
+        cached = splitter.load_metadata(tree, config)  # reads it back
+
+        assert sorted(cached["record_name"]) == ["00", "08", "122"]
+        assert sorted(cached["signal_path"]) == ["00", "08", "122"]
+
+    def test_stratification_is_af_class_itself_not_a_coarsened_copy(
+        self, sample_config, tmp_path
+    ):
+        """84 records can fill three classes over ten folds where afdb's 25 cannot.
+
+        afdb has to stratify on a binary 20% cut because ``sustained`` holds 3 of
+        its 25 records. Here the label a reader wants and the label the folds use
+        are the same column, which is the arrangement to prefer when counts allow.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("00", 0.0), ("01", 0.5), ("100", 1.0)])
+
+        splitter = get_splitter("ltafdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "af_class"
+        assert labels.tolist() == ["minimal", "paroxysmal", "sustained"]
+        assert labels.tolist() == df["af_class"].tolist()
+
+    def test_missing_stratify_column_is_an_error_not_a_silent_fallback(
+        self, sample_config
+    ):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("ltafdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["00"]}), config
+            )
+
+    def test_folds_are_ungrouped_because_no_subject_id_ships(
+        self, sample_config, tmp_path
+    ):
+        """No header here carries a comment line, so there is nothing to group on.
+
+        mitdb can group on the analog tape number; this release states nothing at
+        all about its subjects, so ``patient_id_column`` is null and the engine
+        uses plain StratifiedKFold. That is a fact about the data, not an omission.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        records = [(f"{i:02d}", 0.0 if i % 3 == 0 else 0.5 if i % 3 == 1 else 1.0)
+                   for i in range(15)]
+        tree = self._tree(tmp_path, records)
+
+        splitter = get_splitter("ltafdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert result.group_column is None
+        assigned = pd.concat(
+            [frame.assign(fold=number) for number, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 15
+        # Every class reaches every fold, which is what stratification buys here.
+        assert assigned.groupby("fold")["af_class"].nunique().tolist() == [3] * 5

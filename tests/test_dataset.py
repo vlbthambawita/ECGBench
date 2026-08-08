@@ -1486,6 +1486,36 @@ class TestPerRecordLeadLayouts:
         assert config.alternate_lead_names is None
         assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
 
+    def test_ltafdb_channels_are_positions_and_the_files_do_not_even_number_them(self):
+        """LTAFDB's headers call BOTH channels "ECG" — the same string twice.
+
+        afdb at least spells its two channels ECG1 and ECG2. Here there is nothing
+        to tell them apart by name, so ECGBench declares the positional names
+        ECG1/ECG2 and the config says so. That is a deliberate deviation from
+        "spell leads as the source spells them", taken because the alternative —
+        ["ECG", "ECG"] — makes channel 1 unreachable through leads= entirely:
+        _resolve_leads keys on the first occurrence of a name and rejects a
+        repeated request.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.dataset import _resolve_leads
+
+        config = load_config("ltafdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        # One layout in all 84 headers, so neither per-record mechanism applies.
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+        # Both positions are reachable by name, which is the point of the choice.
+        assert _resolve_leads(["ECG2"], config.lead_names, "ltafdb")[0] == [1]
+        assert _resolve_leads(["ECG2", "ECG1"], config.lead_names, "ltafdb")[0] == [1, 0]
+        # What the honest-but-unusable alternative would have cost:
+        assert _resolve_leads(["ECG"], ["ECG", "ECG"], "ltafdb")[0] == [0]
+        with pytest.raises(ValueError, match="requested more than once"):
+            _resolve_leads(["ECG", "ECG"], ["ECG", "ECG"], "ltafdb")
+
 
 class TestZeroPaddedRecordIds:
     """Fold CSVs must round-trip identifiers as strings, or afdb silently breaks.
@@ -1571,6 +1601,38 @@ class TestZeroPaddedRecordIds:
 
         # Opted in, the same frame is fine.
         _check_zero_padded_identifiers(df, load_config("afdb"))
+
+    def test_ltafdb_ids_lose_far_more_than_afdb_ids_do(self):
+        """"00" becomes 0 — a shorter id, so an easier mistake to miss.
+
+        afdb's "00735" at least still looks like a record name after the round
+        trip. ltafdb's seven zero-prefixed records collapse to single digits that
+        collide with nothing and resolve to nothing, and the export guard is what
+        stops a config edit reintroducing that.
+        """
+        import pandas as pd
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.export import _check_zero_padded_identifiers
+
+        config = load_config("ltafdb")
+        assert config.identifier_dtypes() == {
+            "record_name": "str",
+            "signal_path": "str",
+        }
+
+        df = pd.DataFrame({
+            "record_name": ["00", "01", "08", "122"],
+            "signal_path": ["00", "01", "08", "122"],
+        })
+        _check_zero_padded_identifiers(df, config)  # opted in: fine
+
+        from dataclasses import replace
+
+        with pytest.raises(ValueError, match="zero_padded_identifiers"):
+            _check_zero_padded_identifiers(
+                df, replace(config, zero_padded_identifiers=False)
+            )
 
     def test_the_guard_ignores_ids_that_merely_look_numeric(self):
         """mitdb's "100" and ptbxl's "1" are not zero-padded and must not trip it."""

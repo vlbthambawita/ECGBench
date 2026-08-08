@@ -224,6 +224,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 
 | `mitdb` | **MLII, V1** in 40 of 48 records — and **not** in the other 8. Two modified chest-placed leads, none of the standard twelve. See below |
 | `afdb` | **`ECG1`, `ECG2`** — the two channels are **not named leads at all**. The release states no electrode placement anywhere, so these are channel positions, and they must not be read as `mitdb`'s MLII/V1 by analogy with its sibling release |
+| `ltafdb` | **`ECG1`, `ECG2`** — worse than `afdb`: every header calls **both** channels `ECG`, the same string twice, so there is nothing to tell them apart by. These two names are positions ECGBench assigns so `leads=` works at all. Again not MLII/V1 |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -278,7 +279,15 @@ known anatomical lead, and the obvious inference from `mitdb` is not supported b
 anything in the data. Where `mitdb` documents which of MLII/V1/V5 each record holds,
 `afdb` documents nothing, and the honest config is the one that says so.
 
-**One dataset's record ids are zero-padded numbers**, which is a bigger deal than it
+`ltafdb` goes one step further and does not even number them: every one of its 84
+headers ends **both** signal lines with the bare description `ECG`. Two identically
+named channels cannot be resolved by name — `_resolve_leads` keys on the first
+occurrence and rejects a repeated request — so declaring `["ECG", "ECG"]` would make
+channel 1 unreachable through `leads=` entirely. Its config therefore declares the
+positional names `ECG1`/`ECG2`, matching `afdb` so cross-dataset code sees one
+convention, and says plainly that they are ECGBench's names rather than the files'.
+
+**Two datasets' record ids are zero-padded numbers**, which is a bigger deal than it
 sounds. `afdb`'s records are named `00735`, `03665`, `04015`; read with pandas'
 default type inference they become 735, 3665, 4015, and from there the record id
 stops matching the source, the label join misses, and `data_path / "735"` is not a
@@ -290,6 +299,10 @@ strings. If you read the published fold CSVs yourself, do the same:
 ```python
 pd.read_csv("afdb/clean/folds.csv", dtype={"record_name": str, "signal_path": str})
 ```
+
+`ltafdb` is the other one, and it loses more: seven of its 84 records are named
+`00`, `01`, `03`, `05`, `06`, `07` and `08`, which collapse to single digits that
+resolve to nothing at all.
 
 The flag is opt-in, because forcing it on would change `ds[0]["record_id"]` from an
 int to a string for the six datasets whose ids are genuinely numeric. Forgetting it

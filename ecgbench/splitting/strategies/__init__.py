@@ -18,6 +18,7 @@ from . import (  # noqa: F401
     ikem,
     incartdb,
     leipzig_heart_center_ecg,
+    ltafdb,
     ludb,
     medalcare_xl,
     mhd_effect_ecg_mri,
