@@ -1479,3 +1479,92 @@ def test_load_challenge2017_config():
     assert config.validation.amplitude_range_mv == (-10.0, 10.0)
     # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
     assert config.publish_fold_csvs is True
+
+
+def test_load_nsrdb_config():
+    """MIT-BIH NSRDB: two unnamed channels, day-long records, one cohort class."""
+    config = load_config("nsrdb")
+    assert config.slug == "nsrdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a gain of 0 — WFDB's "uncalibrated" — so wfdb falls
+    # back to its default 200 adu/mV and reports mV. Nothing to rescale. Unlike
+    # afdb there is no competing millivolt range in the description to reconcile.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # ECG1/ECG2 are CHANNEL POSITIONS, as in afdb: the release states no
+    # electrode placement, so these must not be "corrected" to MLII/V1.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [128]
+    assert config.default_sampling_rate == 128
+    assert config.signal_path_columns == {128: "signal_path"}
+    # No metadata ships beyond a "# <age> <sex>" header comment: NSRDBSplitter
+    # generates this from the headers and the .atr files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the headers carry age and sex and nothing else — no tape
+    # number, no recorder, no subject code. 18 recordings from 18 subjects is the
+    # most that can be asserted.
+    assert config.patient_id_column is None
+    # A single layout in all 18 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Records run 16265 to 19830: no leading zeros, so unlike afdb and ltafdb the
+    # CSV round-trip cannot destroy them.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "cohort_label"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_nsrdb_disables_the_truncation_check_because_length_varies():
+    """Records run 10,659,840 to 11,960,320 samples (23.13 h to 25.96 h).
+
+    Every one is a complete full-day recording, so any single threshold would
+    drop sound records as truncated. An empty expected_samples DISABLES the check
+    — check_truncated_signal returns [] when the rate has no key — which is the
+    intended escape hatch, as in ptbdb, afdb and ltafdb.
+    """
+    config = load_config("nsrdb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_nsrdb_amplitude_range_is_the_twelve_bit_rail():
+    """Set from the hardware: adc_zero 0 at gain 200 gives [-2048, 2047] adu.
+
+    Nothing in this release reaches it — the extreme sample anywhere is
+    +/-5.115 mV, the 11-bit rail — so like afdb the check cannot fire on NSRDB
+    1.0.0 and guards a mis-scaled copy rather than signal quality.
+    """
+    config = load_config("nsrdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.235)
+    assert low == pytest.approx(-2048 / 200.0)
+    assert high == pytest.approx(2047 / 200.0)
+    # The observed extreme is half that, so no record can trip the check.
+    assert 5.115 < high
+
+
+def test_nsrdb_label_column_is_a_constant_and_the_config_says_so():
+    """The whole database is one class, so label_column cannot stratify anything.
+
+    ``cohort_label`` is ``normal_sinus_rhythm`` for all 18 records — PhysioNet's
+    assertion about the cohort, not something derived from the files, which ship
+    no rhythm annotations at all. That is why stratification is custom_function
+    (sex) rather than ``direct`` on label_column, which would hand
+    StratifiedKFold a single class.
+    """
+    from ecgbench.labels.nsrdb import COHORT_LABEL
+
+    config = load_config("nsrdb")
+    assert config.label_column == "cohort_label"
+    assert COHORT_LABEL == "normal_sinus_rhythm"
+    assert config.stratification.method != "direct"

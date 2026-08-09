@@ -226,6 +226,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `afdb` | **`ECG1`, `ECG2`** — the two channels are **not named leads at all**. The release states no electrode placement anywhere, so these are channel positions, and they must not be read as `mitdb`'s MLII/V1 by analogy with its sibling release |
 | `challenge2017` | **`ECG` — one channel, and it is not called `I`.** The AliveCor device gives a nominal lead I (LA-RA) equivalent, but it does not enforce orientation, so the paper reports that **many traces are inverted (RA-LA)** and no record says which. The source's own channel name is the only honest one; naming it `I` would let it be stacked with 12-lead lead I while an unknown fraction carries the opposite sign |
 | `ltafdb` | **`ECG1`, `ECG2`** — worse than `afdb`: every header calls **both** channels `ECG`, the same string twice, so there is nothing to tell them apart by. These two names are positions ECGBench assigns so `leads=` works at all. Again not MLII/V1 |
+| `nsrdb` | **`ECG1`, `ECG2`** — like `afdb`, and from the same Beth Israel arrhythmia laboratory as `mitdb`: the headers spell the two names and state no electrode placement, so these are channel positions too |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of

@@ -4187,3 +4187,211 @@ class TestChallenge2017Splitter:
             get_splitter("challenge2017").load_metadata(
                 tmp_path, self._config(sample_config)
             )
+
+
+class TestNSRDBSplitter:
+    """18 healthy controls, one cohort class, and folds balanced on sex instead."""
+
+    def _header(self, rec, n_samples, age, sex):
+        """A real NSRDB header: gain 0 (uncalibrated) and one `# age sex` comment."""
+        return (
+            f"{rec} 2 128 {n_samples}  8:04:00\n"
+            f"{rec}.dat 212 0 12 0 -33 15756 0 ECG1\n"
+            f"{rec}.dat 212 0 12 0 -65 -21174 0 ECG2\n"
+            f"# {age} {sex}\n"
+        )
+
+    def _tree(self, tmp_path, records, n_samples=1_280_000):
+        """records: [(rec, age, sex, n_ectopic)] -> headers, .atr each, RECORDS.
+
+        The .atr carries beats stopping well before the end of the record — the
+        unannotated tail every real record has — plus one `~` transition into
+        noise and back, and one `|` isolated-artifact marker.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, age, sex, n_ectopic in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, n_samples, age, sex), encoding="utf-8"
+            )
+            # 100 beats exactly 1 s apart (128 samples at 128 Hz), the first at
+            # 1280 and the last at 13952 of 1280000 — so almost all of this
+            # record has no beat annotation behind it, as in the real release.
+            beats = np.arange(100) * 128 + 1280
+            symbols = ["N"] * 100
+            for i in range(n_ectopic):
+                symbols[i + 1] = "V"
+            # A noisy interval on ECG2 (subtype 2) covering 1280 samples = 10 s,
+            # then a return to clean.
+            sample = np.concatenate([[1], beats, [200_000, 201_280]])
+            symbol = ["|"] + symbols + ["~", "~"]
+            wfdb.wrann(
+                rec, "atr",
+                sample=sample,
+                symbol=symbol,
+                subtype=np.array([0] + [0] * 100 + [2, 0]),
+                fs=128,
+                write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, _, _, _ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="nsrdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={128: "signal_path"}, default_sampling_rate=128,
+            label_column="cohort_label", leads=2, zero_padded_identifiers=False,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.nsrdb import NSRDBSplitter
+
+        assert isinstance(get_splitter("nsrdb"), NSRDBSplitter)
+
+    def test_builds_demographics_beats_quality_and_signal_paths(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path, [("16265", 32, "M", 3), ("16272", 20, "F", 0)]
+        )
+
+        df = get_splitter("nsrdb").load_metadata(tree, config).set_index("record_name")
+
+        # The one header comment line is the entire shipped metadata.
+        assert df.loc["16265", "age"] == 32
+        assert df.loc["16265", "sex"] == "M"
+        assert df.loc["16272", "sex"] == "F"
+        # Beats, and ectopy counted apart from them.
+        assert df.loc["16265", "n_beats"] == 100
+        assert df.loc["16265", "n_ectopic_beats"] == 3
+        assert df.loc["16272", "n_ectopic_beats"] == 0
+        # '|' and '~' are markers, not beats, and must never reach n_beats.
+        assert df.loc["16265", "n_isolated_artifacts"] == 1
+        assert df.loc["16265", "n_quality_changes"] == 2
+        # Signal quality as seconds: 10 s of ECG2-noisy, the rest clean.
+        assert df.loc["16265", "noisy_ECG2_secs"] == pytest.approx(10.0)
+        assert df.loc["16265", "noisy_ECG1_secs"] == 0.0
+        assert df.loc["16265", "clean_secs"] == pytest.approx(1_280_000 / 128 - 10.0)
+        # One class for every record — asserted by the release, not derived.
+        assert set(df["cohort_label"]) == {"normal_sinus_rhythm"}
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["16265", "16272"]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_the_unannotated_tail_is_measured_rather_than_assumed(
+        self, sample_config, tmp_path
+    ):
+        """Beat annotation covers 79.5%-95.7% of a real record, silently.
+
+        Nothing in the header or the annotation file says the recording continues
+        past the last beat, so a window placed by record length alone can land in
+        a span with no reference behind it. These columns are how a user avoids it.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("16265", 32, "M", 0)])
+
+        df = get_splitter("nsrdb").load_metadata(tree, config).set_index("record_name")
+
+        # Beats run 1280 -> 13952 of 1280000 samples at 128 Hz.
+        assert df.loc["16265", "annotated_secs"] == pytest.approx(99.0)
+        assert df.loc["16265", "unannotated_head_secs"] == pytest.approx(10.0)
+        assert df.loc["16265", "unannotated_tail_secs"] == pytest.approx(
+            (1_280_000 - 13_952) / 128
+        )
+        assert df.loc["16265", "annotated_fraction"] < 0.01
+
+    def test_hrv_summaries_reject_the_unannotated_gap(self, sample_config, tmp_path):
+        """Without the RR filter, the multi-hour tail enters as one RR interval.
+
+        The beats here are exactly 1 s apart, so mean_hr_bpm must be 60 and the
+        SD zero. Both only hold if the gap from the last beat to the end of the
+        record is excluded — it is not an RR interval at all.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("16265", 32, "M", 0)])
+
+        df = get_splitter("nsrdb").load_metadata(tree, config).set_index("record_name")
+
+        assert df.loc["16265", "mean_hr_bpm"] == pytest.approx(60.0)
+        assert df.loc["16265", "sdnn_ms"] == pytest.approx(0.0, abs=1e-6)
+        assert df.loc["16265", "rmssd_ms"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_stratification_is_sex_because_there_is_no_clinical_label(
+        self, sample_config, tmp_path
+    ):
+        """cohort_label is one value, so it cannot balance a fold; sex can.
+
+        This is the opposite arrangement to ltafdb, where the label a reader wants
+        and the label the folds use are the same column. Here the label a reader
+        wants is a constant, so the two must differ — and the fold label is
+        demographic, not clinical.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [("16265", 32, "M", 0), ("16272", 20, "F", 0), ("16273", 28, "F", 0)],
+        )
+
+        splitter = get_splitter("nsrdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "sex"
+        assert labels.tolist() == ["M", "F", "F"]
+        assert df["cohort_label"].nunique() == 1
+
+    def test_missing_stratify_column_is_an_error_not_a_silent_fallback(
+        self, sample_config
+    ):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("nsrdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["16265"]}), config
+            )
+
+    def test_folds_are_ungrouped_because_no_subject_id_ships(
+        self, sample_config, tmp_path
+    ):
+        """The header comment holds age and sex — no tape, recorder or subject id.
+
+        mitdb can group on the analog tape number; this release states nothing
+        that would tie two records to one person, and PhysioNet describes 18
+        recordings from 18 subjects, so ``patient_id_column`` is null and the
+        engine uses plain StratifiedKFold.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        records = [
+            (f"1{i:04d}", 20 + i, "M" if i % 3 == 0 else "F", 0) for i in range(15)
+        ]
+        tree = self._tree(tmp_path, records)
+
+        splitter = get_splitter("nsrdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert result.group_column is None
+        assigned = pd.concat(
+            [frame.assign(fold=number) for number, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 15
+        # Both sexes reach every fold, which is what stratifying on it buys.
+        assert assigned.groupby("fold")["sex"].nunique().tolist() == [2] * 5

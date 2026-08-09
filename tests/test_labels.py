@@ -6655,3 +6655,195 @@ class TestChallenge2017Labels:
         from ecgbench.config import load_config
 
         assert load_config("challenge2017").validation.expected_samples == {}
+
+
+class TestNSRDBLabels:
+    """MIT-BIH NSR: one comment line, no rhythm annotations, and one class.
+
+    This is the third MIT-BIH two-lead Holter release in the catalogue and its
+    label problem is the opposite of the other two. afdb and ltafdb are all
+    about the rhythm accounting; here there are no rhythm annotations at all,
+    every subject is the same class, and what the loader has to get right is the
+    per-channel signal quality, the unannotated tail, and the fact that there is
+    nothing clinical to stratify on.
+    """
+
+    HEADER = (
+        "16265 2 128 11730944  8:04:00\n"
+        "16265.dat 212 0 12 0 -33 15756 0 ECG1\n"
+        "16265.dat 212 0 12 0 -65 -21174 0 ECG2\n"
+        "# 32 M\n"
+    )
+    HEADER_NO_COMMENT = (
+        "16265 2 128 11730944  8:04:00\n"
+        "16265.dat 212 0 12 0 -33 15756 0 ECG1\n"
+        "16265.dat 212 0 12 0 -65 -21174 0 ECG2\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("nsrdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers and .atr files are the source
+        assert spec.join_column == "record_name"
+
+    def test_the_one_comment_line_is_the_entire_shipped_metadata(self, tmp_path):
+        """`# 32 M` — age and sex, and nothing else in the whole release.
+
+        mitdb's header comments carry medications, a tape number, a recorder and
+        free clinical text on the same records from the same laboratory. This
+        format is that one, stripped to its first two fields.
+        """
+        from ecgbench.labels.nsrdb import parse_header_comments
+
+        (tmp_path / "16265.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "16265.hea")
+
+        assert fields["age"] == 32.0
+        assert fields["sex"] == "M"
+        assert set(fields) == {"age", "sex"}
+
+    def test_a_header_with_no_comment_gives_up_rather_than_raising(self, tmp_path):
+        """One malformed header must not fail the scan of the other 17."""
+        from ecgbench.labels.nsrdb import parse_header_comments
+
+        (tmp_path / "16265.hea").write_text(self.HEADER_NO_COMMENT, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "16265.hea")
+
+        assert np.isnan(fields["age"])
+        assert fields["sex"] == ""
+
+    def test_signal_quality_is_a_bitmask_over_the_two_channels(self):
+        """`~` subtype 0/1/2/3 is clean / ECG1 / ECG2 / both, as seconds.
+
+        Each transition opens an interval running to the next one. Counting
+        markers instead of time would make a 1-second glitch and a 3-hour noisy
+        stretch the same number.
+        """
+        from ecgbench.labels.nsrdb import _quality_seconds
+
+        # 1280 samples = 10 s at 128 Hz.
+        secs = _quality_seconds(
+            [(1280, 2), (2560, 3), (3840, 1), (5120, 0)], sig_len=6400, fs=128.0
+        )
+
+        assert secs["noisy_ECG2"] == pytest.approx(10.0)
+        assert secs["noisy_both"] == pytest.approx(10.0)
+        assert secs["noisy_ECG1"] == pytest.approx(10.0)
+        # 10 s before the first transition plus 10 s after the return to clean.
+        assert secs["clean"] == pytest.approx(20.0)
+        assert sum(secs.values()) == pytest.approx(50.0)
+
+    def test_the_span_before_the_first_transition_counts_as_clean(self):
+        """Safe here rather than assumed: no record's first `~` is a return.
+
+        In all 18 records the first `~` is a transition INTO noise (subtype 1, 2
+        or 3), so nothing before it was ever marked otherwise. A record with no
+        `~` at all is clean end to end.
+        """
+        from ecgbench.labels.nsrdb import _quality_seconds
+
+        assert _quality_seconds([], sig_len=1280, fs=128.0)["clean"] == pytest.approx(10.0)
+        secs = _quality_seconds([(1280, 1)], sig_len=2560, fs=128.0)
+        assert secs["clean"] == pytest.approx(10.0)
+        assert secs["noisy_ECG1"] == pytest.approx(10.0)
+
+    def test_the_cohort_label_is_a_constant_and_the_docstring_says_why(self):
+        """One class for all 18 records, asserted by the release, not derived.
+
+        There are no rhythm annotations in this release, so nothing in the files
+        could produce a per-record diagnosis. Exposing the constant is what lets
+        a user combine this database with an arrhythmia one and still have a
+        record-level class to join on.
+        """
+        from ecgbench.labels import nsrdb
+
+        assert nsrdb.COHORT_LABEL == "normal_sinus_rhythm"
+        assert "no significant arrhythmias" in nsrdb.__doc__
+
+    def test_stratify_class_is_sex_and_is_derived_once(self):
+        """The splitter reads this column rather than recomputing it.
+
+        Two derivations of one label is the bug this rule exists to prevent —
+        PTB-XL had exactly that and they drifted apart.
+        """
+        from ecgbench.labels.nsrdb import attach_stratify_class
+
+        df = pd.DataFrame({"record_name": ["16265", "16272", "16273"],
+                           "sex": ["M", "F", "F"]})
+        out = attach_stratify_class(df)
+
+        assert out["stratify_class"].tolist() == ["M", "F", "F"]
+        # A blank sex would otherwise become its own silent fold class.
+        blank = attach_stratify_class(pd.DataFrame({"sex": ["", "F"]}))
+        assert blank["stratify_class"].tolist() == ["U", "F"]
+
+    def test_ectopic_beats_are_counted_apart_from_normal_ones(self, tmp_path):
+        """127 of 1,729,629 beats in the real release are not normal.
+
+        Markers (`|`, `~`) must never reach n_beats — that is how a beat count
+        gets quoted that the database does not have.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.nsrdb import summarise_annotations
+
+        wfdb.wrann(
+            "16265", "atr",
+            sample=np.array([100, 228, 356, 484, 612, 740]),
+            symbol=["|", "N", "V", "N", "S", "~"],
+            subtype=np.array([0, 0, 0, 0, 0, 1]),
+            fs=128,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "16265", sig_len=1280)
+
+        assert counts["n_beats"] == 4
+        assert counts["beat_N"] == 2
+        assert counts["beat_V"] == 1
+        assert counts["beat_S"] == 1
+        assert counts["n_ectopic_beats"] == 2
+        assert counts["n_isolated_artifacts"] == 1
+        assert counts["n_quality_changes"] == 1
+        assert counts["n_annotations"] == 6
+
+    def test_hrv_rejects_the_unannotated_gap_rather_than_averaging_it_in(
+        self, tmp_path
+    ):
+        """The gap after the last beat is not an RR interval, and dwarfs the rest.
+
+        Every real record ends with one to five hours of unannotated signal. An
+        unfiltered RR series would fold that gap into the mean and make every HRV
+        figure meaningless.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.nsrdb import RR_RANGE_SECS, summarise_annotations
+
+        # Five beats 1 s apart, then a 40 s gap, then two more 1 s apart.
+        samples = np.array([128, 256, 384, 512, 640, 5760, 5888])
+        wfdb.wrann(
+            "16265", "atr", sample=samples, symbol=["N"] * 7,
+            subtype=np.zeros(7, dtype=int), fs=128, write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "16265", sig_len=128_000)
+
+        assert counts["n_beats"] == 7
+        # Six intervals, of which the 40 s gap is rejected.
+        assert counts["n_rr_rejected"] == 1
+        assert counts["mean_hr_bpm"] == pytest.approx(60.0)
+        assert RR_RANGE_SECS == (0.3, 2.0)
+        # And the tail is reported rather than silently absorbed.
+        assert counts["unannotated_tail_secs"] == pytest.approx(
+            (128_000 - 5888) / 128
+        )
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(
+        self, tmp_path
+    ):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.nsrdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="nsrdb"):
+            scan_records(tmp_path)

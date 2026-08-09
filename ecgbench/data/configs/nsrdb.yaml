@@ -1,0 +1,243 @@
+# ECGBench Config: MIT-BIH Normal Sinus Rhythm Database
+# ======================================================
+# https://physionet.org/content/nsrdb/1.0.0/
+#
+# 18 full-day two-lead Holter recordings of subjects referred to the Arrhythmia
+# Laboratory at Boston's Beth Israel Hospital who were found to have had NO
+# significant arrhythmias. 437.5 hours of signal, 1,729,629 reference beats, of
+# which 127 are not normal. This is the reference NORMAL cohort — a control
+# group, a pretraining corpus, and the standard baseline for normal heart-rate
+# variability. It is not a classification task: there is one class and every
+# record is in it.
+#
+# FOUR THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE BEAT ANNOTATIONS STOP LONG BEFORE THE SIGNAL DOES, silently. Beat
+#    annotation covers 79.5% (19090) to 95.7% (16539) of each record — 384.2 of
+#    the 437.5 recorded hours. The remaining 53.2 hours, ONE TO FIVE HOURS PER
+#    RECORD, carry waveform with no reference behind it, and nothing in the
+#    header or the annotation file says so. Five records also open with an
+#    unannotated head of 23-34 s. `annotated_secs`, `unannotated_head_secs` and
+#    `unannotated_tail_secs` in the labels report it per record; a window meant
+#    for supervised work has to be kept inside that span.
+#
+# 2. THE RECORDS ARE A FULL DAY LONG, SO BATCHING NEEDS `window=`. 10,659,840 to
+#    11,960,320 samples x 2 leads is 85-96 MB of float32 per record. Length is
+#    NOT uniform — 23.13 h (17052) to 25.96 h (16483, 18177) — so a window sized
+#    for one record does not necessarily fit another. See examples/load_nsrdb.py.
+#
+# 3. THERE IS NO CLINICAL LABEL, BY CONSTRUCTION. The release ships no rhythm
+#    annotations at all, so `cohort_label` is `normal_sinus_rhythm` for all 18
+#    records and carries no information a fold could be balanced on. Folds are
+#    stratified on the one axis PhysioNet documents about the cohort — sex, 13
+#    women and 5 men. See ecgbench/labels/nsrdb.py:attach_stratify_class.
+#
+# 4. SIGNAL QUALITY IS ANNOTATED PER CHANNEL, AND IS WORTH READING. The `~`
+#    annotations mark quality transitions and their subtype is a bitmask over the
+#    two channels (0 clean, 1 ECG1 noisy, 2 ECG2 noisy, 3 both). 98.61% of the
+#    recorded time is annotated clean, but that is an average over a wide spread:
+#    16272 is 9.60% noisy and 16786 is 0.23%. The labels expose it as seconds per
+#    state, per record.
+#
+# ALL 74 SHIPPED DATASET FILES VERIFY against the release's own SHA256SUMS.txt.
+# That file also lists 22 `.hea-`, `.hea--` and `.atr-` entries, which are
+# superseded backup copies PhysioNet keeps alongside the current revisions; they
+# are absent from this copy and are not part of the dataset. The record list comes
+# from the shipped RECORDS file, so they could not enter the partition anyway.
+
+name: "MIT-BIH Normal Sinus Rhythm Database"
+slug: "nsrdb"
+version: "1.0.0"
+url: "https://physionet.org/content/nsrdb/1.0.0/"
+download_url: null  # NSRDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  18 long-term two-lead ECG recordings of subjects referred to the Arrhythmia
+  Laboratory at Boston's Beth Israel Hospital (now Beth Israel Deaconess Medical
+  Center) who were found to have had no significant arrhythmias — 5 men aged 26
+  to 45 and 13 women aged 20 to 50. Each record is a full day of ambulatory
+  Holter, 23.13 h to 25.96 h, digitised at 128 Hz with 12-bit resolution; the two
+  channels are named ECG1 and ECG2 in the headers with no statement of which
+  anatomical leads they are. The reference annotations are beat labels and
+  per-channel signal-quality transitions: 1,729,629 beats over 437.5 hours, of
+  which 1,729,502 are normal, 91 supraventricular premature, 26 ventricular
+  premature, 8 fusion and 2 nodal premature. There are no rhythm annotations and
+  no diagnostic label — the whole database is one class, and that is what makes
+  it the standard normal control and normal-HRV reference.
+citation: >
+  Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG, Mietus
+  JE, Moody GB, Peng C-K, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet:
+  Components of a New Research Resource for Complex Physiologic Signals.
+  Circulation 101(23):e215-e220 (2000). The database itself has no paper of its
+  own; PhysioNet asks for this one.
+doi: "10.13026/C2NK5R"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Hospital / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/nsrdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# THE AMPLITUDE IS UNCALIBRATED BY THE HEADERS' OWN DECLARATION, exactly as in
+# afdb and ltafdb. Every signal line in every header declares a gain of `0`, which
+# is WFDB's code for "uncalibrated", so wfdb falls back to its default of
+# 200 adu/mV and reports the samples as mV. Nothing needs scaling, so this is 1.0.
+#
+# Unlike afdb, PhysioNet's description for this database states no millivolt range
+# at all, so there is no competing figure to reconcile — the 200 wfdb applies is
+# the only calibration anything in or around this release supports.
+signal_unit_scale: 1.0
+leads: 2
+# ECG1/ECG2 in all 18 headers, and that is genuinely all the release says. Like
+# afdb and unlike mitdb, NSRDB never states which anatomical leads these are, so
+# ECGDataset(leads=["ECG1"]) selects a channel position, not a known lead. Do NOT
+# map them onto MLII/V1 by analogy with mitdb: nothing supports it.
+lead_names: ["ECG1", "ECG2"]
+# Nominal 24 h. NOT uniform, and the spread is wide enough to matter for windows:
+# 10,659,840 samples (83,280 s, 23.13 h, record 17052) to 11,960,320 (93,440 s,
+# 25.96 h, records 16483 and 18177). Mean 87,499 s.
+duration_seconds: 86400.0
+sampling_rates: [128]
+default_sampling_rate: 128
+
+# --- File Structure ---
+# No metadata file ships in any form. The headers carry a single comment line,
+# `# <age> <sex>`, and the annotations are everything else. NSRDBSplitter builds
+# this CSV from the .hea and .atr files on first run, via ecgbench.labels.nsrdb.
+# The validation engine re-reads it from disk, so the dataset root must be
+# writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names run 16265 to 19830 and none
+# begins with a zero, so the CSV round-trip cannot destroy them. Contrast afdb
+# ("00735") and ltafdb ("00"), which both need it. export_splits verifies this.
+zero_padded_identifiers: false
+# Null because the release has no subject identifier: the header comment holds age
+# and sex and nothing else — no tape number, no recorder, no subject code.
+# PhysioNet describes 18 recordings from 18 subjects, which is the most that can be
+# asserted, so folds are stratified but ungrouped. This is a fact about the data,
+# not a skipped field.
+patient_id_column: null
+
+signal_path_columns:
+  128: "signal_path"  # bare record stem, e.g. "16265" — the tree is flat
+
+# --- Labels ---
+# One value for all 18 records: PhysioNet's assertion about the cohort ("found to
+# have had no significant arrhythmias"), not something derived from the files.
+# It is here so a user combining this database with an arrhythmia one has a
+# record-level class to join on. It is NOT the stratification label — a constant
+# cannot balance a fold.
+label_column: "cohort_label"
+label_format: "single"
+
+stratification:
+  # NSRDBSplitter takes stratify_class from the label loader: the subject's sex,
+  # 13 F against 5 M. There is no clinical label to use — every record is the same
+  # class — and 18 records over 10 folds admits nothing finer: StratifiedKFold
+  # needs at least one class with n_folds members, which 13/5 clears and an
+  # ectopy- or age-based cut does not (three records have no ectopic beats at all,
+  # and the rest differ by single-digit counts out of ~100,000 beats).
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like afdb, ptbdb and challenge2021: length varies
+  # legitimately and by nearly three hours. Record 17052 holds 10,659,840 samples
+  # against 16483's 11,960,320, and both are complete recordings, so any single
+  # threshold would drop sound records as truncated. Omitting the rate disables the
+  # check rather than making it fire — `truncated_signal` stays in the list below
+  # only so a future re-release with uniform lengths needs one line here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The 12-bit rail, computed from the hardware: adc_zero 0 at wfdb's fallback gain
+  # of 200 puts every possible sample in [-2048, 2047] adu = [-10.24, 10.235] mV.
+  # NOTHING IN THIS RELEASE REACHES IT — the extreme sample anywhere is +/-5.115 mV
+  # — so this check cannot fire on NSRDB 1.0.0, which is the intended state. What
+  # it guards is a mis-scaled copy (microvolts, or a re-release with a declared
+  # gain), which would exceed it by orders of magnitude on the first record.
+  #
+  # Worth knowing, and NOT caught by this check: record 16272 saturates flat at
+  # +/-1023 adu (+/-5.115 mV) for 1,246 samples on ECG1 and 2 on ECG2, and 18184
+  # for 3 samples on ECG2. 1023 is the 11-bit rail, half the declared 12-bit span,
+  # so the recorder's usable range was narrower than the header implies. It is
+  # 0.01% of one record and no threshold in [-10.24, 10.235] would find it.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/nsrdb.py parses the one-line header comment into
+# age and sex, counts the reference beats per symbol, turns the `~` transitions
+# into seconds of clean and per-channel noisy time, measures the annotated span
+# against the record length, and summarises whole-record HRV from the RR
+# intervals. There is no source CSV to point at — the headers and annotation
+# files are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "normal sinus rhythm"
+    - "healthy controls"
+    - "heart rate variability"
+    - "beat annotations"
+    - "signal quality"
+    - "two-lead"
+    - "Holter"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    18 long-term ambulatory ECG recordings of subjects referred to the Arrhythmia
+    Laboratory at Boston's Beth Israel Hospital who were found, on review, to have
+    had no significant arrhythmias. Two channels were recorded per subject and
+    digitised from analog Holter tape at 128 Hz with 12-bit resolution; the headers
+    name them ECG1 and ECG2 and state no electrode placement. Each recording runs
+    a full day, 23.13 h to 25.96 h. The reference annotations are beat labels —
+    1,729,629 of them, 1,729,502 normal — together with per-channel signal-quality
+    transitions and isolated-artifact markers. No rhythm annotations, diagnoses,
+    medications or clinical descriptions were released; the only subject-level
+    fields are age and sex, in a single header comment line. Beat annotation stops
+    before the end of every record, covering 79.5% to 95.7% of each.
+  rai_data_biases: >
+    Every subject in this database is a normal sinus rhythm control, so it can
+    measure a model's false-positive rate and nothing else: there is no positive
+    class, no diagnosis, and no severity axis. The cohort is very small — 18
+    subjects — and each contributes one full-day recording, so within-subject data
+    is abundant while between-subject variation is almost absent, which makes
+    record-level splits essential and any sample-level split meaningless. It is
+    also skewed and narrow: 13 of the 18 subjects are women, and every subject is
+    between 20 and 50 years old, so nothing here describes normal ECG or normal
+    heart-rate variability in children or in the elderly — the populations whose
+    normal ranges differ most. Referral to an arrhythmia laboratory is itself a
+    selection: these are people who were investigated for a suspected rhythm
+    problem and cleared, not a community sample. Beat annotations do not cover
+    12.1% of the recorded signal, so a model evaluated on a randomly placed window
+    may be scored against no reference at all. Signal quality varies by more than
+    an order of magnitude across records (0.23% to 9.60% of time annotated noisy),
+    and the isolated-artifact count spans three (52 in 16273, 30,782 in 16773), so
+    a per-record metric is not comparable across records without controlling for
+    it. The recordings predate modern equipment, were digitised from analog tape,
+    and come from one hospital.
+  rai_personal_sensitive_info: >
+    De-identified. Each header carries one comment line holding the subject's age
+    and sex and nothing else — no name, no date, no medications, no clinical
+    description and no subject or tape identifier. The only other per-record field
+    is a start time of day, with no date attached. The record names are five-digit
+    numbers from the source institution's own numbering and are the only
+    identifiers present. Ages are 20 to 50, so no subject falls in the range that
+    would require special handling under the common 89-and-over convention.

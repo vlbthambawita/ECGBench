@@ -28,6 +28,7 @@ from . import (  # noqa: F401
     mitdb,
     ningbo_iva,
     norwegian_athlete_ecg,
+    nsrdb,
     ptbdb,
     ptbxl,
     sami_trop,

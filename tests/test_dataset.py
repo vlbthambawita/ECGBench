@@ -1539,6 +1539,37 @@ class TestPerRecordLeadLayouts:
         with pytest.raises(ValueError, match="requested more than once"):
             _resolve_leads(["ECG", "ECG"], ["ECG", "ECG"], "ltafdb")
 
+    def test_nsrdb_channels_are_positions_like_afdb_and_not_named_leads(self):
+        """NSRDB's headers spell ECG1/ECG2 and, like afdb, name no anatomy.
+
+        Same institution and same Arrhythmia Laboratory as the MIT-BIH Arrhythmia
+        Database, which does document MLII/V1 — and the same absence of any
+        electrode placement statement as afdb. All 18 headers agree on the two
+        names, so the one layout needs neither per-record mechanism.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("nsrdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+    def test_the_three_two_lead_mit_bih_holters_present_one_convention(self):
+        """afdb, ltafdb and nsrdb all expose ECG1/ECG2, for three reasons.
+
+        afdb's headers spell it; ltafdb's call both channels "ECG" and ECGBench
+        numbers them so both are reachable by name; nsrdb's spell it like afdb.
+        None of the three states an electrode placement, so all three are channel
+        positions — and stacking any of them with mitdb by index crosses leads.
+        """
+        from ecgbench.config import load_config
+
+        slugs = ("afdb", "ltafdb", "nsrdb")
+        assert {tuple(load_config(s).lead_names) for s in slugs} == {("ECG1", "ECG2")}
+        assert load_config("mitdb").lead_names == ["MLII", "V1"]
+
 
 class TestZeroPaddedRecordIds:
     """Fold CSVs must round-trip identifiers as strings, or afdb silently breaks.
