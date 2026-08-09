@@ -1556,17 +1556,39 @@ class TestPerRecordLeadLayouts:
         assert config.alternate_lead_names is None
         assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
 
-    def test_the_three_two_lead_mit_bih_holters_present_one_convention(self):
-        """afdb, ltafdb and nsrdb all expose ECG1/ECG2, for three reasons.
+    def test_svdb_channels_are_positions_and_the_catalogue_once_said_otherwise(self):
+        """SVDB's headers spell ECG1/ECG2 and, like afdb and nsrdb, name no anatomy.
 
-        afdb's headers spell it; ltafdb's call both channels "ECG" and ECGBench
-        numbers them so both are reachable by name; nsrdb's spell it like afdb.
-        None of the three states an electrode placement, so all three are channel
-        positions — and stacking any of them with mitdb by index crosses leads.
+        This one is worth its own test because the claim it refutes was shipped:
+        the catalogue entry described SVDB as "2-lead (MLII + V1) · 360 Hz" before
+        this config existed, and both halves were wrong — the recordings are 128 Hz
+        and all 78 headers name the channels ECG1/ECG2 with no electrode placement
+        stated anywhere in the release. The plausible-looking values came from
+        assuming mitdb's properties carry across, which is exactly what
+        ``lead_names`` exists to stop.
         """
         from ecgbench.config import load_config
 
-        slugs = ("afdb", "ltafdb", "nsrdb")
+        config = load_config("svdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        assert config.sampling_rates == [128]
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+    def test_the_four_two_lead_mit_bih_holters_present_one_convention(self):
+        """afdb, ltafdb, nsrdb and svdb all expose ECG1/ECG2, for three reasons.
+
+        afdb's headers spell it; ltafdb's call both channels "ECG" and ECGBench
+        numbers them so both are reachable by name; nsrdb's and svdb's spell it
+        like afdb. None of the four states an electrode placement, so all four are
+        channel positions — and stacking any of them with mitdb by index crosses
+        leads.
+        """
+        from ecgbench.config import load_config
+
+        slugs = ("afdb", "ltafdb", "nsrdb", "svdb")
         assert {tuple(load_config(s).lead_names) for s in slugs} == {("ECG1", "ECG2")}
         assert load_config("mitdb").lead_names == ["MLII", "V1"]
 

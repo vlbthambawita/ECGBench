@@ -170,10 +170,33 @@ eleven automated measurements for `chapman_shaoxing`, free-text machine reports
 plus nine interval/axis measurements for `mimic_iv_ecg`, reference beat counts for
 `incartdb`, protocol phase and balloon-occlusion timings for `staffiii`,
 AHA/ACC/HRS statements with their modifiers for `sph`, the ablation-confirmed
-arrhythmia origin for `ningbo_iva`. A dataset
+arrhythmia origin for `ningbo_iva`, per-symbol beat counts plus their AAMI EC57
+reduction for `svdb`. A dataset
 that genuinely has none (`mimic_iv_ecg_demo`) raises
 `LabelsUnavailableError` naming where labels could come from, rather than
 returning empty columns.
+
+**Beat symbols are not comparable across the MIT-BIH databases, so `svdb` exposes
+the AAMI reduction alongside them.** A supraventricular beat is annotated `S` in
+`svdb` (12,188 of them) and `A` in `mitdb` (2,546, with `S` used twice), so
+concatenating the two on the raw symbol trains a model on two disjoint
+vocabularies for one phenomenon. The `aami_N/S/V/F/Q` columns collapse `A`, `a`,
+`J` and `S` to class `S` — and `L`, `R`, `B` to `N` — and are what to join on.
+`AAMI_CLASSES` covers both databases' symbols, so it also reduces `mitdb`, whose
+loader exposes raw per-symbol counts only:
+
+```python
+from ecgbench.labels.svdb import AAMI_CLASSES
+
+sv = load_labels("svdb",  data_path="/data/svdb/1.0.0/")
+mi = load_labels("mitdb", data_path="/data/mitdb/1.0.0/")
+
+sv["aami_S"].sum() / sv["n_beats"].sum()   # 0.0661  <- the reason svdb exists
+
+# mitdb keeps the raw symbols, so reduce them with the same table:
+sveb = [f"beat_{s}" for s, c in AAMI_CLASSES.items() if c == "S" and f"beat_{s}" in mi]
+mi[sveb].to_numpy().sum() / mi["n_beats"].sum()    # 0.0254
+```
 
 ### Leads and units
 
@@ -227,6 +250,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `challenge2017` | **`ECG` — one channel, and it is not called `I`.** The AliveCor device gives a nominal lead I (LA-RA) equivalent, but it does not enforce orientation, so the paper reports that **many traces are inverted (RA-LA)** and no record says which. The source's own channel name is the only honest one; naming it `I` would let it be stacked with 12-lead lead I while an unknown fraction carries the opposite sign |
 | `ltafdb` | **`ECG1`, `ECG2`** — worse than `afdb`: every header calls **both** channels `ECG`, the same string twice, so there is nothing to tell them apart by. These two names are positions ECGBench assigns so `leads=` works at all. Again not MLII/V1 |
 | `nsrdb` | **`ECG1`, `ECG2`** — like `afdb`, and from the same Beth Israel arrhythmia laboratory as `mitdb`: the headers spell the two names and state no electrode placement, so these are channel positions too |
+| `svdb` | **`ECG1`, `ECG2`** — like `afdb` and `nsrdb`. Worth singling out because this catalogue's own entry claimed **`MLII` + `V1` at 360 Hz** before the config was written, and both halves were wrong: the recordings are **128 Hz** and all 78 headers name the channels `ECG1`/`ECG2` with no placement stated. The values came from assuming `mitdb`'s properties carry across, which is the exact failure `lead_names` exists to prevent |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of

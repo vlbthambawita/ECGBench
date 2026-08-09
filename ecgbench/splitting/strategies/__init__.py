@@ -34,6 +34,7 @@ from . import (  # noqa: F401
     sami_trop,
     sph,
     staffiii,
+    svdb,
     wctecgdb,
     zzu_pecg,
 )

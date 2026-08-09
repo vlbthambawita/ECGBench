@@ -1,0 +1,244 @@
+# ECGBench Config: MIT-BIH Supraventricular Arrhythmia Database
+# =============================================================
+# https://physionet.org/content/svdb/1.0.0/
+#
+# 78 half-hour two-lead recordings assembled by Greenwald to supplement the
+# supraventricular examples in the MIT-BIH Arrhythmia Database, which holds only
+# 2,546 atrial premature beats. This release holds 12,198 supraventricular
+# ectopic beats over 39 hours, and that is what it is for.
+#
+# FIVE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE BEAT SYMBOL FOR A SUPRAVENTRICULAR BEAT IS `S` HERE AND `A` IN mitdb.
+#    All 12,188 supraventricular beats in this release are annotated `S`; mitdb
+#    annotates its 2,546 as `A` and uses `S` exactly twice. Concatenating the two
+#    databases on the raw symbol trains a model on two disjoint vocabularies for
+#    one phenomenon. The label loader exposes `aami_N/S/V/F/Q` — the AAMI EC57
+#    five-class reduction, under which `A`, `a`, `J` and `S` all collapse to `S`
+#    — and that is the column to combine on.
+#
+# 2. THE HEADERS CARRY NO COMMENTS AT ALL, so there is no age, no sex, no subject
+#    identifier, no medication list and no clinical description — not withheld,
+#    simply never released. mitdb has all of these and nsrdb has age and sex; this
+#    database has none. `patient_id_column` is null for that reason and folds are
+#    stratified but ungrouped.
+#
+# 3. THERE IS EFFECTIVELY NO RHYTHM ANNOTATION LAYER. The entire release holds
+#    ONE `+` annotation — `(N` at sample 112,143 of record 852 — against 1,291 in
+#    mitdb. There is no `dominant_rhythm` to be had, so the label is beat-derived
+#    and `label_column` is the SVEB burden band rather than a released diagnosis.
+#
+# 4. FIVE RECORDS CONTAIN NO SUPRAVENTRICULAR ECTOPY WHATSOEVER (802, 803, 804,
+#    805, 893) and a sixth holds one beat (811). At the other end, record 865 is
+#    the only record in this catalogue where ectopic beats outnumber normal ones:
+#    1,818 SVEB and 235 VEB against 1,102 normal. `sveb_fraction` spans 0.000 to
+#    0.575 and is what folds are stratified on.
+#
+# 5. HALF THE HEADERS DECLARE AN UNCALIBRATED GAIN. 37 of 78 signal specifications
+#    declare gain `0`, WFDB's code for "uncalibrated"; the other 41 declare `200`.
+#    wfdb substitutes 200 adu/mV wherever it reads 0, so all 78 records come back
+#    in millivolts and nothing needs scaling — see signal_unit_scale below.
+#
+# ALL 416 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt, including
+# the 78 `.hea-` and 24 `.atr-` files, which are PhysioNet's superseded revisions
+# (the 24 revised `.atr` files are dated 2010 against the originals' 1992). The
+# record list comes from the shipped RECORDS file, so the backups cannot enter the
+# partition.
+#
+# NO RECORD OVERLAP with mitdb or nsrdb, checked rather than assumed: quantised
+# RR-interval 20-grams share 0 n-grams with any mitdb record and at most 11 with
+# any nsrdb record, against a noise floor of 27 measured between DIFFERENT svdb
+# records. Different recordings, same laboratory and era.
+
+name: "MIT-BIH Supraventricular Arrhythmia Database"
+slug: "svdb"
+version: "1.0.0"
+url: "https://physionet.org/content/svdb/1.0.0/"
+download_url: null  # SVDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  78 half-hour two-channel ambulatory ECG recordings, digitised at 128 Hz, chosen
+  to supplement the examples of supraventricular arrhythmia in the MIT-BIH
+  Arrhythmia Database. The reference annotations are beat labels: 184,583 beats,
+  of which 162,339 are normal, 12,188 supraventricular premature, 9,943
+  ventricular premature, 79 unclassifiable, 23 fusion, 9 nodal premature, 1
+  aberrated atrial premature and 1 bundle branch block. Alongside them are 2,211
+  isolated-artifact markers and 1,082 per-channel signal-quality transitions,
+  which between them mark 2.59% of the recorded time as noisy on at least one
+  channel. The two channels are named ECG1 and ECG2 in the headers with no
+  statement of which anatomical leads they are, and the release ships no
+  demographics, no subject identifiers and no diagnoses. Beat annotation covers
+  essentially the whole of every record.
+citation: >
+  Greenwald SD. Improved detection and classification of arrhythmias in
+  noise-corrupted electrocardiograms using contextual information. Ph.D. thesis,
+  Harvard-MIT Division of Health Sciences and Technology, 1990. PhysioNet asks
+  that PhysioBank be cited alongside it: Goldberger AL, Amaral LAN, Glass L,
+  Hausdorff JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE.
+  PhysioBank, PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C2V30W"
+
+creators:
+  - type: Organization
+    name: "Harvard-MIT Division of Health Sciences and Technology / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/svdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 1.0, and the reasoning matters because the headers disagree with each other.
+# 37 of the 78 records declare a gain of `0` on both signal lines, which is WFDB's
+# code for "uncalibrated"; the other 41 declare `200`. wfdb substitutes its
+# default of 200 adu/mV wherever it reads 0, so `rdrecord` reports mV for all 78
+# and `adc_gain` comes back as 200.0 for every one of them. Verified by reading
+# all 78. `header_declares_uncalibrated` in the labels records which is which.
+signal_unit_scale: 1.0
+leads: 2
+# ECG1/ECG2 in all 78 headers, and that is genuinely all the release says. Like
+# afdb and nsrdb, and unlike mitdb, this database never states which anatomical
+# leads these are, so ECGDataset(leads=["ECG1"]) selects a channel position, not a
+# known lead. The catalogue entry claimed MLII/V1 before this config was written;
+# nothing in the release supports that, and it has been corrected.
+lead_names: ["ECG1", "ECG2"]
+duration_seconds: 1800.0  # 230,400 samples at 128 Hz, uniform across all 78
+sampling_rates: [128]
+default_sampling_rate: 128
+
+# --- File Structure ---
+# No metadata file ships in any form, and unlike mitdb and nsrdb there are not
+# even header comments to parse — every header is four lines of signal
+# specification. SVDBSplitter builds this CSV from the .atr annotations on first
+# run, via ecgbench.labels.svdb. The validation engine re-reads it from disk, so
+# the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names run 800-812, 820-829 and
+# 840-894, and none begins with a zero, so the CSV round-trip cannot destroy them.
+# Contrast afdb ("00735") and ltafdb ("00"), which both need it. export_splits
+# verifies this rather than trusting the flag.
+zero_padded_identifiers: false
+# Null because the release has no subject identifier of any kind — no header
+# comment, no tape number, no subject code. PhysioNet does not even state how many
+# subjects the 78 records come from. mitdb can group on its tape number and this
+# database cannot, so folds are stratified but ungrouped. This is a fact about the
+# data, not a skipped field.
+patient_id_column: null
+
+signal_path_columns:
+  128: "signal_path"  # bare record stem, e.g. "800" — the tree is flat
+
+# --- Labels ---
+# The SVEB burden band, derived from the beat annotations — there is no released
+# diagnosis and only one rhythm annotation in the whole database, so a record-level
+# clinical label does not exist here. It is a coarsening of the continuous
+# `sveb_fraction`; train on that, or on the aami_* counts, not on this.
+label_column: "sveb_burden"
+label_format: "single"
+
+stratification:
+  # SVDBSplitter takes stratify_class from the label loader: the SVEB burden band,
+  # at fixed edges of 1%, 3% and 10% of beats, giving 21/20/23/14 records. Fixed
+  # edges rather than quantiles so a re-release cannot silently relabel every
+  # record. There is nothing else to stratify on — no demographics, no rhythm
+  # annotations, no diagnoses. See ecgbench/labels/svdb.py:attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # Uniform: all 78 records are exactly 230,400 samples, so unlike afdb and nsrdb
+  # the truncation check can be switched on rather than disabled.
+  expected_samples:
+    128: 230400
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The FORMAT-212 container, not the declared resolution — and the difference is
+  # the point. Every signal line declares `10` bits with adc_zero 0, which would
+  # put every sample in [-512, 511] adu = [-2.56, 2.555] mV. The data does not
+  # respect that: samples run to -1125 and +1022 adu, i.e. -5.625 to +5.11 mV, so
+  # the declared resolution is nominal and a threshold set from it would fail most
+  # of the release. What actually bounds the samples is format 212's 12 bits,
+  # [-2048, 2047] adu at 200 adu/mV = [-10.24, 10.235] mV.
+  #
+  # So this check cannot fire on SVDB 1.0.0, which is the intended state — the
+  # extreme sample anywhere is -5.625 mV, well inside. What it guards is a
+  # mis-scaled copy (microvolts, or a re-release declaring a real gain on the 37
+  # uncalibrated records), which would exceed it on the first record.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/svdb.py counts the reference beats per symbol,
+# reduces them to the AAMI EC57 five classes so this database can be combined with
+# mitdb, derives the SVEB burden, turns the `~` transitions into seconds of clean
+# and per-channel noisy time, and summarises whole-record HRV. There is no source
+# CSV to point at — the annotation files are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "supraventricular arrhythmia"
+    - "atrial premature beats"
+    - "arrhythmia"
+    - "beat annotations"
+    - "signal quality"
+    - "two-lead"
+    - "Holter"
+    - "ambulatory"
+    - "PhysioNet"
+  rai_data_collection: >
+    78 half-hour two-channel ambulatory ECG recordings, assembled by Scott
+    Greenwald at the Harvard-MIT Division of Health Sciences and Technology and
+    selected to supplement the supraventricular arrhythmia examples in the MIT-BIH
+    Arrhythmia Database, which contains few of them. The recordings were digitised
+    from analog Holter tape at 128 Hz; the headers name the two channels ECG1 and
+    ECG2 and state no electrode placement, and 37 of the 78 declare their gain as
+    uncalibrated. Every record is exactly 230,400 samples, 1800 s. The reference
+    annotations are beat labels — 184,583 of them, 12,188 supraventricular and
+    9,943 ventricular — together with 2,211 isolated-artifact markers and 1,082
+    per-channel signal-quality transitions. Exactly one rhythm annotation was
+    released, in record 852. No demographics, subject identifiers, medications,
+    diagnoses or clinical descriptions accompany the signals; the headers carry no
+    comment lines at all. Twenty-four of the annotation files were revised in 2010,
+    and the superseded copies ship alongside them.
+  rai_data_biases: >
+    Selected, not sampled. These 78 records were chosen precisely because they
+    contain supraventricular ectopy, so the prevalence here reflects the selection
+    criterion and describes no clinical population — under the AAMI reduction,
+    supraventricular beats are 6.61% of all beats in this database against 2.54%
+    in the MIT-BIH Arrhythmia Database. The selection is also uneven: five records
+    contain no
+    supraventricular ectopy at all and one contains a single beat, while record 865
+    is 57.5% supraventricular and holds more ectopic beats than normal ones. Class
+    imbalance at the beat level is severe in the other direction — 162,339 normal
+    beats against 23 fusion, 9 nodal premature, 1 aberrated atrial premature and 1
+    bundle branch block beat, so the rare classes cannot support evaluation. The
+    beat symbol for a supraventricular beat is S here and A in the MIT-BIH
+    Arrhythmia Database, so naive concatenation of the two produces inconsistent
+    labels. Nothing is known about the subjects: no age, no sex, no count of how
+    many people the 78 recordings represent, and therefore no way to check
+    demographic coverage, no way to group records by subject, and no way to rule
+    out that one person contributed several. Signal quality varies by more than an
+    order of magnitude across records, from no noise annotation at all in 35
+    records to 22.4% of the recording in record 868. The recordings predate modern
+    equipment and were digitised from analog tape at a rate low enough that fine
+    morphology is not resolved.
+  rai_personal_sensitive_info: >
+    De-identified, and more completely than most of this catalogue: the headers
+    carry no comment lines whatsoever, so no age, sex, medication, date, time of
+    day, clinical description, tape number or subject code is present anywhere in
+    the release. The record names are three-digit numbers from the compiler's own
+    numbering and are the only identifiers of any kind. Because there is no subject
+    identifier, records cannot be linked to each other or to any other database.

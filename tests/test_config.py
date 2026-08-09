@@ -1568,3 +1568,98 @@ def test_nsrdb_label_column_is_a_constant_and_the_config_says_so():
     assert config.label_column == "cohort_label"
     assert COHORT_LABEL == "normal_sinus_rhythm"
     assert config.stratification.method != "direct"
+
+
+def test_load_svdb_config():
+    """MIT-BIH SVDB: two unnamed channels, uniform 30-min records, beat-derived label."""
+    config = load_config("svdb")
+    assert config.slug == "svdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # 37 of the 78 headers declare a gain of 0 — WFDB's "uncalibrated" — and the
+    # other 41 declare 200. wfdb substitutes 200 adu/mV for the zeros, so all 78
+    # records come back in mV and there is nothing to rescale either way.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # ECG1/ECG2 are CHANNEL POSITIONS, as in afdb and nsrdb: the release states no
+    # electrode placement. The catalogue entry claimed MLII/V1 before this config
+    # was written; nothing in the release supports it, so these must not be
+    # "corrected" to mitdb's naming.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [128]
+    assert config.default_sampling_rate == 128
+    assert config.signal_path_columns == {128: "signal_path"}
+    # No metadata ships in any form — and unlike mitdb and nsrdb there are not even
+    # header comments to parse. SVDBSplitter generates this from the .atr files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the release ships no subject identifier of any kind: no header
+    # comments, no tape number, no subject code. PhysioNet does not even state how
+    # many subjects the 78 records represent.
+    assert config.patient_id_column is None
+    # A single layout in all 78 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Records run 800-812, 820-829 and 840-894: no leading zeros, so unlike afdb
+    # and ltafdb the CSV round-trip cannot destroy them.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "sveb_burden"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_svdb_enables_the_truncation_check_because_length_is_uniform():
+    """All 78 records are exactly 230,400 samples (1800.0 s at 128 Hz).
+
+    Unlike afdb, ptbdb and nsrdb, which leave expected_samples empty to DISABLE
+    the check for genuinely variable-length data, this release is uniform, so the
+    rate is declared and the check actually runs.
+    """
+    config = load_config("svdb")
+    assert config.validation.expected_samples == {128: 230400}
+    assert "truncated_signal" in config.validation.checks
+    # 230,400 samples at 128 Hz is exactly the declared duration.
+    assert 230400 / 128 == pytest.approx(config.duration_seconds)
+
+
+def test_svdb_amplitude_range_is_the_format_212_rail_not_the_declared_resolution():
+    """The headers declare 10-bit resolution and the samples do not respect it.
+
+    Every signal line reads ``212 <gain> 10 0``, which would bound every sample to
+    [-512, 511] adu = +/-2.56 mV. The data runs to -1125 and +1022 adu (-5.625 to
+    +5.11 mV), so a threshold taken from the declared resolution would fail most
+    of the release. What actually bounds the samples is format 212's 12 bits,
+    [-2048, 2047] adu at 200 adu/mV.
+    """
+    config = load_config("svdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.235)
+    assert low == pytest.approx(-2048 / 200.0)
+    assert high == pytest.approx(2047 / 200.0)
+    # The observed extreme is -5.625 mV, so the check cannot fire on SVDB 1.0.0 —
+    # it guards a mis-scaled copy. The 10-bit reading would have failed it.
+    assert low < -5.625
+    assert -512 / 200.0 > -5.625
+
+
+def test_svdb_label_column_is_derived_from_beats_not_released():
+    """There is no released diagnosis, and one rhythm annotation in the release.
+
+    ``sveb_burden`` is a coarsening of ``sveb_fraction``, which the label loader
+    derives from the AAMI reduction of the beat annotations. Stratification is
+    custom_function rather than ``direct`` so the band is computed once, in the
+    label loader, and the splitter reads it instead of recomputing it.
+    """
+    from ecgbench.labels.svdb import SVEB_BURDEN_BANDS, SVEB_BURDEN_EDGES
+
+    config = load_config("svdb")
+    assert config.label_column == "sveb_burden"
+    assert config.stratification.method == "custom_function"
+    # One more band than there are edges, or pd.cut silently mislabels.
+    assert len(SVEB_BURDEN_BANDS) == len(SVEB_BURDEN_EDGES) + 1
+    assert SVEB_BURDEN_EDGES == (0.01, 0.03, 0.10)

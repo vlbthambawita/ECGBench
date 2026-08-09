@@ -6847,3 +6847,234 @@ class TestNSRDBLabels:
 
         with pytest.raises(LabelSourceMissingError, match="nsrdb"):
             scan_records(tmp_path)
+
+
+class TestSVDBLabels:
+    """MIT-BIH SVDB: no header comments at all, and a beat vocabulary that clashes.
+
+    This is the fourth MIT-BIH two-lead Holter release in the catalogue and it is
+    the most bare: mitdb carries demographics, medications and clinical text in its
+    header comments, nsrdb carries `# <age> <sex>`, and this one carries no comment
+    lines whatsoever. Everything the loader returns comes from the `.atr` files.
+
+    The two things it must get right are the AAMI reduction — because this release
+    spells a supraventricular beat `S` where mitdb spells it `A`, so the raw symbols
+    are not comparable across the two — and the signal-quality head, because unlike
+    nsrdb four records here open with a transition *into* clean.
+    """
+
+    HEADER = (
+        "800 2 128 230400\n"
+        "800.dat 212 200 10 0 -101 -25183 0 ECG1\n"
+        "800.dat 212 200 10 0 123 10510 0 ECG2\n"
+    )
+    HEADER_UNCALIBRATED = (
+        "820 2 128 230400\n"
+        "820.dat 212 0 10 0 -14 -6899 0 ECG1\n"
+        "820.dat 212 0 10 0 -7 -19211 0 ECG2\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("svdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the .atr files are the source
+        assert spec.join_column == "record_name"
+
+    def test_the_headers_carry_no_comments_at_all(self, tmp_path):
+        """Not withheld — never released. There is nothing to parse.
+
+        mitdb's headers on records from the same era carry age, sex, medications, a
+        tape number, a recorder and free clinical text; nsrdb's carry age and sex.
+        This release carries none, which is why ``patient_id_column`` is null and
+        why there is no ``parse_header_comments`` in this module at all.
+        """
+        from ecgbench.labels.svdb import parse_signal_header
+
+        (tmp_path / "800.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_signal_header(tmp_path / "800.hea")
+
+        assert fields["lead_names"] == "ECG1|ECG2"
+        assert fields["n_samples"] == 230400
+        assert set(fields) == {
+            "lead_names",
+            "n_samples",
+            "declared_gain",
+            "header_declares_uncalibrated",
+        }
+        assert "age" not in fields and "sex" not in fields
+
+    def test_half_the_headers_declare_an_uncalibrated_gain(self, tmp_path):
+        """37 of 78 declare 0; wfdb substitutes 200 adu/mV, so mV either way.
+
+        The flag exists so an analysis that cares about absolute amplitude can
+        exclude those records — not because anything needs rescaling.
+        """
+        from ecgbench.labels.svdb import parse_signal_header
+
+        (tmp_path / "800.hea").write_text(self.HEADER, encoding="utf-8")
+        (tmp_path / "820.hea").write_text(self.HEADER_UNCALIBRATED, encoding="utf-8")
+
+        calibrated = parse_signal_header(tmp_path / "800.hea")
+        assert calibrated["declared_gain"] == 200.0
+        assert calibrated["header_declares_uncalibrated"] is False
+
+        uncalibrated = parse_signal_header(tmp_path / "820.hea")
+        assert uncalibrated["declared_gain"] == 0.0
+        assert uncalibrated["header_declares_uncalibrated"] is True
+
+    def test_the_aami_reduction_is_what_makes_svdb_and_mitdb_comparable(self):
+        """`S` here, `A` in mitdb — the same phenomenon under two symbols.
+
+        This is the trap the whole module exists to close. Concatenating the two
+        databases on the raw beat symbol produces a model trained on two disjoint
+        vocabularies for supraventricular ectopy. Under AAMI EC57, ``A``, ``a``,
+        ``J`` and ``S`` all collapse to class ``S``.
+        """
+        from ecgbench.labels.svdb import AAMI_CLASSES, AAMI_ORDER
+
+        # Both spellings must land in the same class, or the reduction is useless.
+        assert AAMI_CLASSES["S"] == "S"
+        assert AAMI_CLASSES["A"] == "S"
+        assert AAMI_CLASSES["a"] == "S"
+        assert AAMI_CLASSES["J"] == "S"
+        # Bundle branch block beats are normal-class under EC57, not their own.
+        assert AAMI_CLASSES["B"] == "N"
+        assert AAMI_CLASSES["L"] == AAMI_CLASSES["R"] == "N"
+        assert AAMI_CLASSES["V"] == AAMI_CLASSES["E"] == "V"
+        assert set(AAMI_CLASSES.values()) == set(AAMI_ORDER)
+
+    def test_every_beat_symbol_in_this_release_has_an_aami_class(self):
+        """A beat with no class would count in n_beats and vanish from the sum.
+
+        The scanner warns when that happens, but the eight symbols this release
+        actually uses must all map, or ``aami_*`` silently stops summing to
+        ``n_beats``.
+        """
+        from ecgbench.labels.svdb import AAMI_CLASSES, BEAT_NAMES, BEAT_SYMBOLS
+
+        assert set(BEAT_SYMBOLS) == set(BEAT_NAMES)
+        assert set(BEAT_SYMBOLS) <= set(AAMI_CLASSES)
+
+    def test_signal_quality_is_a_bitmask_over_the_two_channels(self):
+        """`~` subtype 0/1/2/3 is clean / ECG1 / ECG2 / both, as seconds."""
+        from ecgbench.labels.svdb import _quality_seconds
+
+        # 1280 samples = 10 s at 128 Hz.
+        secs, unasserted = _quality_seconds(
+            [(1280, 2), (2560, 3), (3840, 1), (5120, 0)], sig_len=6400, fs=128.0
+        )
+
+        assert secs["noisy_ECG2"] == pytest.approx(10.0)
+        assert secs["noisy_both"] == pytest.approx(10.0)
+        assert secs["noisy_ECG1"] == pytest.approx(10.0)
+        # 10 s before the first transition plus 10 s after the return to clean.
+        assert secs["clean"] == pytest.approx(20.0)
+        assert sum(secs.values()) == pytest.approx(50.0)
+        # The first event is a transition INTO noise, so the head is asserted.
+        assert unasserted == pytest.approx(0.0)
+
+    def test_a_leading_transition_into_clean_is_reported_as_unasserted(self):
+        """Four records do this, and nsrdb's assumption does not survive it.
+
+        nsrdb can count the span before the first `~` as clean unconditionally,
+        because in all 18 of its records the first `~` is a transition into noise.
+        Here 803, 855, 857 and 885 open with subtype 0 — a return *to* clean —
+        which means nothing ever asserted what the preceding span was. For 803 that
+        span is 1,555.1 s, 86% of the record. It is still counted clean, which is
+        what WFDB does, but it is reported so the assumption is visible.
+        """
+        from ecgbench.labels.svdb import _quality_seconds
+
+        secs, unasserted = _quality_seconds([(1280, 0)], sig_len=2560, fs=128.0)
+        assert secs["clean"] == pytest.approx(20.0)
+        assert unasserted == pytest.approx(10.0)
+
+        # A record with no `~` at all is clean end to end, and asserts nothing
+        # either way — there is no leading event to interpret.
+        secs, unasserted = _quality_seconds([], sig_len=1280, fs=128.0)
+        assert secs["clean"] == pytest.approx(10.0)
+        assert unasserted == pytest.approx(0.0)
+
+    def test_stratify_class_is_the_sveb_burden_band_and_is_derived_once(self):
+        """The splitter reads this column rather than recomputing it.
+
+        Two derivations of one label is the bug this rule exists to prevent —
+        PTB-XL had exactly that and they drifted apart.
+        """
+        from ecgbench.labels.svdb import attach_stratify_class
+
+        df = pd.DataFrame(
+            {
+                "record_name": ["802", "800", "888", "854", "865"],
+                "sveb_fraction": [0.0, 0.0159, 0.0294, 0.0684, 0.5750],
+            }
+        )
+        out = attach_stratify_class(df)
+
+        assert out["sveb_burden"].tolist() == [
+            "minimal",
+            "low",
+            "low",
+            "moderate",
+            "high",
+        ]
+        assert out["stratify_class"].tolist() == out["sveb_burden"].tolist()
+
+    def test_the_band_edges_are_right_closed_so_zero_lands_in_minimal(self):
+        """Five records have no supraventricular ectopy at all.
+
+        A left-open first bin would leave them NaN, which becomes the string "nan"
+        as its own fold class — a silent fifth band of five records that
+        StratifiedKFold cannot spread over ten folds.
+        """
+        from ecgbench.labels.svdb import attach_stratify_class
+
+        out = attach_stratify_class(pd.DataFrame({"sveb_fraction": [0.0, 0.01, 1.0]}))
+        assert out["sveb_burden"].tolist() == ["minimal", "minimal", "high"]
+        assert "nan" not in out["sveb_burden"].tolist()
+
+    def test_markers_never_reach_the_beat_count(self, tmp_path):
+        """`|` and `~` are not beats — 2,211 and 1,082 of them in the release.
+
+        Adding them to n_beats is how a beat total gets quoted that the database
+        does not have.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.svdb import summarise_annotations
+
+        wfdb.wrann(
+            "800",
+            "atr",
+            sample=np.array([100, 228, 356, 484, 612, 740, 868]),
+            symbol=["|", "N", "S", "N", "V", "~", "a"],
+            subtype=np.array([0, 0, 0, 0, 0, 1, 0]),
+            fs=128,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "800", sig_len=1280)
+
+        assert counts["n_beats"] == 5  # N, S, N, V, a
+        assert counts["n_isolated_artifacts"] == 1
+        assert counts["n_quality_changes"] == 1
+        assert counts["beat_N"] == 2
+        assert counts["beat_S"] == 1
+        assert counts["beat_a"] == 1
+        # `a` is supraventricular under AAMI even though its symbol is not `S`.
+        assert counts["aami_S"] == 2
+        assert counts["aami_N"] == 2
+        assert counts["aami_V"] == 1
+        assert counts["n_sveb"] == 2
+        assert counts["sveb_fraction"] == pytest.approx(2 / 5)
+        # The aami_* columns must account for every beat, or the reduction has
+        # silently dropped one.
+        assert sum(counts[f"aami_{c}"] for c in ("N", "S", "V", "F", "Q")) == counts["n_beats"]
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.svdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="svdb"):
+            scan_records(tmp_path)
