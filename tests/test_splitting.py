@@ -5208,3 +5208,181 @@ class TestSHDBAFSplitter:
         }
         assert fold_of["005"] == fold_of["020"]
         assert fold_of["066"] == fold_of["118"]
+
+
+class TestSTDBSplitter:
+    """28 ST-change recordings: no metadata at all, and two channel layouts."""
+
+    def _header(self, rec, n_samples, n_sig=2, gains=(296, 300)):
+        """A real STDB header: no comment line, no start time, bare "ECG" descriptions.
+
+        The absence of a comment line is the point — nsrdb has ``# <age> <sex>``
+        and sddb has ``#vfon:``, and this release has nothing to parse at all.
+        """
+        lines = [f"{rec} {n_sig} 360 {n_samples}"]
+        for i in range(n_sig):
+            lines.append(f"{rec}.dat 212 {gains[i]} 12 0 40 0 0 ECG")
+        return "\n".join(lines) + "\n"
+
+    def _tree(self, tmp_path, records, n_samples=360_000):
+        """records: [(rec, n_sig)] -> header, .dat, .atr and a RECORDS file."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, n_sig in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, n_samples, n_sig), encoding="utf-8"
+            )
+            beats = np.arange(200) * 360 + 1000
+            wfdb.wrann(
+                rec, "atr",
+                sample=beats,
+                symbol=["N"] * 200,
+                subtype=np.zeros(200, dtype=int),
+                aux_note=[""] * 200,
+                fs=360, write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, _ in records) + "\n", encoding="utf-8"
+        )
+
+    def _records(self):
+        """The real 28: 300-327, with 313-317 and 319-323 holding a single channel."""
+        single = {"313", "314", "315", "316", "317", "319", "320", "321", "322", "323"}
+        return [(str(n), 1 if str(n) in single else 2) for n in range(300, 328)]
+
+    def test_load_metadata_builds_the_csv_the_validator_will_reread(self, tmp_path):
+        """Nothing ships to read, so the splitter writes what validate_dataset needs.
+
+        ``validate_dataset`` re-reads ``metadata_csv`` from disk rather than reusing
+        this frame, so an in-memory-only result would leave validation with no
+        metadata — the Chapman failure mode.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("stdb")
+        df = STDBSplitter().load_metadata(tmp_path, config)
+
+        assert len(df) == 28
+        assert (tmp_path / config.metadata_csv).exists()
+        for column in ("record_name", "signal_path", "stratify_class", "n_channels"):
+            assert column in df.columns
+        # Record ids and signal paths must survive as strings for wfdb.
+        assert df["record_name"].iloc[0] == "300"
+        assert df["signal_path"].iloc[0] == "300"
+
+    def test_the_cached_csv_is_reread_with_record_ids_as_strings(self, tmp_path):
+        """Second call takes the cache — and must not let pandas make "300" an int."""
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("stdb")
+        splitter = STDBSplitter()
+        splitter.load_metadata(tmp_path, config)
+        again = splitter.load_metadata(tmp_path, config)
+
+        # What matters is that the values stay strings — the exact pandas dtype
+        # for a string column has changed across versions.
+        assert all(isinstance(v, str) for v in again["record_name"])
+        assert all(isinstance(v, str) for v in again["signal_path"])
+        assert list(again["record_name"])[:3] == ["300", "301", "302"]
+
+    def test_stratification_is_the_group_crossed_with_the_channel_count(self, tmp_path):
+        """14 depression_2ch / 9 depression_1ch / 4 elevation_2ch / 1 elevation_1ch.
+
+        Both axes matter and neither alone is enough: the group is the only thing
+        the release documents, and the channel count is what decides whether a
+        record can be batched with its fold-mates.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("stdb")
+        splitter = STDBSplitter()
+        df = splitter.load_metadata(tmp_path, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.value_counts().to_dict() == {
+            "depression_2ch": 14,
+            "depression_1ch": 9,
+            "elevation_2ch": 4,
+            "elevation_1ch": 1,
+        }
+        # The largest class clears 10 folds, which is what keeps StratifiedKFold
+        # from raising despite the singleton.
+        assert labels.value_counts().max() >= 10
+
+    def test_the_five_long_term_excerpts_are_the_ones_the_release_names(self, tmp_path):
+        """323-327 and nothing else — the assignment is by record name, not by data."""
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        self._tree(tmp_path, self._records())
+        df = STDBSplitter().load_metadata(tmp_path, load_config("stdb"))
+        elevation = set(df.loc[df["st_change_type"] == "elevation", "record_name"])
+
+        assert elevation == {"323", "324", "325", "326", "327"}
+        assert set(df["group_source"]) == {"landing_page"}
+
+    def test_missing_stratify_column_raises_rather_than_silently_restratifying(self):
+        """A frame not produced by load_metadata must fail loudly."""
+        import pandas as pd
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        df = pd.DataFrame({"record_name": ["300"], "signal_path": ["300"]})
+        with pytest.raises(ValueError, match="stratify_class"):
+            STDBSplitter().get_stratification_labels(df, load_config("stdb"))
+
+    def test_the_registry_resolves_stdb_to_its_own_splitter(self):
+        """A slug mismatch would silently fall back to GenericSplitter."""
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        assert isinstance(get_splitter("stdb"), STDBSplitter)
+
+    def test_folds_keep_both_channel_layouts_in_every_fold(self, tmp_path):
+        """The reason the channel count is crossed into the stratification at all.
+
+        With 10 single-channel records over 10 folds, an unstratified split could
+        leave a fold holding none — or three — and a user selecting
+        ``leads=["ECG1","ECG2"]`` would then see fold sizes vary by a factor of
+        three for a reason nothing announces.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.stdb import STDBSplitter
+
+        config = load_config("stdb")
+        self._tree(tmp_path, self._records())
+        splitter = STDBSplitter()
+        df = splitter.load_metadata(tmp_path, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=10)
+
+        channels = dict(zip(df["record_name"], df["n_channels"]))
+        per_fold = {
+            fold: {channels[r] for r in frame["record_name"]}
+            for fold, frame in result.folds.items()
+        }
+        assert len(per_fold) == 10
+        for fold, layouts in per_fold.items():
+            assert layouts <= {1, 2}
+            assert 2 in layouts, f"fold {fold} holds no two-channel record"
+        # And all but one fold holds a single-channel record too, on this seed.
+        assert sum(1 in layouts for layouts in per_fold.values()) >= 9

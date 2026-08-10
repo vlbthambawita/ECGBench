@@ -9215,3 +9215,285 @@ class TestSHDBAFLabels:
             (tmp_path / "001.hea").read_text().replace("001", "002"), encoding="utf-8"
         )
         assert list(wfdb.rdann(str(tmp_path / "002"), "atr").sample) == [0, 200, 400]
+
+
+class TestSTDBLabels:
+    """MIT-BIH ST Change: a database named for a thing it does not annotate.
+
+    The seventh MIT-BIH-family two-lead release in the catalogue and the thinnest.
+    nsrdb ships a ``# <age> <sex>`` header comment, sddb a landing-page clinical
+    table, chfdb an unaudited annotator; stdb ships **nothing** — no comment line,
+    no clinical table, no subject identifier — and its annotations are beat labels
+    only, despite the name. So what the loader has to get right is not conflating
+    the transcribed group label with a measurement, counting the one record that
+    carries quality markers correctly, and surviving records that hold one channel
+    instead of two.
+    """
+
+    HEADER_2CH = (
+        "300 2 360 3600\n"
+        "300.dat 212 296 12 0 40 0 0 ECG\n"
+        "300.dat 212 300 12 0 -5 0 0 ECG\n"
+    )
+    HEADER_1CH = "313 1 360 3600\n313.dat 212 295 12 0 -74 0 0 ECG\n"
+
+    def test_labels_come_from_headers_and_annotations_with_no_source_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("stdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # nothing shipped could serve as one
+        assert spec.join_column == "record_name"
+
+    def test_the_st_change_database_annotates_no_st_change(self):
+        """The headline fact, pinned so nobody adds an ST column that cannot exist.
+
+        PhysioNet says the annotation files "contain only beat labels; they do not
+        include ST change annotations, as in the European ST-T Database", and the
+        files agree — no ``+`` rhythm markers, no ``s`` ST markers, no aux_note
+        anywhere in the release. Unlike sddb, whose ``.ari`` files DO carry 3,577
+        ``s`` markers, there is nothing here to count, so ``NON_BEAT_COLUMNS``
+        carries no ST entry at all and the module says why in its first paragraph.
+        """
+        from ecgbench.labels import stdb
+
+        assert "s" not in stdb.NON_BEAT_COLUMNS
+        assert "NO ST CHANGE ANNOTATIONS" in stdb.__doc__
+        # The rhythm-change counter exists so a re-release adding `+` is counted
+        # rather than warned about — but it is zero for all 28 records today.
+        assert stdb.NON_BEAT_COLUMNS["+"] == "n_rhythm_changes"
+
+    def test_the_group_label_is_transcribed_and_says_so(self):
+        """``st_change_type`` is one sentence of a web page, not an ST measurement.
+
+        The release names the five long-term excerpts per record and leaves the
+        other 23 to the word "most", so the exercise assignment is by exclusion.
+        ``group_source`` exists to keep that visible in the frame itself: a
+        consumer reading the CSV with no access to this docstring can still tell
+        the column was not measured.
+        """
+        from ecgbench.labels.stdb import (
+            GROUP_SOURCE,
+            LONG_TERM_EXCERPTS,
+            ST_CHANGE_BY_GROUP,
+            record_group,
+        )
+
+        assert GROUP_SOURCE == "landing_page"
+        assert LONG_TERM_EXCERPTS == ("323", "324", "325", "326", "327")
+        assert record_group("323") == "long_term_excerpt"
+        assert record_group("322") == "exercise_stress"
+        assert record_group("300") == "exercise_stress"
+        assert ST_CHANGE_BY_GROUP["long_term_excerpt"] == "elevation"
+        assert ST_CHANGE_BY_GROUP["exercise_stress"] == "depression"
+
+    def test_beats_are_counted_and_reduced_and_quality_markers_are_not_beats(self, tmp_path):
+        """``~`` must never reach n_beats, and N/S/V must land in the AAMI classes.
+
+        Only these four symbols occur in the release — 75,038 N, 815 S, 322 V and
+        six ``~`` — so this is the whole vocabulary, not a sample of it.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.stdb import summarise_annotations
+
+        wfdb.wrann(
+            "300", "atr",
+            sample=np.array([100, 460, 820, 1180, 1540, 1900]),
+            symbol=["N", "S", "N", "V", "N", "~"],
+            subtype=np.array([0, 0, 0, 0, 0, 1]),
+            aux_note=[""] * 6,
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "300", sig_len=3600, fs=360.0)
+
+        assert counts["n_annotations"] == 6
+        assert counts["n_beats"] == 5
+        assert counts["beat_N"] == 3
+        assert counts["beat_S"] == 1
+        assert counts["beat_V"] == 1
+        assert counts["n_quality_changes"] == 1
+        # The AAMI reduction of exactly this vocabulary.
+        assert counts["aami_N"] == 3
+        assert counts["aami_S"] == 1
+        assert counts["aami_V"] == 1
+        assert counts["aami_F"] == 0 and counts["aami_Q"] == 0
+        assert counts["n_ectopic_beats"] == 2
+
+    def test_a_quality_interval_runs_to_the_next_marker_or_the_end_of_the_record(
+        self, tmp_path
+    ):
+        """Record 319's layout: a ``~`` opens an interval, the last one runs to the end.
+
+        319 is the ONLY record in the release with quality annotations, and its
+        last ``~`` opens 850.9 s before the end, which is why 86.2% of it is marked
+        not-clean. Getting the run-to-end rule wrong would report a few seconds
+        instead. ``-1`` is WFDB's "unreadable" and is counted separately from the
+        channel bitmask.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.stdb import summarise_annotations
+
+        # clean [0,360) -> noisy [360,720) -> unreadable [720,1080) -> noisy [1080,3600)
+        wfdb.wrann(
+            "319", "atr",
+            sample=np.array([100, 360, 720, 1080, 3500]),
+            symbol=["N", "~", "~", "~", "N"],
+            subtype=np.array([0, 1, -1, 1, 0]),
+            aux_note=[""] * 5,
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "319", sig_len=3600, fs=360.0)
+
+        assert counts["clean_secs"] == pytest.approx(1.0)          # 0 -> 360 samples
+        assert counts["unreadable_secs"] == pytest.approx(1.0)     # 720 -> 1080
+        assert counts["noisy_ECG1_secs"] == pytest.approx(8.0)     # 1 s + the 7 s tail
+        assert counts["noisy_secs"] == pytest.approx(9.0)
+        assert counts["noisy_fraction"] == pytest.approx(0.9)
+        # The two beats are still beats.
+        assert counts["n_beats"] == 2
+
+    def test_a_record_with_no_quality_markers_reads_as_wholly_clean(self, tmp_path):
+        """27 of 28 records have no ``~`` at all, and that is absence of evidence.
+
+        The WFDB convention makes an unmarked record wholly clean, and the loader
+        follows it — but the docstring says plainly that this means nobody marked
+        it. Pinned so the convention is not mistaken for a per-record measurement.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.stdb import summarise_annotations
+
+        wfdb.wrann(
+            "302", "atr",
+            sample=np.array([100, 460, 820]),
+            symbol=["N", "N", "N"],
+            subtype=np.zeros(3, dtype=int),
+            aux_note=[""] * 3,
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "302", sig_len=3600, fs=360.0)
+
+        assert counts["n_quality_changes"] == 0
+        assert counts["clean_secs"] == pytest.approx(10.0)
+        assert counts["noisy_secs"] == 0.0
+
+        from ecgbench.labels import stdb
+
+        assert "nobody marked" in stdb.__doc__
+
+    def test_the_heart_rate_profile_separates_a_ramp_from_a_flat_recording(self, tmp_path):
+        """``hr_rise_bpm`` is the only per-record evidence about the protocol.
+
+        A stress test ramps and recovers; an ambulatory excerpt does not. Built
+        here as a real ramp so the windowing arithmetic is exercised rather than
+        asserted: 60 bpm for the first two minutes, then 150 bpm.
+        """
+        pytest.importorskip("wfdb")
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.stdb import summarise_annotations
+
+        fs = 360
+        samples = []
+        t = 0.0
+        while t < 120:                      # 60 bpm
+            samples.append(int(t * fs))
+            t += 1.0
+        while t < 240:                      # 150 bpm
+            samples.append(int(t * fs))
+            t += 0.4
+        wfdb.wrann(
+            "306", "atr",
+            sample=np.array(samples),
+            symbol=["N"] * len(samples),
+            subtype=np.zeros(len(samples), dtype=int),
+            aux_note=[""] * len(samples),
+            fs=fs,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "306", sig_len=240 * fs, fs=float(fs))
+
+        assert counts["baseline_hr_bpm"] == pytest.approx(60.0, abs=1.0)
+        assert counts["peak_hr_bpm"] == pytest.approx(150.0, abs=1.0)
+        assert counts["hr_rise_bpm"] == pytest.approx(90.0, abs=2.0)
+        assert counts["n_hr_windows"] >= 4
+
+    def test_stratification_crosses_the_group_with_the_channel_count(self):
+        """14/9/4/1 — and the singleton is tolerated, not an error.
+
+        ``StratifiedKFold`` raises only when EVERY class is smaller than n_folds,
+        so the 14-record class carries the split. Crossing in the channel count is
+        what keeps ``leads=["ECG1","ECG2"]`` from emptying some folds more than
+        others.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.stdb import attach_stratify_class
+
+        df = pd.DataFrame(
+            {
+                "record_name": ["300", "313", "323", "324"],
+                "st_change_type": ["depression", "depression", "elevation", "elevation"],
+                "n_channels": [2, 1, 1, 2],
+            }
+        )
+        out = attach_stratify_class(df)
+        assert list(out["stratify_class"]) == [
+            "depression_2ch",
+            "depression_1ch",
+            "elevation_1ch",
+            "elevation_2ch",
+        ]
+        # The original frame is not mutated.
+        assert "stratify_class" not in df.columns
+
+    def test_a_missing_records_file_names_the_directory_and_the_download(self, tmp_path):
+        """The error has to say where the data comes from — nothing else identifies it."""
+        from ecgbench.config import load_config
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.stdb import load_labels
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            load_labels(tmp_path, load_config("stdb"))
+        message = str(excinfo.value)
+        assert "RECORDS" in message
+        assert "physionet.org/content/stdb" in message
+
+    def test_a_single_channel_record_reports_one_gain_and_no_second(self, tmp_path):
+        """Ten records hold one channel; ``adc_gain_ECG2`` must be NaN, not absent.
+
+        A missing column would break the CSV round-trip for the other 18 records,
+        and a zero would read as a declared gain of zero.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.labels.stdb import scan_records
+
+        (tmp_path / "RECORDS").write_text("313\n")
+        (tmp_path / "313.hea").write_text(self.HEADER_1CH, encoding="utf-8")
+        (tmp_path / "313.dat").write_bytes(b"\x00" * (3600 * 2))
+        wfdb.wrann(
+            "313", "atr",
+            sample=np.array([100, 460, 820]),
+            symbol=["N", "N", "N"],
+            subtype=np.zeros(3, dtype=int),
+            aux_note=[""] * 3,
+            fs=360,
+            write_dir=str(tmp_path),
+        )
+        df = scan_records(tmp_path)
+
+        assert load_config("stdb").slug == "stdb"  # the config this frame feeds
+        assert len(df) == 1
+        row = df.iloc[0]
+        assert row["n_channels"] == 1
+        assert row["adc_gain_ECG1"] == 295.0
+        assert pd.isna(row["adc_gain_ECG2"])
+        assert row["record_group"] == "exercise_stress"
+        assert row["signal_path"] == "313"

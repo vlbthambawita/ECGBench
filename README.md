@@ -215,6 +215,19 @@ cannot reproduce them; and `st_episode_secs` can legitimately exceed the 7,200 s
 recording, because concurrent change in both channels counts twice. See
 `examples/load_edb.py`.
 
+**And one dataset named for ST change annotates none of it.** The MIT-BIH **ST
+Change** Database (`stdb`) is 28 recordings *selected* for transient ST change —
+mostly exercise stress tests — but its annotation files hold beat labels and
+nothing else: 76,175 of the 76,181 annotations across the 28 `.atr` files are
+beats, the other six are signal-quality markers, and there is not a single `+`
+rhythm marker, `s` ST marker or non-empty `aux_note` in the release. PhysioNet says
+so on the landing page and the files agree, so there is no ST measurement, episode
+boundary or deviation to load. `st_change_type` (`depression` for 23 records,
+`elevation` for 323-327) is the landing page's own grouping **transcribed**, which
+is why a `group_source` column carries the constant `landing_page` — and why the
+loader also exposes `hr_rise_bpm`, the measured quantity that checks it. Use `edb`
+or `ltstdb` when you need annotated ST episodes. See `examples/load_stdb.py`.
+
 **Beat symbols are not comparable across the MIT-BIH databases, so `svdb` exposes
 the AAMI reduction alongside them.** A supraventricular beat is annotated `S` in
 `svdb` (12,188 of them) and `A` in `mitdb` (2,546, with `S` used twice), so
@@ -304,9 +317,10 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `chfdb` | **`ECG1`, `ECG2`** — like `afdb`, `nsrdb` and `svdb`, and from the same Beth Israel hospital as `mitdb`: no electrode placement is stated anywhere, so these are channel positions. Note that only the **current** `.hea` files name them — the 15 superseded `.hea-` copies shipped beside them (and listed in the release's own `SHA256SUMS.txt`) carry no signal descriptions at all, because the 2012 revision is what added them |
 | `sddb` | **`ECG1`, `ECG2`** — the `ltafdb` case, not the `afdb` one: every current header calls **both** channels `ECG`, the same string twice, so these two names are positions ECGBench assigns. The 23 superseded `.hea-` copies say `record 30, signal 0` instead — the 2008 revision is what introduced `ECG`. No electrode placement is stated in the headers or on the landing page, so again not MLII/V1. This is also the one dataset whose **ADC gain varies between records**: 800 adu/mV for 21 and **200 for records 39 and 47**, which moves the 12-bit rail from ±2.55875 mV to ±10.235 mV |
 | `qtdb` | **`ECG1`, `ECG2` in 57 of 105 records, and 19 further layouts in the other 48** — the most varied in the catalogue, and the only one whose *modal* layout is a placeholder. Those 57 (every excerpt from `svdb`, `nsrdb`, `stdb`, MIT-BIH Long-Term and the sudden-death Holters) state no electrode placement at all. The 15 MIT-BIH Arrhythmia excerpts match `mitdb`'s names exactly; the 33 European ST-T ones use the ESC's **original electrode nomenclature** (`D3`, `CM5`, `CC5`, `ML5`, `CM2`, `mod.V1`, `V2-V3`) and agree with `edb`'s names for the same bit-identical channels in only **2 of 33**. `D3, V4` and `V4, D3` are both present. See below |
+| `stdb` | **`ECG1`, `ECG2` — but only 18 of the 28 records have both.** The `ltafdb`/`sddb` case for naming (every header describes every channel as the bare word `ECG`, so these are positions ECGBench assigns), plus a second problem those two do not have: **records 313-317 and 319-323 store a single channel**, which nothing in the release mentions. The config declares `alternate_lead_names: {1: ["ECG1"]}`, so `leads=["ECG2"]` raises for those ten rather than returning ECG1. Not MLII/V1 — and the temptation is strongest here, because this release shares `mitdb`'s 360 Hz rate and three-digit record numbering. Its **ADC gain varies by record and by channel**, over 31 values from 161 to 500 adu/mV |
 | `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
 
-**One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
+**Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
 the full one — it drops V2, V4 and V6, so stored position 7 is V2 in one and V3 in the
 other. A single `lead_names` list would therefore return the wrong physical lead for
@@ -324,10 +338,17 @@ ds = ECGDataset("zzu_pecg", split="train", data_path="...", leads=["V2"])
 ds[i]   # ValueError: Lead 'V2' is not in 'zzu_pecg'. Available: [... 'V1', 'V3', 'V5']
 ```
 
+`stdb` is the second case and the simpler one: ten of its 28 records hold one
+channel instead of two, and that layout **is** a prefix of the full one, so nothing
+returns the wrong physical lead. Declaring `alternate_lead_names: {1: ["ECG1"]}`
+buys the error message instead — `leads=["ECG2"]` refuses against a named layout for
+those ten records rather than falling into the generic too-few-leads path.
+
 A dataset that declares no `alternate_lead_names` — every other one — is asserting a
-single layout, and behaves exactly as before. Note that batching `zzu_pecg` needs
-`leads=` as well as `window=`: a batch mixing 9- and 12-lead records cannot be
-stacked.
+single layout, and behaves exactly as before. Note that batching either of these
+needs `leads=` as well as `window=`: a batch mixing layouts cannot be stacked, and
+for `stdb` that is `RuntimeError: stack expects each tensor to be equal size, but
+got [2, 10800] at entry 0 and [1, 10800] at entry 2`.
 
 **And three datasets vary the lead *names* at a constant lead count**, which a
 count-keyed map cannot express at all. Every one of `mitdb`'s 48 records stores

@@ -39,6 +39,7 @@ from . import (  # noqa: F401
     shdb_af,
     sph,
     staffiii,
+    stdb,
     svdb,
     wctecgdb,
     zzu_pecg,

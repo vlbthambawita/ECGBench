@@ -1,0 +1,372 @@
+# ECGBench Config: MIT-BIH ST Change Database
+# ===========================================
+# https://physionet.org/content/stdb/1.0.0/
+#
+# 28 short ECG recordings, most of them exercise stress tests, selected because
+# they exhibit transient ST change. 13.49 hours at 360 Hz. It is the oldest data
+# in this catalogue by provenance — Paul Albrecht's 1983 MIT master's thesis — and
+# the smallest and thinnest release in it.
+#
+# FIVE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE ST CHANGE DATABASE CONTAINS NO ST CHANGE ANNOTATIONS. This is the one
+#    thing every user needs to know and the name works against them. PhysioNet
+#    states it on the landing page — "the annotation files contain only beat
+#    labels; they do not include ST change annotations, as in the European ST-T
+#    Database" — and the files bear it out: 76,175 of the 76,181 annotations in
+#    the 28 `.atr` files are beat labels (75,038 N, 815 S, 322 V) and the other six
+#    are signal-quality markers (`~`); there is not a single `+` rhythm marker or
+#    `s` ST episode anywhere in the release, and every `aux_note` is empty. There
+#    is no ST measurement, no episode boundary, no onset, no deviation in
+#    millivolts, and no per-record ST label of any kind.
+#    For annotated ST episodes use `edb` (European ST-T) or `ltstdb` (Long-Term
+#    ST). What this release offers is 28 recordings SELECTED for ST change, with
+#    reference beats.
+#
+# 2. TEN OF THE 28 RECORDS HOLD ONE CHANNEL, NOT TWO. Records 313, 314, 315, 316,
+#    317, 319, 320, 321, 322 and 323 declare a single signal; the other 18 declare
+#    two. Nothing on the landing page says so, and the catalogue's "2 leads" is
+#    true of 64% of the release. The practical consequence is immediate:
+#    `ecg_collate_fn` stacks signals with torch's `default_collate`, so a batch
+#    mixing 1- and 2-channel records raises `RuntimeError: stack expects each
+#    tensor to be equal size`. Batch with `leads=["ECG1"]`, or filter on the
+#    `n_channels` label column first. `alternate_lead_names` below is what makes
+#    `leads=` resolve by name against whichever layout a record actually has.
+#
+# 3. NOTHING ELSE SHIPS. The headers carry no comment line at all — not the
+#    `# <age> <sex>` of nsrdb, not the `#vfon:` of sddb, not a start time, not a
+#    date. There is no age, no sex, no diagnosis, no medication, no subject
+#    identifier and no clinical table on the landing page either. This is the only
+#    dataset in the catalogue with literally zero subject-level information, which
+#    is why `patient_id_column` is null and why the label loader derives every
+#    column from the headers and annotations.
+#
+# 4. THE EXERCISE/LONG-TERM GROUPING IS THE RELEASE'S, NOT THE FILES', AND THE
+#    HEART RATE DOES NOT ALWAYS AGREE. The landing page says the database
+#    "includes 28 ECG recordings of varying lengths, MOST of which were recorded
+#    during exercise stress tests and which exhibit transient ST depression", and
+#    that "the last five records (323 through 327) are excerpts of long-term ECG
+#    recordings and exhibit ST elevation". So it asserts per record only for the
+#    five; the other 23 are `exercise_stress`/`depression` BY EXCLUSION, and the
+#    word is "most". The heart-rate profile in the label loader is the per-record
+#    check: records 324, 325 and 326 rise 0.0, 3.1 and 7.9 bpm and never pass 78.9
+#    bpm, exactly as an ambulatory excerpt should — but record 323 ramps 84 -> 172
+#    bpm and is still at 117 bpm in its final minute, which looks nothing like the
+#    other four, and it is also the only single-channel record among them. Within
+#    the exercise
+#    group the rise runs 15.1-114.8 bpm, weakest at 303 (15.1), 300 (21.2) and 304
+#    (29.5), which is the release's "most" showing up in the data. `st_change_type`
+#    still follows the landing page; `group_source` is "landing_page" on every row
+#    so nothing here can be mistaken for a measurement.
+#
+# 5. THE GAIN IS PER RECORD AND PER CHANNEL — 31 DISTINCT VALUES FROM 161 TO 500
+#    adu/mV, and the two channels of one record often differ (326 is 300 and 500).
+#    wfdb applies each record's own, so signals arrive in millivolts regardless,
+#    but the 12-bit rail moves with it and that is what `amplitude_range_mv` below
+#    is computed from. No two records share a full gain pair.
+#
+# WHAT THIS RELEASE DOES *NOT* DO THAT ITS SIBLINGS DO, and it is all good news:
+# there is not one NaN sample in the whole database (no format-212 `-2048`
+# invalid-sample markers, unlike sddb's 201,708 and chfdb's), so `clean/` equals
+# `original/` and both are usable; beat annotation covers 99.77-99.98% of every
+# record and 99.9% of the recorded time, with no multi-hour unannotated tail to
+# window around, unlike nsrdb's 12.1%; and no record is duplicated (all 28 `.dat`
+# hashes in the release's own SHA256SUMS.txt are distinct, unlike shdb_af's
+# 005/020 pair).
+#
+# SIX OF THESE 28 RECORDINGS ARE ALSO IN qtdb. QT Database records `sel301`,
+# `sel302`, `sel306`, `sel307`, `sel308` and `sel310` are 15-minute excerpts of
+# stdb records 301, 302, 306, 307, 308 and 310, resampled 360 -> 250 Hz; each qtdb
+# header says so ("Produced by xform from record 301, beginning at 14:00.002") and
+# the excerpts correlate 0.88-0.99 with the source at the stated offset. That is
+# 21% of this release. DO NOT TRAIN ON ONE AND EVALUATE ON THE OTHER. The edge is
+# declared on the qtdb catalogue page as `derived_from`; catalogue.py derives this
+# side of it, so the stdb page must not declare it again.
+#
+# ALL 142 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt. That
+# includes 28 superseded `.hea-` headers, whose signal descriptions read "record
+# 300, signal 0" instead of the "ECG" the 2008 revision introduced, and 28 `.xws`
+# WAVE workspace files. The record list comes from the shipped RECORDS file, so
+# neither can enter the partition.
+
+name: "MIT-BIH ST Change Database"
+slug: "stdb"
+version: "1.0.0"
+url: "https://physionet.org/content/stdb/1.0.0/"
+download_url: null  # STDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  28 ECG recordings of varying lengths exhibiting transient ST change, collected
+  by Paul Albrecht at MIT for his 1983 master's thesis on S-T segment
+  characterization for long-term automated ECG analysis and published by PhysioNet
+  in August 1999. Most were recorded during exercise stress tests and show
+  transient ST depression; the last five (323 through 327) are excerpts of
+  long-term ECG recordings and show ST elevation. Each record is digitised at 360
+  Hz with 12-bit resolution and runs 13.1 to 67.2 minutes, for 13.49 hours in
+  total, and no two records are the same length. Eighteen records hold two
+  channels and ten hold one; every channel is described in every header only as
+  "ECG", with no electrode placement stated. The accompanying reference
+  annotations are beat labels only — 76,175 beats among 76,181 annotations, 75,038
+  of them normal — and the release deliberately carries no ST change annotations,
+  unlike the European ST-T Database. No subject-level information ships in any
+  form: the headers have no comment line, and there is no age, sex, diagnosis or
+  subject identifier anywhere in the 142 files.
+citation: >
+  Albrecht P. S-T segment characterization for long-term automated ECG analysis.
+  M.S. thesis, MIT Dept. of Electrical Engineering and Computer Science, 1983.
+  PhysioNet additionally asks for: Pollard T, Moody BE, Lehman L, Gow B, Fernandes
+  C, Xie C, Johnson A, Mark RG, Heldt T. PhysioNet as a global platform for
+  biomedical research. Nature Health (2026).
+doi: "10.13026/C2ZW2H"
+
+creators:
+  - type: Person
+    name: "Paul Albrecht"
+    url: "https://physionet.org/content/stdb/1.0.0/"
+  - type: Organization
+    name: "MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/stdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# The samples reach ECGBench as millivolts already: every header declares a real
+# gain — 31 distinct values from 161 to 500 adu/mV, varying by record AND by
+# channel — and wfdb divides by each record's own. Nothing needs scaling. No
+# header here declares the uncalibrated `0`, so unlike afdb, nsrdb and chfdb this
+# is not wfdb's 200 adu/mV fallback but the release's own statement.
+signal_unit_scale: 1.0
+# The MAXIMUM, not a uniform count: 18 records store two channels and 10 store
+# one. See alternate_lead_names below and point 2 of the header comment.
+leads: 2
+# POSITIONAL NAMES, NOT NAMES THE FILES USE. Every signal line in every current
+# header ends in the bare description "ECG", for both channels of every
+# two-channel record. The release states no electrode placement anywhere — not in
+# the headers, not on the landing page — so these are channel positions, spelled
+# ECG1/ECG2 to match afdb, nsrdb, chfdb, ltafdb and sddb so cross-dataset code
+# sees one convention. `ECGDataset(leads=["ECG1"])` therefore selects channel 0,
+# not a known lead. Do NOT map them onto MLII/V1 by analogy with mitdb, whose
+# 360 Hz rate this release shares: nothing supports it.
+#
+# Read from the current `.hea` files. The 28 superseded `.hea-` copies shipped
+# alongside them say "record 300, signal 0" instead — the 2008 revision is what
+# introduced the "ECG" descriptions.
+lead_names: ["ECG1", "ECG2"]
+# The ten single-channel records: 313, 314, 315, 316, 317, 319, 320, 321, 322 and
+# 323. Their one channel is channel 0, so the layout is a prefix of the two-channel
+# one — unlike zzu_pecg, where it is not — but declaring it is still what makes
+# `ECGDataset(leads=["ECG2"])` RAISE for these records instead of silently
+# returning ECG1. Declaring any alternate also means a record whose lead count
+# matches neither entry raises rather than being guessed at.
+alternate_lead_names:
+  1: ["ECG1"]
+# NOMINAL ONLY — roughly the median (597,842 samples, 1,660.7 s). WILDLY
+# NON-UNIFORM, and all 28 lengths differ: 282,341 samples (784.3 s, 13.1 min,
+# record 305) to 1,451,857 (4,032.9 s, 67.2 min, record 306). Any window a user
+# applies has to fit inside 784.3 s, which is the shortest record — see the note
+# on expected_samples below.
+duration_seconds: 1660.7
+sampling_rates: [360]
+default_sampling_rate: 360
+
+# --- File Structure ---
+# No metadata file ships in any form, and the headers carry no comment line to
+# parse — this release is the extreme case of that pattern. STDBSplitter builds
+# this CSV from the headers and the `.atr` annotations on first run, via
+# ecgbench.labels.stdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "300" through "327",
+# all three digits and none beginning with a zero, so pandas' integer inference
+# cannot destroy anything. Contrast afdb ("00735"), ltafdb ("00") and shdb_af.
+# export_splits verifies this rather than trusting the flag.
+zero_padded_identifiers: false
+# Null, and here that is a GAP rather than a choice. sddb and nsrdb also set null,
+# but for a reason — their record name IS the subject number, one record per
+# subject. This release says nothing at all: no subject column, no header field,
+# no numbering scheme documented as one recording per person. Whether any two of
+# these 28 recordings came from the same patient is UNKNOWABLE from the files, so
+# ECGBench cannot group on it and cannot promise it did not need to. qtdb's
+# catalogue entry records the same limitation for its six excerpts of this
+# release.
+patient_id_column: null
+
+signal_path_columns:
+  360: "signal_path"  # bare record stem, e.g. "300" — the tree is flat
+
+# --- Labels ---
+# The landing page's own grouping of its records, transcribed: "depression" for
+# the 23 exercise-stress recordings and "elevation" for the five long-term
+# excerpts (323-327). IT IS NOT AN ST MEASUREMENT — there is no ST annotation in
+# this release at all (point 1 above) — and it is asserted per record only for the
+# five, the other 23 following from the page's "most" by exclusion. The companion
+# `group_source` column is "landing_page" for every row to keep that visible, and
+# `hr_rise_bpm` is the measured quantity to check it against.
+label_column: "st_change_type"
+label_format: "single"
+
+stratification:
+  # STDBSplitter takes stratify_class from the label loader: the ST-change group
+  # crossed with the channel count, giving depression_2ch (14), depression_1ch
+  # (9), elevation_2ch (4) and elevation_1ch (1, record 323). The first axis is
+  # the only grouping the release documents; the second is crossed in because a
+  # fold's usable size under `leads=["ECG1","ECG2"]` depends on how many
+  # single-channel records it drew, and balancing one axis while leaving the other
+  # to chance would be arbitrary. StratifiedKFold raises only when EVERY class is
+  # smaller than n_folds, so the 14-record class carries the split and the
+  # singleton is tolerated (sklearn warns; 28 records over 10 folds gives 2-3 a
+  # fold regardless). Beat-derived bands, the axis svdb and chfdb use, are
+  # unusable here: 75,038 of 76,175 beats are N, nine records have no ectopic beat
+  # at all and nineteen have fewer than five. See
+  # ecgbench.labels.stdb.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # Declared but never read by any check in CHECK_REGISTRY — and it would be wrong
+  # here if it were, because ten records hold one channel. See `leads` above.
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like afdb, nsrdb, ltafdb, sddb, ptbdb and challenge2021 —
+  # and less marginally than any of them. All 28 records have DIFFERENT lengths,
+  # spanning 282,341 to 1,451,857 samples, a factor of 5.1. Every one is a
+  # complete recording, so any single threshold would drop most of the release as
+  # truncated. Omitting the rate disables the check rather than making it fire;
+  # `truncated_signal` stays in the list below only so a future release with
+  # uniform lengths needs one line here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # NOTHING FIRES ON THIS RELEASE and `clean/` therefore equals `original/`, which
+  # is worth stating because it is the exception among the MIT-BIH-family Holter
+  # datasets here. There is not one NaN sample in the whole database: format 212
+  # reserves digital -2048 as the invalid-sample marker and wfdb returns it as
+  # NaN, which is what leaves sddb's clean/ holding 3 of 23 records, but no sample
+  # in these 28 records goes below digital -1883. No lead is all-NaN or all-zero,
+  # whole-lead variance is large in every channel, wfdb reads all 28 headers, and
+  # amplitude stays well inside the bound below.
+  #
+  # The 12-bit rail, computed from the hardware and taken as the UNION OF ALL 46
+  # CHANNEL RAILS. adc_zero is 0 and no channel declares a baseline, so a sample is
+  # confined to [-2047, 2047] adu once -2048 is excluded as the invalid marker.
+  # The gains run 161 to 500 adu/mV, so the rail runs +/-4.094 mV at the tightest
+  # and +/-12.7143 mV at the loosest (record 310's channel 1, gain 161). A single
+  # range has to accommodate the loosest channel or it fires on a sound record, so
+  # this is that one, rounded OUTWARD from 2047/161 = 12.714286.
+  #
+  # UNLIKE sddb AND chfdb, THIS RAIL IS NOT ATTAINED and the rounding is belt and
+  # braces rather than a fix: the widest amplitude anywhere in the release is
+  # +6.939 mV (record 302 channel 0, which does hit digital 2047 at its own gain of
+  # 295) and the lowest -6.3188 mV (record 312 channel 0). Rounding outward means
+  # no float32 cast of a sound sample can land outside the bound no matter which
+  # gain it came from — `_load_signal` casts to float32 and compares against the
+  # float64 bound from this file, which is what excluded a chfdb record from its
+  # own computed range. What the check guards is a mis-scaled copy — microvolts,
+  # or a re-release with the gains dropped — which would exceed it by orders of
+  # magnitude at once.
+  amplitude_range_mv: [-12.715, 12.715]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/stdb.py. There is no source CSV to point at and no
+# header comment to parse, so it derives everything from the signal headers and
+# the `.atr` annotations — record geometry and per-channel gain, beat counts per
+# symbol with their AAMI EC57 reduction, annotation coverage, the `~`
+# signal-quality seconds (which exist in record 319 alone), whole-record HRV, and
+# the heart-rate profile that is the only per-record evidence about the recording
+# protocol. The two group columns are transcribed from the landing page and
+# flagged as such by `group_source`.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "ST segment"
+    - "ST depression"
+    - "ST elevation"
+    - "myocardial ischemia"
+    - "exercise stress test"
+    - "exercise ECG"
+    - "beat annotations"
+    - "two-lead"
+    - "Holter"
+    - "PhysioNet"
+    - "MIT-BIH"
+  rai_data_collection: >
+    28 ECG recordings exhibiting transient ST change, assembled by Paul Albrecht
+    at MIT for his 1983 master's thesis on S-T segment characterization for
+    long-term automated ECG analysis, and published by PhysioNet in August 1999 as
+    version 1.0.0 — the only version. Most of the recordings were made during
+    exercise stress tests and exhibit transient ST depression; the last five, 323
+    through 327, are excerpts of long-term ambulatory recordings and exhibit ST
+    elevation. The release states that grouping per record only for those five.
+    Each record was digitised at 360 Hz with 12-bit resolution, with a gain
+    declared per record and per channel taking 31 distinct values between 161 and
+    500 adu/mV. Eighteen records hold two channels and ten hold one, and every
+    channel is described in every header only as "ECG", with no electrode
+    placement stated anywhere in the release. Record length runs 13.1 to 67.2
+    minutes and no two records match, for 13.49 hours in total. One annotation
+    layer ships, described by the shipped ANNOTATORS file as "reference beat
+    annotations": 76,181 annotations across the 28 records, of which 75,038 are
+    normal beats, 815 supraventricular premature, 322 ventricular premature and 6
+    signal-quality markers confined to a single record. PhysioNet states
+    explicitly that these files "contain only beat labels; they do not include ST
+    change annotations, as in the European ST-T Database", and the files bear that
+    out — the release named for ST change carries no ST annotation, episode
+    boundary or deviation measurement of any kind. No subject-level information
+    ships in any form: the headers carry no comment line, and there is no age,
+    sex, diagnosis, medication, recording date or subject identifier anywhere in
+    the 142 files or on the landing page. Six of these recordings also appear, as
+    15-minute excerpts resampled to 250 Hz, in the QT Database.
+  rai_data_biases: >
+    The cohort is 28 recordings and nothing is known about the people in them —
+    no age, no sex, no diagnosis, no indication, no medication, no site and no
+    date. Any claim about who this database represents is unsupported by the
+    release, and it cannot be checked for demographic balance because there are no
+    demographics. It cannot even be checked for repeated subjects: nothing
+    identifies who was recorded, so whether these are 28 people or fewer is
+    unknowable, and a record-level split is the strongest guarantee available.
+    Records were selected precisely because they exhibit ST change, so the database
+    has no negative class and cannot on its own measure discrimination of
+    ischaemia; it is a positive set to be paired with a control database. The two
+    groups differ in protocol as well as in the direction of ST change — 23
+    exercise stress tests against 5 ambulatory excerpts — so heart rate, motion
+    artefact and recording length all covary with the label, and a classifier
+    separating them may be reading the protocol rather than the ST segment. That
+    confound is measurable in the data: peak heart rate reaches 170-189 bpm in
+    seven of the stress recordings and stays below 79 bpm in three of the five
+    excerpts. The exercise assignment is itself weaker than it looks, being the
+    release's word "most" read by exclusion, and one of the five named long-term
+    excerpts (323) has an exercise-like heart-rate ramp to 171 bpm. Ectopy is
+    almost absent — 1,137 of 76,175 beats, with nine records having none and two
+    thirds of the rest concentrated in three records — so no
+    arrhythmia task is supported here. Signal quality is annotated in exactly one
+    record, so the absence of noise markers elsewhere means nobody marked them,
+    not that the signal is clean. The recordings were digitised from 1980s analog
+    equipment at a single institution, so the waveforms are not comparable in
+    detail with modern digital ECG, and the beat annotations are the product of
+    the era's detectors and review practice.
+  rai_personal_sensitive_info: >
+    De-identified, and more completely than any other dataset in this collection —
+    to the point where the absence is itself the notable fact. The data files carry
+    no name, no date, no time of day, no subject code and no clinical text: each
+    header holds only the record name, channel count, sampling frequency, sample
+    count and one line per signal, with no comment line of any kind. The record
+    names are the sequential labels 300 to 327 and correspond to no published
+    subject table; unlike sddb, whose landing page carries age, sex, history and
+    medication for every subject, this release publishes nothing about the people
+    recorded. Nothing in the release narrows any record to a person, and nothing in
+    it would let two records be linked to the same person either. The recordings
+    date from before 1983 and were collected in the course of clinical exercise
+    testing at a US institution that the release does not name.

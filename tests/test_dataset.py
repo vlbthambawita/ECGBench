@@ -1637,6 +1637,44 @@ class TestPerRecordLeadLayouts:
         assert _resolve_leads(["ECG2"], config.lead_names, "sddb")[0] == [1]
         assert _resolve_leads(["ECG2", "ECG1"], config.lead_names, "sddb")[0] == [1, 0]
 
+    def test_stdb_is_the_one_two_lead_release_where_ten_records_hold_a_single_channel(self):
+        """STDB's headers say "ECG" like sddb's — but only 18 of 28 say it twice.
+
+        Two separate facts, and the second is the one nothing documents. Like sddb
+        and ltafdb, every signal line ends in the bare description ``ECG``, so
+        ["ECG", "ECG"] would be the literal reading and would make channel 1
+        unreachable through ``leads=``; ECGBench declares positional names instead.
+        The temptation to "correct" them to MLII/V1 is strongest here of all,
+        because this release shares mitdb's 360 Hz rate and its record numbering
+        style — and nothing whatsoever supports it.
+
+        On top of that, ten records (313-317 and 319-323) declare ONE signal, not
+        two, which neither the landing page nor the catalogue's "2 leads" mentions.
+        ``alternate_lead_names`` declares that layout so ``leads=["ECG2"]`` raises
+        for those records against a named layout instead of falling into the
+        generic too-few-leads path.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.dataset import _resolve_leads
+
+        config = load_config("stdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        assert config.sampling_rates == [360]
+        # Same count, different names is the mitdb mechanism and does not apply:
+        # all 46 channels here carry the identical description.
+        assert config.record_lead_layouts is None
+        # Different count IS the mechanism that applies.
+        assert config.alternate_lead_names == {1: ["ECG1"]}
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+        # Both positions stay reachable by name on the 18 two-channel records.
+        assert _resolve_leads(["ECG2"], config.lead_names, "stdb")[0] == [1]
+        assert _resolve_leads(["ECG2", "ECG1"], config.lead_names, "stdb")[0] == [1, 0]
+        # And ECG1 resolves against the single-channel layout too, which is what
+        # makes leads=["ECG1"] the safe way to batch this dataset whole.
+        assert _resolve_leads(["ECG1"], config.alternate_lead_names[1], "stdb")[0] == [0]
+
     def test_shdb_af_is_the_one_two_lead_holter_whose_channel_names_mean_something(self):
         """ECG1 is a modified CC5 lead and ECG2 a NASA lead, and the release says so.
 

@@ -2236,3 +2236,150 @@ def test_shdb_af_labels_name_a_source_csv_but_still_need_a_module():
     from ecgbench.labels import _custom_loaders
 
     assert "shdb_af" in _custom_loaders()
+
+
+def test_load_stdb_config():
+    """MIT-BIH ST Change: two unnamed channels on 18 records, ONE on the other ten."""
+    config = load_config("stdb")
+    assert config.slug == "stdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a REAL gain, and it varies by record AND by channel —
+    # 31 distinct values from 161 to 500 adu/mV, with record 326 declaring 300 for
+    # one channel and 500 for the other. wfdb divides by each record's own value
+    # and reports millivolts. Unlike afdb, nsrdb, ltafdb and chfdb, no header here
+    # declares the uncalibrated `0`, so this is not wfdb's 200 adu/mV fallback.
+    assert config.signal_unit_scale == 1.0
+    # The MAXIMUM, not a uniform count — see the alternate-layout test below.
+    assert config.leads == 2
+    # CHANNEL POSITIONS. Every signal line of every current header ends in the bare
+    # description "ECG", as in sddb and ltafdb, so these must not be "corrected" to
+    # MLII/V1 by analogy with mitdb — whose 360 Hz sampling rate this release
+    # shares, which makes the temptation stronger here than anywhere else.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [360]
+    assert config.default_sampling_rate == 360
+    assert config.signal_path_columns == {360: "signal_path"}
+    # No metadata ships in any form, and unlike nsrdb there is not even a header
+    # comment to parse. STDBSplitter generates this from the headers and the .atr
+    # annotations.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the release identifies its subjects in NO way — not a column,
+    # not a header field, not a documented numbering scheme. This is a different
+    # null from sddb's and nsrdb's, where the record name IS the subject number:
+    # here whether two records share a patient is simply unknowable.
+    assert config.patient_id_column is None
+    # All 46 channels carry the same description, so the mitdb mechanism (same
+    # count, different names) does not apply.
+    assert config.record_lead_layouts is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "300".."327": three digits, none leading with a zero, so
+    # unlike afdb ("00735"), ltafdb ("00") and shdb_af the CSV round-trip cannot
+    # strip anything.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "st_change_type"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_stdb_declares_the_single_channel_layout_ten_records_actually_use():
+    """Ten of the 28 records store one signal, and the config has to say so.
+
+    313, 314, 315, 316, 317, 319, 320, 321, 322 and 323 declare a single channel;
+    the other 18 declare two. Nothing on the landing page mentions it and the
+    catalogue's "2 leads" is true of only 64% of the release.
+
+    The one-channel layout IS a prefix of the two-channel one here — unlike
+    zzu_pecg, where the 9-lead layout drops V2/V4/V6 and so shifts every position
+    after the sixth. So this declaration does not fix a wrong-lead bug; what it
+    fixes is the error message. Declared, ``ECGDataset(leads=["ECG2"])`` raises for
+    these ten records naming the layout; undeclared, they fall into the generic
+    "too few leads" path.
+    """
+    config = load_config("stdb")
+    assert config.alternate_lead_names == {1: ["ECG1"]}
+    # The primary layout stays the two-channel one, so `leads` and `lead_names`
+    # continue to describe the 18 records that carry both.
+    assert config.leads == 2
+    assert len(config.lead_names) == 2
+
+
+def test_stdb_disables_the_truncation_check_because_no_two_records_match():
+    """All 28 lengths differ, 282,341 to 1,451,857 samples — a factor of 5.1.
+
+    Every one is a complete recording of a different exercise test, so any single
+    threshold would drop most of the release as truncated. An empty
+    expected_samples DISABLES the check — check_truncated_signal returns [] when
+    the rate has no key — which is the intended escape hatch, not an oversight.
+    """
+    config = load_config("stdb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_stdb_amplitude_range_is_the_union_of_thirty_one_gains_and_is_not_attained():
+    """One bound, wide enough for the loosest of 31 declared gains.
+
+    adc_zero is 0 and no channel declares a baseline, so a sample is confined to
+    [-2047, 2047] adu once -2048 is excluded as WFDB's invalid-sample marker. The
+    gains run 161 to 500 adu/mV, so the rail runs +/-4.094 mV at the tightest and
+    +/-2047/161 = +/-12.714286 mV at the loosest (record 310, channel 1). A single
+    range has to accommodate the loosest channel or it fires on a sound record.
+
+    UNLIKE sddb AND chfdb THIS RAIL IS NOT ATTAINED: the widest amplitude in the
+    release is +6.939 mV (record 302 channel 0, which does hit digital 2047 at its
+    own gain of 295) and the lowest is -6.3188 mV. The bound is rounded OUTWARD
+    from 12.714286 so that no float32 cast of a sound sample can land outside it
+    whatever gain it came from — the chfdb failure mode, made impossible rather
+    than reasoned about.
+    """
+    config = load_config("stdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-12.715, 12.715)
+    # Rounded outward from the true rail, never inward.
+    assert high > 2047 / 161 > 0
+    assert low < -2047 / 161
+    # And comfortably outside everything actually observed.
+    assert high > 6.939 and low < -6.3188
+
+
+def test_stdb_keeps_every_check_and_none_of_them_fire():
+    """clean/ equals original/ here, which is the exception in this family.
+
+    sddb loses 20 of 23 records to `nan_values` and chfdb needed float32 slack on
+    an attained rail. stdb has no format-212 -2048 invalid-sample markers at all
+    (nothing goes below digital -1883), so all 28 records pass every check and both
+    versions are usable. The checks are kept in full precisely because that is a
+    property of this copy of the data, not a guarantee about the next one.
+    """
+    config = load_config("stdb")
+    assert set(config.validation.checks) == {
+        "missing_leads",
+        "nan_values",
+        "truncated_signal",
+        "flat_line",
+        "corrupt_header",
+        "amplitude_outlier",
+    }
+    # Declared, and never read by any function in CHECK_REGISTRY — which is just as
+    # well, because ten records would fail it.
+    assert config.validation.expected_leads == 2
+
+
+def test_stdb_labels_are_module_based_with_no_source_csv():
+    """No label file ships, and no header comment either — everything is derived."""
+    config = load_config("stdb")
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == config.record_id_column == "record_name"
+
+    from ecgbench.labels import _custom_loaders
+
+    assert "stdb" in _custom_loaders()
