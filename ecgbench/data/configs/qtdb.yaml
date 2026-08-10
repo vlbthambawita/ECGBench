@@ -1,0 +1,429 @@
+# ECGBench Config: QT Database
+# ============================
+# https://physionet.org/content/qtdb/1.0.0/
+#
+# 105 fifteen-minute two-lead excerpts with expert-placed onset, peak and end
+# markers for the P, QRS, T and (where present) U waves of 3,623 selected beats.
+# It is a DELINEATION reference, not a diagnostic dataset: there is no record-level
+# class anywhere in the release, and the ground truth is per beat.
+#
+# SEVEN THINGS TO KNOW BEFORE USING IT, all verified against the shipped files.
+#
+# 1. EVERY RECORD IS AN EXCERPT OF ANOTHER DATABASE'S RECORDING, AND SIX OF THE
+#    SEVEN SOURCES ARE ALREADY IN ECGBENCH. Table 1 of the paper: European ST-T 33,
+#    BIH sudden-death 24, MIT-BIH Arrhythmia 15, MIT-BIH Supraventricular 13,
+#    MIT-BIH NSR 10, MIT-BIH ST Change 6, MIT-BIH Long-Term 4. So `edb`, `sddb`,
+#    `mitdb`, `svdb`, `nsrdb` and `stdb` all hold recordings this dataset also
+#    holds, and TRAINING ON ONE WHILE EVALUATING ON THE OTHER IS EVALUATING ON
+#    TRAINING DATA. The `related:` block in docs/_datasets/qt-database-qtdb.md
+#    declares each edge; `source_database` and `source_catalogue_slug` in the
+#    labels name the partner per record. Only MIT-BIH Long-Term (4 records) and
+#    `sel17152` — a matched control published nowhere else — have no partner here.
+#
+#    THE OVERLAP IS VERIFIED FROM THE WAVEFORMS, NOT INFERRED FROM THE NAMES. 30 of
+#    the 33 European ST-T excerpts are BIT-IDENTICAL to edb 1.0.0 at the offset
+#    their own header states; the other three (sele0112, sele0116, sele0136) are the
+#    same waveform with a DC pedestal added and one channel rescaled by exactly the
+#    gain ratio they re-declare (r >= 0.99985). 22 of the 23 sudden-death excerpts
+#    reproduce sddb 1.0.0 exactly: sel39 and sel47 bit-identical, the other 20 as
+#    trunc(sddb_digital / 4) — exact, because qtdb halved the declared gain from 800
+#    to 200 and shifted the samples two bits to match. THE EXCEPTION IS sel32,
+#    whose opening 4,096 samples occur nowhere in sddb record 32, in either channel,
+#    raw or divided by four, although both the paper and the header place it at
+#    20:52:20 of that record. The other four sources were resampled to 250 Hz, so
+#    they match in waveform but cannot match sample-for-sample.
+#
+# 2. THE GROUND TRUTH IS IN THE LAST FIVE MINUTES AND NOWHERE ELSE, so the default
+#    read is almost all unlabelled signal. The paper annotated only after the first
+#    10 minutes, to leave analysis algorithms a learning period, and the files
+#    agree: the earliest manual annotation in the release sits at 600.464 s and the
+#    latest at 896.916 s. Use `window=(150000, 74993)`, which is exactly the
+#    annotated region and fits all 105 records (the shortest is 224,993 samples).
+#    A window from sample 0 contains no ground truth at all.
+#
+#    The boundaries themselves are NOT in the fold CSVs and cannot be — they are
+#    3,623 rows of eleven fiducial points, not a record-level column. Get them from
+#    ecgbench.labels.qtdb.load_beat_annotations(), which returns one row per beat
+#    with every mark in samples plus the QT, QTc, RR, PR, P and QRS intervals they
+#    imply. `load_labels` returns the per-record summary that stratifies folds.
+#
+# 3. THERE ARE 20 LEAD LAYOUTS AND 57 RECORDS DECLINE TO NAME THEIR CHANNELS.
+#    `lead_names` below is the modal layout and it is the placeholder pair
+#    ECG1/ECG2 — see the block there. Worse for cross-dataset work: the 33 European
+#    ST-T records use the ESC's ORIGINAL bipolar-electrode nomenclature (D3, CM5,
+#    CC5, ML5, CM2, mod.V1, V2-V3), and only 2 of the 33 agree with the names edb
+#    1.0.0 gives the very same channels. `ECGDataset("edb", leads=["V5"])` resolves
+#    for 51 edb records; `ECGDataset("qtdb", leads=["V5"])` resolves for 2. The
+#    waveforms are identical and the labels are not.
+#
+# 4. AMPLITUDE IS UNRELIABLE FOR 34 OF THE 105 RECORDS. The paper: the sudden-death
+#    Holters "are not calibrated with respect to amplitude; thus the signal gains
+#    recorded in the header files for these records are only estimates" — 24
+#    records. Ten more DECLARE a gain of 0, which is WFDB for "uncalibrated" and
+#    which wfdb silently replaces with 200 adu/mV, so p_signal looks like millivolts
+#    and is not: all four Long-Term records and svdb-derived sel820, sel821, sel847,
+#    sel853, sel883, sel891. Check `amplitude_calibrated` before comparing millivolt
+#    amplitudes across source databases. Intervals — what this database is for —
+#    are unaffected.
+#
+# 5. FOUR RECORDS CARRY A CONSTANT +5.12 mV PEDESTAL. sel100, sel102, sel103 and
+#    sel104 are the only records declaring an explicit baseline of 0 next to an
+#    adc_zero of 1024 (`200(0) 11 1024`), where mitdb's own copies declare `200 11
+#    1024` and let wfdb use adc_zero. wfdb honours the explicit baseline, so these
+#    four come back shifted by 1024/200 mV: their signals never go negative, their
+#    minima sit at +4.0 to +4.6 mV, and they are the reason the amplitude bound
+#    below has to reach past a physiologic range. Subtract 5.12 mV if you need them
+#    comparable with the other 101 — `dc_pedestal_mv` in the labels carries it.
+#
+# 6. THE TWO ANNOTATORS DO NOT COVER THE SAME BEATS AND ONE RECORD IS NEARLY EMPTY.
+#    Annotator 2 annotated 11 records, all from MIT-BIH Arrhythmia, covering 404 of
+#    the 487 beats annotator 1 annotated there. In sel102 the audit reduced
+#    annotator 2 from 97 annotations to THIRTEEN — three beats, against annotator 1's
+#    85. Weight any inter-observer figure by `n_annotated_beats_annotator2`.
+#
+# 7. 3,623 BEATS, NOT THE PUBLISHED 3,622. sel223 carries 31 annotated beats where
+#    Table 2 says 30; the other 104 records match the paper exactly. The paper's
+#    column ships as ecgbench.labels.qtdb.PUBLISHED_ANNOTATED_BEATS so the check is
+#    reproducible rather than a claim.
+#
+# THE PAPER DESCRIBES ANNOTATION FILES THAT DO NOT SHIP. It says each record has a
+# `.ari` holding ARISTOTLE's automatic QRS annotations; there is not one `.ari` file
+# in the release and the shipped ANNOTATORS file does not list the extension. What
+# does ship, per record, is `.man` (beat locations), `.qt1`/`.q1c` (annotator 1,
+# first and audited pass), `.qt2`/`.q2c` for 11 records, `.pu`/`.pu0`/`.pu1`
+# (ecgpuwave, whole record, unaudited) and `.atr` for 82 records — the source
+# database's own reference annotations, inherited, absent for the 23 sddb excerpts.
+#
+# THE CLINICAL HEADER TEXT FOR THE EUROPEAN ST-T RECORDS IS AN OLDER, COARSER
+# VINTAGE THAN edb's, AND FOR THREE RECORDS IT CONTRADICTS IT. qtdb writes
+# "Coronary artery disease" where edb 1.0.0 gives the angina type, "Coronary
+# angiography" where edb gives the vessel count and "unspecified medication" where
+# edb lists the drugs. For sele0116, sele0121 and sele0122 qtdb says coronary artery
+# disease while edb's headers record NORMAL CORONARY ARTERIES for those subjects.
+# Prefer edb for those 33 records; `clinical_source` says which vintage a row is.
+#
+# ALL 1,132 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt. That
+# includes 57 superseded `.hea-` headers, which name the channels "record N, signal
+# 0" instead of ECG1/ECG2, and 105 `.xws` WAVE display-settings files. The record
+# list comes from the shipped RECORDS file, so neither can enter the partition.
+
+name: "QT Database"
+slug: "qtdb"
+version: "1.0.0"
+url: "https://physionet.org/content/qtdb/1.0.0/"
+download_url: null  # QTDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  105 fifteen-minute two-channel ECG excerpts, sampled at 250 Hz, in which expert
+  cardiologists manually marked the onset, peak and end of the P wave, the onset
+  and end of the QRS complex, the peak and end of the T wave and — where present —
+  the peak and end of the U wave, for 3,623 individually selected beats. It was
+  built at MIT and the University of Zaragoza in 1997 to give QT-measurement
+  algorithms a reference they had never had, and it remains the standard benchmark
+  for ECG delineation. The excerpts were chosen to span a wide range of QRS and
+  ST-T morphology and to avoid baseline wander, which biases them toward lower
+  heart rates; they were drawn from six existing databases plus 24 Holter
+  recordings from Beth Israel Hospital patients who died suddenly during recording
+  and their matched controls. At least 30 consecutive beats of the dominant
+  morphology were annotated per record, plus up to 20 of each non-dominant
+  morphology, and only beats ARISTOTLE classified as normal with normal neighbours
+  were eligible. Annotation was confined to the final five minutes of each excerpt
+  so that an algorithm has ten minutes of learning data ahead of it. Eleven records
+  carry a second, independent set of annotations for inter-observer studies.
+  Automatic boundaries from ecgpuwave ship alongside, covering every beat of every
+  record, unaudited.
+citation: >
+  Laguna P, Mark RG, Goldberger AL, Moody GB. A Database for Evaluation of
+  Algorithms for Measurement of QT and Other Waveform Intervals in the ECG.
+  Computers in Cardiology 24:673-676 (1997). PhysioNet additionally asks for:
+  Pollard T, Moody BE, Lehman L, Gow B, Fernandes C, Xie C, Johnson A, Mark RG,
+  Heldt T. PhysioNet as a global platform for biomedical research. Nature Health
+  (2026).
+doi: "10.13026/C24K53"
+
+creators:
+  - type: Organization
+    name: "Universidad de Zaragoza / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/qtdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Samples reach ECGBench as millivolts. Every one of the 105 records is format 212
+# with units of mV, and 95 declare a real gain that wfdb divides by. THE OTHER TEN
+# DECLARE A GAIN OF 0, wfdb's "uncalibrated" marker, and wfdb substitutes its
+# 200 adu/mV fallback — so those ten arrive on a nominal scale rather than a
+# measured one. That is a calibration problem, not a units problem: no scaling
+# would fix it and `amplitude_calibrated` in the labels is where it is recorded.
+# See point 4 of the header comment.
+signal_unit_scale: 1.0
+leads: 2
+# THE MODAL LAYOUT, AND IT IS A PAIR OF PLACEHOLDERS. 57 of the 105 records — every
+# excerpt from MIT-BIH Supraventricular, NSR, ST Change, Long-Term and the
+# sudden-death Holters — describe both channels only as "ECG1" and "ECG2", with no
+# electrode placement stated anywhere in the release. Spelled that way to match
+# afdb, nsrdb, chfdb, ltafdb, svdb and sddb so cross-dataset code sees one
+# convention. `ECGDataset(leads=["ECG1"])` therefore selects channel 0 of those 57
+# and RAISES for the other 48; it does not name a known lead.
+#
+# The 48 records that do name their channels are the 15 from MIT-BIH Arrhythmia,
+# whose names match mitdb exactly, and the 33 from European ST-T, whose names are
+# the ESC's own electrode nomenclature and match edb 1.0.0 for only 2 of 33 — see
+# point 3 of the header comment. Read the per-record `lead_names` column from
+# ecgbench.labels.qtdb for the truth about any given record.
+#
+# Read from the current `.hea` files. The 57 superseded `.hea-` copies say
+# "record N, signal 0" instead, so a reader pointed at those gets two
+# differently-named channels.
+lead_names: ["ECG1", "ECG2"]
+# All 20 layouts in the release, counted from the 105 headers:
+#   ECG1/ECG2  57     D3/V3       3     CM5/mod.V1  1     CM5/CM2  1
+#   MLII/V1     8     CM5/ML5     3     V1-V2/V4-V5 1     CM2/ML5  1
+#   V4/D3       7     MLII/V5     2     V5/MLII     1     CM5/CM4  1
+#   CM5/CC5     6     V5/V2       2     D3/D4       1     V5/V1    1
+#   D3/V4       5     MLII/V2     2     V3/D3       1     V2-V3/V5 1
+# D3/V4 and V4/D3 are both present, 5 and 7 records: the same electrode pair stored
+# in either order, so signal[0] is a limb-ish lead in one group and a chest lead in
+# the other with nothing in the metadata to warn you. Declaring these makes
+# ECGDataset(leads=...) read each record's own header, resolve the requested NAMES
+# against it, and raise for a record whose layout lacks a requested lead rather
+# than returning whichever signal sits at that index. No name is common to all 105
+# — ECG1/ECG2 covers 57 and nothing else exceeds 8 — so EVERY name-based selection
+# here raises for some records.
+record_lead_layouts:
+  - ["ECG1", "ECG2"]
+  - ["MLII", "V1"]
+  - ["V4", "D3"]
+  - ["CM5", "CC5"]
+  - ["D3", "V4"]
+  - ["D3", "V3"]
+  - ["CM5", "ML5"]
+  - ["MLII", "V5"]
+  - ["V5", "V2"]
+  - ["MLII", "V2"]
+  - ["V5", "MLII"]
+  - ["D3", "D4"]
+  - ["V3", "D3"]
+  - ["V2-V3", "V5"]
+  - ["CM5", "mod.V1"]
+  - ["V1-V2", "V4-V5"]
+  - ["CM5", "CM2"]
+  - ["CM2", "ML5"]
+  - ["CM5", "CM4"]
+  - ["V5", "V1"]
+# Nominally 15 minutes, and NEARLY but not exactly uniform: 225,000 samples (900.0
+# s) for the 53 MIT-BIH Arrhythmia, European ST-T and most ST Change records,
+# 224,999 for 29, and 224,993 for all 23 sudden-death excerpts, whose signal 0 was
+# delayed by 7 samples in a post-processing step the header records. See the note
+# on expected_samples below.
+duration_seconds: 900.0
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in any form. The headers carry a provenance line, in 48
+# cases a clinical block, and nothing else; everything else has to be computed from
+# the nine annotation layers. QTDBSplitter builds this CSV on first run via
+# ecgbench.labels.qtdb. The validation engine re-reads it from disk, so the dataset
+# root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: every record name begins "sel" or "sele",
+# so pandas cannot read any identifier column here as an integer. The digits inside
+# the names are never parsed as numbers by ECGBench. export_splits verifies this
+# rather than trusting the flag.
+zero_padded_identifiers: false
+# 105 records, at most 103 subjects. Almost every record is a different source
+# recording, so the record name IS the subject for 101 of them — but two European
+# ST-T subjects contributed two recordings each and both pairs are here: e0121 with
+# e0122 (one 51-year-old man) and e0124 with e0126. Ungrouped, each pair would
+# straddle train and test. The pairs come from running
+# ecgbench.labels.edb.reconstruct_patient_ids over edb 1.0.0 and intersecting its
+# seven multi-record subjects with qtdb's selection; they are a literal in
+# ecgbench.labels.qtdb.EDB_SHARED_SUBJECTS because qtdb's own header text is too
+# coarse to recover the second pair and a qtdb user has no reason to have edb on
+# disk. 103 is an UPPER BOUND: the 13 Supraventricular and 6 ST Change records
+# carry no subject information in any release, so a shared person among them is
+# undetectable.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  250: "signal_path"  # bare record stem, e.g. "sel100" — the tree is flat
+
+# --- Labels ---
+# THIS IS NOT A DIAGNOSTIC LABEL AND MUST NOT BE TRAINED ON. The release has no
+# record-level class of any kind — its ground truth is 3,623 per-beat boundary
+# annotations, which no single column can hold. `source_database` is the release's
+# own stratum (Table 1 of the paper) and the axis every other property follows
+# from: original sampling rate, electrode placement, whether reference annotations
+# exist, whether the amplitude is calibrated, and what the cohort's pathology is.
+# It is here so that folds are balanced across the seven sources and so that the
+# leakage partner of every record is visible in the fold CSVs' companion metadata.
+# For the actual ground truth call
+# ecgbench.labels.qtdb.load_beat_annotations(data_path).
+label_column: "source_database"
+label_format: "single"
+
+stratification:
+  # QTDBSplitter takes stratify_class from the label loader: source_database, 33
+  # edb / 23 sddb / 15 mitdb / 13 svdb / 10 nsrdb / 6 stdb / 4 ltdb / 1
+  # bih_control. StratifiedKFold raises only when EVERY class is smaller than
+  # n_folds, so the 33-record class carries the split and the two small classes are
+  # tolerated (sklearn warns). See attach_stratify_class for the three alternatives
+  # and why each is worse — briefly: 79 of 105 records have exactly 30 annotated
+  # beats so a beat-count band stratifies nothing, waveform_pattern is a property
+  # of the annotation rather than the signal and is mostly singletons, and there is
+  # no clinical label to use.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # 224,993, the SHORTEST record, not the nominal 225,000. Three lengths ship —
+  # 225,000 (53 records), 224,999 (29) and 224,993 (23) — and every one of them is
+  # a complete 15-minute excerpt, so a threshold at 225,000 would report 52 sound
+  # records as truncated. Set at the minimum, `truncated_signal` passes all 105 and
+  # still fires on a genuinely short record, which is strictly better than the
+  # empty dict afdb, nsrdb, ltafdb and sddb need. The 224,993 group is the
+  # sudden-death excerpts: their headers record "The signal 0 was delayed with a
+  # delay=7 samples", and the record was shortened by those 7 samples.
+  expected_samples:
+    250: 224993
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # ALL 105 RECORDS PASS EVERY CHECK, and that is the intended state rather than a
+  # weak configuration. Verified by reading all 210 channels: no NaN anywhere
+  # (format 212's invalid-sample marker, digital -2048, does not occur — unlike
+  # sddb, where 20 of 23 records carry it and `clean/` collapses to 3), no channel
+  # all-zero or all-NaN, whole-channel variance large everywhere, wfdb reads all
+  # 105 headers, and no sample outside the bound below. The excerpts were selected
+  # for signal quality, which is why: the paper says they were "selected to avoid
+  # significant baseline wander or other artifacts".
+  #
+  # The bound is the 12-bit rail, taken as the UNION OVER THE DECLARED GAINS, which
+  # here is looser than usual because three European ST-T records re-declare a gain
+  # below 200. adc_zero is 0 for 101 records and no channel declares a baseline
+  # other than the four in point 5, so a sample is confined to [-2047, 2047] adu
+  # once -2048 is excluded as the invalid marker. At the 200 adu/mV that 99 records
+  # declare that is +/-10.235 mV; at sele0112's 185 it is +/-11.065; at sele0116's
+  # 135, +/-15.163; and at sele0136's 120, +/-17.058. A single range has to
+  # accommodate the loosest record or it fires on a sound one, so this is the
+  # latter. The four adc_res-11 records (sel100-sel104) are narrower, [0, 10.235],
+  # and fit inside it.
+  #
+  # NOTHING REACHES THE RAIL: over all 23.6 million sample-pairs the extremes are
+  # -7.800 and +16.675 mV, the latter being sele0136's channel 0 riding its DC
+  # offset to 97.7% of its own rail. So no float32 slack is needed, unlike chfdb.
+  # What the check guards is a mis-scaled copy — microvolts, or a re-release with
+  # the gains dropped — which would exceed it by orders of magnitude at once.
+  amplitude_range_mv: [-17.058, 17.058]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/qtdb.py summarises all nine annotation layers per
+# record — the manual boundaries with their QT/QTc/RR/PR/QRS medians, the second
+# annotator's coverage, the inherited source-database reference annotations reduced
+# to AAMI classes, ecgpuwave's T-wave morphology, the recomputed Table 2 waveform
+# pattern and its four disagreements with the paper — plus the provenance of every
+# excerpt and the clinical block from those 48 headers that carry one. There is no
+# source CSV to point at. THE PER-BEAT GROUND TRUTH IS A SEPARATE CALL:
+# load_beat_annotations(data_path) returns 3,623 rows, one per annotated beat.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "QT interval"
+    - "QT database"
+    - "waveform delineation"
+    - "P wave"
+    - "QRS complex"
+    - "T wave"
+    - "U wave"
+    - "fiducial points"
+    - "inter-observer variability"
+    - "expert annotation"
+    - "two-lead"
+    - "Holter"
+    - "PhysioNet"
+  rai_data_collection: >
+    105 fifteen-minute two-channel excerpts of ambulatory ECG, assembled at the
+    Universidad de Zaragoza and MIT and published by PhysioNet in November 1999.
+    The excerpts were chosen from existing databases to span a wide variety of QRS
+    and ST-T morphology and to avoid significant baseline wander or artifact: 33
+    from the European ST-T Database, 15 from the MIT-BIH Arrhythmia Database, 13
+    from the MIT-BIH Supraventricular Arrhythmia Database, 10 from the MIT-BIH
+    Normal Sinus Rhythm Database, 6 from the MIT-BIH ST Change Database and 4 from
+    the MIT-BIH Long-Term ECG Database, plus 24 Holter recordings collected at
+    Boston's Beth Israel Deaconess Medical Center from patients who experienced
+    sudden cardiac death during the recording and age- and gender-matched patients
+    without diagnosed cardiac disease. All recordings not originally sampled at 250
+    Hz were converted to it with the WFDB xform utility. Two expert cardiologists
+    then marked waveform boundaries on a graphic workstation, viewing both channels
+    at once: P onset, peak and end, QRS onset and end, T peak and end and, where
+    present, U peak and end. Beat selection was restricted to complexes ARISTOTLE
+    classified as normal whose neighbours were also normal, and to the final five
+    minutes of each excerpt, leaving ten minutes for an algorithm to learn from. At
+    least 30 consecutive beats of the dominant morphology were annotated per record
+    plus up to 20 of each non-dominant morphology, giving 3,623 annotated beats in
+    the shipped files. The annotations were audited to remove gross errors, with
+    precise placement left to the annotator's judgment, and 11 records carry a
+    second independent set for inter-observer study. Automatic boundaries from
+    ecgpuwave ship for every beat of every record, and 82 records inherit their
+    source database's own reference beat annotations.
+  rai_data_biases: >
+    The selection criteria are the main bias and the authors state one of them
+    themselves: because excerpts were chosen to avoid noisy signal, "heart rates
+    during these excerpts tend to be relatively low, probably since higher rates
+    are frequently associated with noisy signals that would have failed to satisfy
+    our selection criteria". A delineator validated here has therefore not been
+    tested at tachycardia, nor on baseline wander, nor on the artifact that
+    dominates real ambulatory recording. Only beats classified as normal, with
+    normal neighbours, were annotated, so there is no reference boundary for any
+    ectopic beat anywhere in the database. Annotation covers 3,623 of roughly
+    222,000 beats — about 1.6 percent — and all of it lies in the last five minutes
+    of each record, so a model evaluated on unannotated regions is being scored
+    against ecgpuwave's unaudited output rather than against a human. The
+    annotations are two individuals' judgment: they were audited for gross error
+    but not for precision, and the 11 records with two annotators show the
+    disagreement is not negligible, with annotator 2 covering only 404 of the 487
+    beats annotator 1 marked in those records and just 2 beats in one of them. The
+    cohort is small (105 records from at most 103 subjects) and clinically skewed
+    toward coronary disease and sudden death rather than drawn from a population,
+    and every recording predates 1997, most from Boston-area and Italian hospital
+    Holter studies of the 1970s and 1980s, digitised from analog tape. Amplitudes
+    are not comparable across the whole database: 24 records have gains the paper
+    calls estimates, 10 more declare no calibration at all, and four carry a
+    constant 5.12 mV offset. Finally, because every record is an excerpt of another
+    published database's recording, any evaluation that mixes this dataset with the
+    European ST-T, MIT-BIH Arrhythmia, Supraventricular, Normal Sinus Rhythm, ST
+    Change or sudden-death databases is training and testing on the same
+    recordings.
+  rai_personal_sensitive_info: >
+    De-identified. The signal files carry no name, no date and no institutional
+    identifier. 57 of the 105 headers carry no clinical information whatsoever, and
+    the remaining 48 carry what the source database published: for the 15 MIT-BIH
+    Arrhythmia excerpts an age, a sex, an analog-tape number, a recorder number and
+    a free-text description of the record's arrhythmia, copied verbatim from mitdb;
+    for the 33 European ST-T excerpts an age, a sex, a list of clinical findings
+    such as coronary artery disease or myocardial infarction, a medication note and
+    a recorder type. Ages run from 32 to 84 where recorded, with one MIT-BIH record
+    carrying the sentinel -1 for an unknown age and one European ST-T record
+    recording both age and sex as unknown. The remaining subjects are described
+    only by which database they came from, which for 24 of them means a Boston
+    hospital Holter study of patients who died or nearly died during the recording
+    — a disclosure the source releases already make. Record names embed the source
+    recording's identifier, so a reader can link any record back to its entry in
+    the source database and pick up whatever that release documents; that linkage
+    is intentional and is documented in the paper's own Table 2.

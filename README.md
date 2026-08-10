@@ -176,6 +176,33 @@ that genuinely has none (`mimic_iv_ecg_demo`) raises
 `LabelsUnavailableError` naming where labels could come from, rather than
 returning empty columns.
 
+**One dataset's ground truth does not fit a record-level table at all.** The QT
+Database is a *delineation* reference: cardiologists marked the onset, peak and end of
+the P, QRS, T and U waves of 3,623 individually selected beats, up to eleven fiducial
+points each. `labels=True` returns a per-record summary — how many beats, which waves,
+the QT/QTc/RR/PR/QRS medians — and the boundaries themselves come from a second call:
+
+```python
+from ecgbench.labels.qtdb import load_beat_annotations
+
+beats = load_beat_annotations("/data/qtdb/1.0.0/")          # 3,623 rows, one per beat
+beats[["record_name", "qrs_onset", "t_offset", "qt_ms"]].head()
+second = load_beat_annotations("/data/qtdb/1.0.0/", annotator="q2c")   # 404 rows
+```
+
+Three things to know before using them. Sample indices are absolute in the record's
+own 250 Hz frame, and **all of them lie in the last five minutes** — the earliest mark
+in the release is at 600.464 s and the latest at 896.916 s, deliberately, to leave an
+algorithm ten minutes of learning data — so read `window=(150000, 74993)` and subtract
+the window start before indexing the tensor. `NaN` means the annotator did not mark
+that point, which is information rather than missing data: two records mark QRS
+boundaries and no T wave at all. And **every `qtdb` record is a fifteen-minute excerpt
+of another database's recording** — 100 of the 105 share signal samples with `edb`,
+`sddb`, `mitdb`, `svdb`, `nsrdb` or `stdb`, verified from the waveforms — so
+`source_database` and `source_catalogue_slug` name the leakage partner of each record
+and its `label_column` is provenance rather than pathology. See
+`examples/load_qtdb.py`.
+
 **One dataset's ground truth is episodes rather than labels.** The European ST-T
 Database annotates the onset, extremum and end of every interval of significant ST
 or T change — 368 and 401 of them — separately in each of its two signals, so
@@ -276,6 +303,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `edb` | **`V5, MLI` in only 19 of 90 records** — the most varied layout in the catalogue: **fifteen orderings of eleven lead pairs**, and **no lead present in every record** (V5 reaches 51, MLIII 47, D3 exactly 1). `MLIII/V4` and `V4/MLIII` are both present, 15 records each. See below |
 | `chfdb` | **`ECG1`, `ECG2`** — like `afdb`, `nsrdb` and `svdb`, and from the same Beth Israel hospital as `mitdb`: no electrode placement is stated anywhere, so these are channel positions. Note that only the **current** `.hea` files name them — the 15 superseded `.hea-` copies shipped beside them (and listed in the release's own `SHA256SUMS.txt`) carry no signal descriptions at all, because the 2012 revision is what added them |
 | `sddb` | **`ECG1`, `ECG2`** — the `ltafdb` case, not the `afdb` one: every current header calls **both** channels `ECG`, the same string twice, so these two names are positions ECGBench assigns. The 23 superseded `.hea-` copies say `record 30, signal 0` instead — the 2008 revision is what introduced `ECG`. No electrode placement is stated in the headers or on the landing page, so again not MLII/V1. This is also the one dataset whose **ADC gain varies between records**: 800 adu/mV for 21 and **200 for records 39 and 47**, which moves the 12-bit rail from ±2.55875 mV to ±10.235 mV |
+| `qtdb` | **`ECG1`, `ECG2` in 57 of 105 records, and 19 further layouts in the other 48** — the most varied in the catalogue, and the only one whose *modal* layout is a placeholder. Those 57 (every excerpt from `svdb`, `nsrdb`, `stdb`, MIT-BIH Long-Term and the sudden-death Holters) state no electrode placement at all. The 15 MIT-BIH Arrhythmia excerpts match `mitdb`'s names exactly; the 33 European ST-T ones use the ESC's **original electrode nomenclature** (`D3`, `CM5`, `CC5`, `ML5`, `CM2`, `mod.V1`, `V2-V3`) and agree with `edb`'s names for the same bit-identical channels in only **2 of 33**. `D3, V4` and `V4, D3` are both present. See below |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -300,7 +328,7 @@ single layout, and behaves exactly as before. Note that batching `zzu_pecg` need
 `leads=` as well as `window=`: a batch mixing 9- and 12-lead records cannot be
 stacked.
 
-**And two datasets vary the lead *names* at a constant lead count**, which a
+**And three datasets vary the lead *names* at a constant lead count**, which a
 count-keyed map cannot express at all. Every one of `mitdb`'s 48 records stores
 exactly 2 leads, but only 40 store `MLII, V1`: two each store `MLII, V5`, `MLII, V2`
 and `V5, V2`, one stores `MLII, V4`, and record 114 stores `V5, MLII` — the
@@ -341,6 +369,27 @@ ds[0]              # ValueError: Record 'e0104' stores ['MLIII', 'V4'] ... 43 of
 Because no lead is universal, **`leads=` alone does not make `edb` batchable** — you
 need a lead *and* a record filter, and V5 at 57% of the release is the widest choice
 available. The per-record layout is in the labels as `lead_names`.
+
+`qtdb` is the third, and it adds a wrinkle neither of the others has: **its modal
+layout is not a real lead pair.** 57 of its 105 records describe both channels only as
+`ECG1`/`ECG2`, so the declared `lead_names` is a placeholder that covers a majority of
+the release, and the other 48 records use 19 further layouts. Since every `qtdb` record
+is a fifteen-minute excerpt of another database's recording, the consequence is a
+cross-dataset one: the 33 European ST-T excerpts keep the ESC's original electrode
+names while `edb` relabelled the same channels to standard ones, so `edb`'s `MLIII` is
+`qtdb`'s `D3` or `ML5`, its `V5` is `CM5`, its `V2` is `CM2`, `V1-V2` or `V2-V3`.
+
+```python
+# Of the 33 records the two datasets share, this selects 14 under edb's names...
+ECGDataset("edb", split="train", data_path="...", leads=["V5"])
+# ...and 2 under qtdb's, over signals that are bit-identical.
+ECGDataset("qtdb", split="train", data_path="...", leads=["V5"])
+```
+
+Nothing returns the wrong lead — no name maps to a different physical channel in the
+two releases — but any code selecting by name silently covers a different set of
+records. `leads=["MLII"]` resolves for 11 of the 85 records in `qtdb`'s train split and
+refuses the other 74.
 
 `record_lead_layouts` is wfdb-only, because no other format names its leads per
 record. Datasets that do not declare it are unaffected.

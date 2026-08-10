@@ -128,6 +128,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         nsrdb,
         ptbdb,
         ptbxl,
+        qtdb,
         sami_trop,
         sddb,
         sph,
@@ -140,6 +141,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     return {
         "ptbxl": ptbxl.load_labels,
         "ptbdb": ptbdb.load_labels,
+        "qtdb": qtdb.load_labels,
         "ludb": ludb.load_labels,
         "medalcare_xl": medalcare_xl.load_labels,
         "mhd_effect_ecg_mri": mhd_effect_ecg_mri.load_labels,

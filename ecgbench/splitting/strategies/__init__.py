@@ -33,6 +33,7 @@ from . import (  # noqa: F401
     nsrdb,
     ptbdb,
     ptbxl,
+    qtdb,
     sami_trop,
     sddb,
     sph,

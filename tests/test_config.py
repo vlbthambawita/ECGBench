@@ -1191,20 +1191,22 @@ def test_mitdb_declares_every_lead_layout_in_the_release():
     assert config.alternate_lead_names is None
 
 
-def test_only_mitdb_and_edb_declare_per_record_lead_layouts():
+def test_only_mitdb_edb_and_qtdb_declare_per_record_lead_layouts():
     """Each one needs the same evidence: layouts counted from the headers.
 
     This is not a style rule. Declaring the field switches ``ECGDataset`` from
     resolving leads once to reading every record's header, so it should appear
-    only where the layout genuinely varies. Two releases in the catalogue qualify,
-    and ``edb`` is the more extreme of them: 15 layouts over 90 records against
-    ``mitdb``'s 6 over 48, and no lead present in every record.
+    only where the layout genuinely varies. Three releases in the catalogue
+    qualify, and ``qtdb`` is the most extreme: 20 layouts over 105 records,
+    against ``edb``'s 15 over 90 and ``mitdb``'s 6 over 48. None of the three has
+    a lead present in every record — ``qtdb`` least of all, where the modal layout
+    is the placeholder pair ECG1/ECG2 and covers 57 records.
     """
     declaring = [
         slug for slug in list_available_configs()
         if load_config(slug).record_lead_layouts
     ]
-    assert declaring == ["edb", "mitdb"]
+    assert declaring == ["edb", "mitdb", "qtdb"]
 
 
 def test_load_afdb_config():
@@ -2003,5 +2005,112 @@ def test_sddb_labels_are_module_based_with_no_source_csv():
     ``record_id_column`` or the fold CSVs would not join.
     """
     config = load_config("sddb")
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == config.record_id_column
+
+
+def test_load_qtdb_config():
+    """QT Database: 20 lead layouts, a placeholder modal pair, no diagnostic label."""
+    config = load_config("qtdb")
+    assert config.slug == "qtdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every record is format 212 with units of mV. 95 declare a real gain that wfdb
+    # divides by; the other 10 declare 0 — WFDB's "uncalibrated" — and wfdb
+    # substitutes its 200 adu/mV fallback. Either way p_signal is millivolts and
+    # there is nothing to rescale; the 10 are a CALIBRATION problem, recorded in the
+    # labels as amplitude_calibrated, not a units problem.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # A PLACEHOLDER PAIR, and the modal layout only because 57 of the 105 records
+    # state no electrode placement at all. It must not be "corrected" to MLII/V1:
+    # 48 records DO name their channels and they use 19 other layouts between them.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    assert config.signal_path_columns == {250: "signal_path"}
+    # No metadata ships in any form. QTDBSplitter generates this from the 105
+    # headers and all nine annotation layers.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Set, unlike the other two-lead Holter databases, because two European ST-T
+    # subjects contributed two records each and both pairs are here.
+    assert config.patient_id_column == "patient_id"
+    # 20 layouts — the most in the catalogue. See TestPerRecordLeadLayouts.
+    assert config.record_lead_layouts is not None
+    assert len(config.record_lead_layouts) == 20
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "sel100"/"sele0104": every one starts with a letter, so no
+    # identifier column here can be read as an integer.
+    assert config.zero_padded_identifiers is False
+    # PROVENANCE, NOT PATHOLOGY. The release has no record-level diagnosis of any
+    # kind, so this is the source database each excerpt came from.
+    assert config.label_column == "source_database"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_qtdb_expected_samples_is_the_shortest_record_not_the_nominal_length():
+    """Three lengths ship and all three are complete 15-minute excerpts.
+
+    225,000 samples (900.0 s) for 53 records, 224,999 for 29 and 224,993 for the 23
+    sudden-death excerpts, whose headers record "The signal 0 was delayed with a
+    delay=7 samples". A threshold at the nominal 225,000 would report 52 sound
+    records as truncated; set at the minimum the check passes all 105 and still
+    fires on a genuinely short record.
+
+    That makes qtdb the case where ``expected_samples`` is neither uniform (like
+    edb's 1,800,000) nor abandoned (like sddb's empty dict) — the spread is 7
+    samples out of 225,000, so the minimum is a useful bound rather than a
+    meaningless one.
+    """
+    config = load_config("qtdb")
+    assert config.validation.expected_samples == {250: 224993}
+    assert "truncated_signal" in config.validation.checks
+    # 7 samples short of the nominal length, which is the delay applied to signal 0.
+    assert 225000 - config.validation.expected_samples[250] == 7
+    # And the nominal length is what duration_seconds describes.
+    assert config.duration_seconds == 900.0
+    assert config.duration_seconds * config.default_sampling_rate == 225000
+
+
+def test_qtdb_amplitude_range_is_the_rail_at_the_loosest_of_five_declared_gains():
+    """Five distinct gains ship, and the bound has to accommodate the smallest.
+
+    adc_zero is 0 for 101 records and only four declare a baseline, so a sample is
+    confined to [-2047, 2047] adu once -2048 is excluded as WFDB's invalid-sample
+    marker. 99 records declare 200 adu/mV, giving +/-10.235 mV; three European ST-T
+    records re-declare one channel lower — 185, 135 and 120 — and 120 gives
+    +/-17.058 mV. A single range has to fit the loosest record or it fires on a
+    sound one.
+
+    Nothing attains it: the extremes over all 23.6 million sample-pairs are -7.800
+    and +16.675 mV. So unlike chfdb no float32 slack is needed, and unlike sddb the
+    bound is not measured — it is the rail, guarding against a mis-scaled re-release.
+    """
+    config = load_config("qtdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-17.058, 17.058)
+    # The rail at the loosest declared gain is what the bound is.
+    assert high == pytest.approx(2047 / 120.0, abs=5e-4)
+    # And it is looser than the 200 adu/mV rail every other two-lead config uses.
+    assert high > 2047 / 200.0
+    assert load_config("edb").validation.amplitude_range_mv == (-10.24, 10.235)
+
+
+def test_qtdb_labels_are_module_based_with_no_source_csv():
+    """Nothing ships that could be a source_csv — the ground truth is annotations.
+
+    ``ecgbench.labels.qtdb`` reads the 105 headers and all nine annotation layers.
+    ``join_column`` still has to match ``record_id_column`` or the fold CSVs would
+    not join.
+    """
+    config = load_config("qtdb")
+    assert config.labels is not None
+    assert config.labels.available is True
     assert config.labels.source_csv is None
     assert config.labels.join_column == config.record_id_column

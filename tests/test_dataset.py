@@ -1692,8 +1692,77 @@ class TestPerRecordLeadLayouts:
         # No lead is in every layout, so there is no universally selectable lead.
         assert not {n for n in names if all(n in layout for layout in layouts)}
 
+    def test_qtdb_declares_twenty_layouts_and_its_modal_one_is_a_placeholder(self):
+        """The most varied layout in the catalogue, and the only placeholder modal pair.
+
+        105 records, TWENTY layouts. What makes qtdb different from edb and mitdb is
+        that its ``lead_names`` is not a real lead pair at all: 57 of the 105 records
+        — every excerpt from the Supraventricular, Normal Sinus Rhythm, ST Change,
+        Long-Term and sudden-death sources — describe both channels only as ECG1 and
+        ECG2, stating no electrode placement anywhere. So the modal layout is a
+        majority (57 of 105, where edb's covers 19 of 90) *and* is positional.
+
+        The other 48 records do name their channels, in 19 further layouts, and both
+        orders of the same pair appear: D3/V4 in 5 records and V4/D3 in 7.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("qtdb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        layouts = config.record_lead_layouts
+        assert len(layouts) == 20
+        assert config.lead_names in layouts
+        # Every layout holds 2 leads — a count-keyed map cannot tell them apart.
+        assert {len(layout) for layout in layouts} == {2}
+        assert config.alternate_lead_names is None
+        # The same pair in both orders, which is what breaks positional indexing.
+        assert ["D3", "V4"] in layouts
+        assert ["V4", "D3"] in layouts
+        names = {name for layout in layouts for name in layout}
+        # No lead is in every layout, so every name-based selection raises for some
+        # records — including ECG1/ECG2, which raise for the 48 that name channels.
+        assert not {n for n in names if all(n in layout for layout in layouts)}
+
+    def test_qtdb_and_edb_disagree_about_the_names_of_identical_channels(self):
+        """The same signal samples, two lead vocabularies — a silent coverage change.
+
+        30 of qtdb's 33 European ST-T excerpts are bit-identical to edb 1.0.0's
+        recordings, but qtdb keeps the ESC's original bipolar-electrode nomenclature
+        while edb relabelled the same channels to standard names: edb's MLIII is
+        qtdb's D3 or ML5, its V5 is CM5, its V2 is CM2, V1-V2 or V2-V3. Only
+        ``sele0107`` and ``sele0704`` agree.
+
+        Nothing returns the WRONG lead — no name maps to a different physical
+        channel in the two releases — but the coverage changes silently. Of the 33
+        records the two datasets share, ``leads=["V5"]`` selects **14** under edb's
+        names and **2** under qtdb's, over signals that are the same samples. This
+        asserts the disagreement rather than letting a later "consistency" edit
+        erase it.
+        """
+        from ecgbench.config import load_config
+
+        qtdb = load_config("qtdb").record_lead_layouts
+        edb = load_config("edb").record_lead_layouts
+        qtdb_names = {n for layout in qtdb for n in layout}
+        edb_names = {n for layout in edb for n in layout}
+
+        # qtdb carries electrode names edb has none of...
+        assert {"CM5", "CC5", "ML5", "CM2", "CM4", "mod.V1"} <= qtdb_names
+        assert not {"CM5", "CC5", "ML5", "CM2", "CM4", "mod.V1"} & edb_names
+        # ...and edb carries limb-lead names qtdb has none of.
+        assert {"MLI", "MLIII"} <= edb_names
+        assert not {"MLI", "MLIII"} & qtdb_names
+        # V5 is the one widely-used name both vocabularies share, so it is the name
+        # a cross-dataset selection would reach for.
+        assert "V5" in qtdb_names and "V5" in edb_names
+        # And qtdb's placeholder pair, which covers 57 of its records, is absent
+        # from edb entirely — edb names the channels of all 90 of its own.
+        assert ["ECG1", "ECG2"] in qtdb
+        assert not {"ECG1", "ECG2"} & edb_names
+
     # Which configs may declare record_lead_layouts is pinned once, in
-    # tests/test_config.py::test_only_mitdb_and_edb_declare_per_record_lead_layouts.
+    # tests/test_config.py::test_only_mitdb_edb_and_qtdb_declare_per_record_lead_layouts.
 
 
 class TestZeroPaddedRecordIds:

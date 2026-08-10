@@ -8294,3 +8294,525 @@ class TestSDDBLabels:
 
         with pytest.raises(LabelSourceMissingError, match="Sudden Cardiac Death"):
             scan_records(tmp_path)
+
+
+class TestQTDBLabels:
+    """QT Database: per-beat boundaries, and provenance that is the leakage warning.
+
+    Every other loader in this file returns record-level ground truth. This one
+    cannot: qtdb's product is 3,623 individually annotated beats with up to eleven
+    fiducial points each, so ``load_labels`` summarises and
+    ``load_beat_annotations`` is where the ground truth lives. Three things have to
+    be right — the mark-to-beat assignment, the source-database table that names each
+    record's leakage partner, and the two subject pairs that would otherwise straddle
+    train and test.
+    """
+
+    # sel100: a MIT-BIH Arrhythmia excerpt. Note "200(0)" — an explicit baseline of 0
+    # against an adc_zero of 1024, which only four records in the release carry and
+    # which is what puts a +5.12 mV pedestal on them.
+    HEADER_MITDB = (
+        "sel100 2 250/360 225000\n"
+        "sel100.dat 212 200(0) 11 1024 945 -13873 0 MLII\n"
+        "sel100.dat 212 200(0) 11 1024 955 14507 0 V5\n"
+        "# 69 M 1085 1629 x1\n"
+        "# Aldomet, Inderal\n"
+        "#Produced by xform from record 100, beginning at 7:00.000\n"
+    )
+    # sele0104: a European ST-T excerpt, with the coarser clinical vintage.
+    HEADER_ESC = (
+        "sele0104 2 250 225000\n"
+        "sele0104.dat 212 200 12 0 -244 2025 0 D3\n"
+        "sele0104.dat 212 200 12 0 -297 -13904 0 D4\n"
+        "#Age: 47  Sex: M\n"
+        "#Coronary artery disease\n"
+        "#Coronary angiography\n"
+        "#Myocardial infarction\n"
+        "#unspecified medication\n"
+        "#Recorder type: ICR model 7200\n"
+        "#Produced by xform from record e0104, beginning at 1:35:00.000\n"
+    )
+    # sel30: a sudden-death excerpt. Two provenance lines, no clinical block, the
+    # 7-sample delay on signal 0, and 224,993 samples rather than 225,000.
+    HEADER_SDDB = (
+        "sel30 2 250 224993\n"
+        "sel30.dat 212 200 12 0 13 -10702 0 ECG1\n"
+        "sel30.dat 212 200 12 0 20 -30717 0 ECG2\n"
+        "#Produced by xform_new from record 30, beginning at 26:35.000\n"
+        "#Produced by xform_new from record 30, beginning at 7:39:30.000\n"
+        "#------------------------------------------\n"
+        '#Produced by "/files2/scheherazade/plaguna/database/delay" from record sel30\n'
+        "#The signal 0 was delayed with a delay=7 samples\n"
+    )
+    # sel14046: a Long-Term excerpt declaring a gain of 0 — WFDB for uncalibrated.
+    HEADER_UNCALIBRATED = (
+        "sel14046 2 250/128 224999\n"
+        "sel14046.dat 212 0 12 0 -16 12292 0 ECG1\n"
+        "sel14046.dat 212 0 12 0 -64 12847 0 ECG2\n"
+        "#Produced by xform from record 14046, beginning at 9:14:13.000\n"
+    )
+
+    def test_labels_come_from_headers_and_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("qtdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # nothing shipped could serve as one
+        assert spec.join_column == "record_name"
+
+    def test_the_source_table_reproduces_the_papers_table_1(self):
+        """105 records over seven sources plus one control, each record in exactly one.
+
+        Table 1 of Laguna et al. 1997 gives the breakdown, and it cannot be derived
+        from the record names: ``sel17152`` and ``sel17453`` differ only in their last
+        three digits and come from different sources, and three headers name their
+        source record ``mqt2`` rather than the real one. So the table is a literal and
+        this is what checks it.
+        """
+        from ecgbench.labels.qtdb import (
+            SOURCE_CATALOGUE_SLUG,
+            SOURCE_DATABASE_NAMES,
+            SOURCE_DATABASE_RECORDS,
+            SOURCE_SAMPLING_RATE,
+            _record_source,
+        )
+
+        counts = {db: len(recs) for db, recs in SOURCE_DATABASE_RECORDS.items()}
+        assert counts == {
+            "edb": 33, "sddb": 23, "mitdb": 15, "svdb": 13,
+            "nsrdb": 10, "stdb": 6, "ltdb": 4, "bih_control": 1,
+        }
+        assert sum(counts.values()) == 105
+        # No record in two sources — a duplicate would silently halve a fold class.
+        flat = [r for recs in SOURCE_DATABASE_RECORDS.values() for r in recs]
+        assert len(flat) == len(set(flat)) == 105
+        assert len(_record_source()) == 105
+        # Every source has a name, a rate and a catalogue-slug entry (possibly None).
+        assert set(SOURCE_DATABASE_NAMES) == set(SOURCE_DATABASE_RECORDS)
+        assert set(SOURCE_SAMPLING_RATE) == set(SOURCE_DATABASE_RECORDS)
+        assert set(SOURCE_CATALOGUE_SLUG) == set(SOURCE_DATABASE_RECORDS)
+
+    def test_every_catalogue_slug_it_names_is_a_real_dataset_page(self):
+        """The leakage partners have to resolve, or the warning points nowhere.
+
+        Six of the seven sources are datasets ECGBench also partitions; ``ltdb`` and
+        the matched control are not in the catalogue and are None rather than a
+        guessed slug.
+        """
+        import ecgbench
+        from ecgbench.labels.qtdb import SOURCE_CATALOGUE_SLUG
+
+        known = {entry.slug for entry in ecgbench.list_datasets()}
+        named = {s for s in SOURCE_CATALOGUE_SLUG.values() if s}
+        assert len(named) == 6
+        assert named <= known
+        assert SOURCE_CATALOGUE_SLUG["ltdb"] is None
+        assert SOURCE_CATALOGUE_SLUG["bih_control"] is None
+
+    def test_the_published_beat_counts_sum_to_the_papers_3622(self):
+        """The paper's own column, kept so the shipped 3,623 can be checked.
+
+        ``sel223`` is the single record where the files disagree with Table 2 — 31
+        beats against 30 — and that one record is the whole difference between the
+        published total and the recomputed one.
+        """
+        from ecgbench.labels.qtdb import (
+            PUBLISHED_ANNOTATED_BEATS,
+            PUBLISHED_WAVEFORM_PATTERN,
+            SOURCE_DATABASE_RECORDS,
+        )
+
+        records = {r for recs in SOURCE_DATABASE_RECORDS.values() for r in recs}
+        assert set(PUBLISHED_ANNOTATED_BEATS) == records
+        assert set(PUBLISHED_WAVEFORM_PATTERN) == records
+        assert sum(PUBLISHED_ANNOTATED_BEATS.values()) == 3622
+        assert PUBLISHED_ANNOTATED_BEATS["sel223"] == 30
+        # The paper's minimum is the "at least 30 beats" the abstract promises.
+        assert min(PUBLISHED_ANNOTATED_BEATS.values()) == 30
+        # sel35 and sel37 annotate no T wave at all, which is visible in the pattern.
+        assert PUBLISHED_WAVEFORM_PATTERN["sel35"] == "(N)"
+        assert PUBLISHED_WAVEFORM_PATTERN["sel37"] == "(Q)"
+
+    def test_the_header_parser_keeps_a_declared_gain_of_zero_and_a_baseline(
+        self, tmp_path
+    ):
+        """wfdb normalises away both fields, which is why this reads the text.
+
+        A gain of 0 MEANS uncalibrated and wfdb silently substitutes 200 adu/mV, so
+        ``rdheader`` cannot tell an uncalibrated record from a calibrated one. And an
+        explicit baseline appears in only four headers — it is what puts the +5.12 mV
+        pedestal on them — so it has to survive the parse to be reportable.
+        """
+        from ecgbench.labels.qtdb import parse_header
+
+        (tmp_path / "sel100.hea").write_text(self.HEADER_MITDB)
+        (tmp_path / "sel14046.hea").write_text(self.HEADER_UNCALIBRATED)
+
+        mit = parse_header(tmp_path / "sel100.hea")
+        assert mit["declared_gains"] == [200.0, 200.0]
+        assert mit["declared_baselines"] == [0, 0]      # explicit, against adc_zero
+        assert mit["adc_zeros"] == [1024, 1024]
+        assert mit["adc_res"] == [11, 11]
+        assert mit["lead_names"] == ["MLII", "V5"]
+        assert mit["n_samples"] == 225000
+        assert mit["counter_freq"] == 360.0            # the original rate
+        assert mit["provenance"] == [("100", 420.0)]
+
+        uncal = parse_header(tmp_path / "sel14046.hea")
+        assert uncal["declared_gains"] == [0.0, 0.0]    # NOT wfdb's 200 fallback
+        assert uncal["declared_baselines"] == [None, None]
+        assert uncal["counter_freq"] == 128.0
+
+    def test_the_sudden_death_headers_carry_two_provenance_lines_and_a_delay(
+        self, tmp_path
+    ):
+        """Two xform passes, and the SECOND offset is the one that locates the excerpt.
+
+        Verified against sddb 1.0.0 for 22 of the 23 records: at the second stated
+        offset the samples match exactly. ``scan_records`` therefore takes the last
+        provenance line, not the first. The delay comment explains why these records
+        are 224,993 samples rather than 225,000.
+        """
+        from ecgbench.labels.qtdb import parse_header
+
+        (tmp_path / "sel30.hea").write_text(self.HEADER_SDDB)
+        header = parse_header(tmp_path / "sel30.hea")
+
+        assert header["provenance"] == [("30", 1595.0), ("30", 27570.0)]
+        assert header["provenance"][-1][1] == 7 * 3600 + 39 * 60 + 30
+        assert header["delays"] == {0: 7}
+        assert header["n_samples"] == 225000 - 7
+        # No counter frequency: sddb is already 250 Hz, so nothing was resampled.
+        assert header["counter_freq"] is None
+        # The separator rule and the quoted "Produced by" line are not clinical text.
+        assert header["clinical"] == []
+
+    def test_the_two_clinical_vintages_parse_into_different_columns(self, tmp_path):
+        """mitdb's positional line and the ESC's labelled one, kept apart.
+
+        The 15 MIT-BIH excerpts carry mitdb's block byte-identical, including the
+        analog-tape and recorder fields; the 33 European ST-T ones carry an earlier,
+        coarser vintage of edb's text. 57 records carry nothing at all.
+        """
+        from ecgbench.labels.qtdb import _parse_clinical, parse_header
+
+        (tmp_path / "sel100.hea").write_text(self.HEADER_MITDB)
+        (tmp_path / "sele0104.hea").write_text(self.HEADER_ESC)
+        (tmp_path / "sel30.hea").write_text(self.HEADER_SDDB)
+
+        mit = _parse_clinical(parse_header(tmp_path / "sel100.hea")["clinical"], "mitdb")
+        assert mit["clinical_source"] == "mitdb_header"
+        assert mit["age"] == 69.0
+        assert mit["sex"] == "M"
+        assert mit["analog_tape"] == "1085"     # the subject, per ecgbench.labels.mitdb
+        assert mit["recorder"] == "1629"
+        assert mit["playback_speed"] == "x1"
+        assert mit["medications"] == "Aldomet, Inderal"
+
+        esc = _parse_clinical(parse_header(tmp_path / "sele0104.hea")["clinical"], "edb")
+        assert esc["clinical_source"] == "esc_header"
+        assert esc["age"] == 47.0
+        assert esc["sex"] == "M"
+        assert esc["recorder"] == "ICR model 7200"
+        assert esc["medications"] == "unspecified medication"
+        assert esc["clinical_findings"] == (
+            "Coronary artery disease;Coronary angiography;Myocardial infarction"
+        )
+        # Not the tape/recorder columns — those are the other vintage's shape.
+        assert esc["analog_tape"] == ""
+
+        none = _parse_clinical(parse_header(tmp_path / "sel30.hea")["clinical"], "sddb")
+        assert none["clinical_source"] == "none"
+        assert pd.isna(none["age"])
+        assert none["sex"] == ""
+
+    def test_an_unknown_age_or_sex_is_nan_not_a_parse_failure(self):
+        """mitdb writes -1 for an unknown age; the ESC vintage writes '-' for both.
+
+        ``sel103`` is the one record with -1 and ``sele0166`` the one with '-', so
+        both sentinels occur exactly once and neither may become a number.
+        """
+        from ecgbench.labels.qtdb import _parse_clinical
+
+        mit = _parse_clinical(["-1 M 742 654 x1", "Diapres, Xyloprim"], "mitdb")
+        assert pd.isna(mit["age"])
+        assert mit["sex"] == "M"          # sex is still known
+        assert mit["analog_tape"] == "742"
+
+        esc = _parse_clinical(
+            ["Age: -  Sex: -", "Myocardial infarction", "Recorder type: ACS"], "edb"
+        )
+        assert pd.isna(esc["age"])
+        assert esc["sex"] == ""
+        assert esc["clinical_findings"] == "Myocardial infarction"
+
+    def _write_q1c(self, tmp_path, record="sel900"):
+        """Two consecutive annotated beats in the release's own annotation shape.
+
+        ``( p ) ( N ) t ) u )`` per beat, with the wave type in the ``num`` field: 0
+        for the P wave, 1 for the QRS, 2 for the T wave, 3 for the U wave. The second
+        beat is 250 samples (1.000 s) after the first, so RR is defined for it and
+        not for the first.
+        """
+        import numpy as np
+        import wfdb
+
+        samples, symbols, nums = [], [], []
+        for beat_start in (150000, 150250):
+            for offset, symbol, num in (
+                (0, "(", 0), (10, "p", 0), (20, ")", 0),      # P wave
+                (40, "(", 1), (50, "N", 1), (62, ")", 1),     # QRS, 88 ms wide
+                (80, "(", 2), (100, "t", 2), (144, ")", 2),   # T wave
+                (160, "u", 3), (170, ")", 3),                 # U wave, no onset
+            ):
+                samples.append(beat_start + offset)
+                symbols.append(symbol)
+                nums.append(num)
+        # wfdb.wrann refuses an extension containing a digit, though rdann reads
+        # one happily and the release's files are all named .q1c/.q2c — so write
+        # under a letter-only name and rename. The file content is unaffected.
+        wfdb.wrann(
+            record, "qxc",
+            sample=np.array(samples),
+            symbol=symbols,
+            num=np.array(nums),
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        (tmp_path / f"{record}.qxc").rename(tmp_path / f"{record}.q1c")
+        (tmp_path / "RECORDS").write_text(f"{record}\n")
+        return tmp_path
+
+    def test_marks_land_on_the_right_beat_and_the_intervals_follow(self, tmp_path):
+        """P and QRS onset attach to the FOLLOWING beat, T and U to the preceding one.
+
+        This is the whole of the parse and it needs no tolerance parameter: the
+        annotators worked beat by beat, so position is unambiguous. Get the direction
+        wrong and every QT is measured from the next beat's QRS onset, which is
+        negative — silently, because the columns still populate.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.labels.qtdb import load_beat_annotations
+
+        beats = load_beat_annotations(self._write_q1c(tmp_path))
+        assert len(beats) == 2
+        first = beats.iloc[0]
+
+        assert first["qrs_peak"] == 150050
+        assert first["p_onset"] == 150000       # before the beat, so it is this beat's
+        assert first["p_peak"] == 150010
+        assert first["p_offset"] == 150020
+        assert first["qrs_onset"] == 150040     # also before the beat
+        assert first["qrs_offset"] == 150062    # after it
+        assert first["t_onset"] == 150080
+        assert first["t_peak"] == 150100
+        assert first["t_offset"] == 150144
+        assert first["u_peak"] == 150160
+        assert first["u_offset"] == 150170
+        assert pd.isna(first["u_onset"])        # not marked, so NaN not 0
+
+        # QT runs from QRS onset to T end: 104 samples at 250 Hz.
+        assert first["qt_ms"] == pytest.approx(416.0)
+        assert first["qrs_ms"] == pytest.approx(88.0)
+        assert first["pr_ms"] == pytest.approx(160.0)
+        assert first["p_ms"] == pytest.approx(80.0)
+        # RR is undefined for the first annotated beat and 1.000 s for the second.
+        assert pd.isna(first["rr_ms"])
+        assert pd.isna(first["qtc_bazett_ms"])
+        assert beats.iloc[1]["rr_ms"] == pytest.approx(1000.0)
+        # Bazett at RR = 1 s leaves QT unchanged.
+        assert beats.iloc[1]["qtc_bazett_ms"] == pytest.approx(beats.iloc[1]["qt_ms"])
+
+    def test_a_gap_between_annotated_runs_does_not_become_a_three_second_rr(
+        self, tmp_path
+    ):
+        """Records were annotated in runs, so consecutive rows are not always adjacent.
+
+        30 consecutive beats of the dominant morphology plus up to 20 of each
+        non-dominant one means runs separated by arbitrary gaps. Without the guard the
+        first beat of a new run gets an RR of however long the gap was, and Bazett
+        then divides a real QT by the square root of a fiction.
+        """
+        pytest.importorskip("wfdb")
+
+        import numpy as np
+        import wfdb
+
+        from ecgbench.labels.qtdb import _MAX_PLAUSIBLE_RR_S, load_beat_annotations
+
+        # Three beats: the second 1 s after the first, the third 60 s later.
+        starts = [150000, 150250, 165250]
+        samples, symbols, nums = [], [], []
+        for start in starts:
+            for offset, symbol, num in (
+                (40, "(", 1), (50, "N", 1), (62, ")", 1), (144, ")", 2),
+            ):
+                samples.append(start + offset)
+                symbols.append(symbol)
+                nums.append(num)
+        wfdb.wrann(
+            "sel901", "qxc", sample=np.array(samples), symbol=symbols,
+            num=np.array(nums), fs=250, write_dir=str(tmp_path),
+        )
+        (tmp_path / "sel901.qxc").rename(tmp_path / "sel901.q1c")
+        (tmp_path / "RECORDS").write_text("sel901\n")
+
+        beats = load_beat_annotations(tmp_path)
+        assert len(beats) == 3
+        assert pd.isna(beats.iloc[0]["rr_ms"])
+        assert beats.iloc[1]["rr_ms"] == pytest.approx(1000.0)
+        # 60 s is not a pause; it is a gap between runs.
+        assert pd.isna(beats.iloc[2]["rr_ms"])
+        assert pd.isna(beats.iloc[2]["qtc_bazett_ms"])
+        # ...but the QT itself is still measured, because it is within the beat.
+        assert beats.iloc[2]["qt_ms"] == pytest.approx(416.0)
+        assert _MAX_PLAUSIBLE_RR_S == 3.0
+
+    def test_the_first_pass_annotators_are_refused_rather_than_misparsed(
+        self, tmp_path
+    ):
+        """``qt1``/``qt2`` mark every boundary with '|' and do not say which wave.
+
+        Parsing them as boundaries would return beats with every fiducial point NaN
+        and no error, so the loader refuses the extension by name.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.labels.qtdb import MANUAL_ANNOTATORS, load_beat_annotations
+
+        assert MANUAL_ANNOTATORS == ("q1c", "q2c")
+        for annotator in ("qt1", "qt2", "man", "pu0", "atr"):
+            with pytest.raises(ValueError, match="second-pass"):
+                load_beat_annotations(tmp_path, annotator=annotator)
+
+    def test_the_waveform_pattern_rebuilds_the_papers_notation(self, tmp_path):
+        """``(p)(N)t)`` is Table 2's compact statement of what ground truth exists.
+
+        A mark counts when at least half the record's beats carry it, which is what
+        makes the column a property of the record rather than of one beat.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.labels.qtdb import (
+            _MARK_FIELDS,
+            PUBLISHED_WAVEFORM_PATTERN,
+            _waveform_pattern,
+            load_beat_annotations,
+        )
+
+        beats = load_beat_annotations(self._write_q1c(tmp_path))
+        # Both beats carry every mark except the U onset, so the U wave appears as
+        # peak-and-end and the T wave — unusually for this release — as a full triple.
+        assert _waveform_pattern(beats) == "(p)(N)(t)u)"
+        # A mark on fewer than half the beats drops out of the pattern. Shown on a
+        # hand-built frame because the threshold needs more than two beats to bite:
+        # four beats, U marked on one of them.
+        marks = {field: [1, 2, 3, 4] for field in _MARK_FIELDS}
+        marks["u_peak"] = [1, None, None, None]
+        marks["u_offset"] = [1, None, None, None]
+        marks["u_onset"] = [None] * 4
+        sparse = pd.DataFrame({**marks, "symbol": ["N"] * 4})
+        assert _waveform_pattern(sparse) == "(p)(N)(t)"
+        # Two of four is exactly half, and half counts — the paper's own column
+        # includes u) for sel117 on 11 of 30 beats, so the rule is deliberately
+        # generous rather than strict.
+        sparse.loc[1, ["u_peak", "u_offset"]] = 2
+        assert _waveform_pattern(sparse) == "(p)(N)(t)u)"
+        # And that is the shape the paper's own column uses — sel14172 is "(p)(N)(t)(u)"
+        # and sel100 "(p)(N)t)", differing only in which marks the annotator placed.
+        assert PUBLISHED_WAVEFORM_PATTERN["sel100"] == "(p)(N)t)"
+        assert PUBLISHED_WAVEFORM_PATTERN["sel14172"] == "(p)(N)(t)(u)"
+        assert _waveform_pattern(beats.iloc[:0]) == ""
+
+    def test_the_two_shared_subjects_are_collapsed_so_neither_straddles_a_fold(self):
+        """105 records, 103 subjects — and the release says nothing about either pair.
+
+        Two European ST-T subjects contributed two recordings each and both pairs are
+        in qtdb: e0121 with e0122 and e0124 with e0126. Ungrouped, each pair puts the
+        same person in train and test. The pairs come from edb's own reconstruction,
+        not from qtdb's headers, which are too coarse to recover the second one — so
+        this pins the literal against a later "simplify to record_name" edit.
+        """
+        from ecgbench.labels.qtdb import (
+            EDB_SHARED_SUBJECTS,
+            SOURCE_DATABASE_RECORDS,
+            reconstruct_patient_ids,
+        )
+
+        records = [r for recs in SOURCE_DATABASE_RECORDS.values() for r in recs]
+        ids = reconstruct_patient_ids(pd.DataFrame({"record_name": records}))
+
+        assert len(ids) == 105
+        assert ids.nunique() == 103
+        assert ids.name == "patient_id"
+        # The two pairs, and nothing else, share an id.
+        shared = ids.value_counts()
+        assert set(shared[shared > 1].index) == {"sele0121", "sele0124"}
+        assert set(shared[shared > 1]) == {2}
+        # Every grouped record is a real record, and every member maps to its group.
+        members = {m for group in EDB_SHARED_SUBJECTS.values() for m in group}
+        assert members <= set(records)
+        assert ids[records.index("sele0122")] == "sele0121"
+        assert ids[records.index("sele0126")] == "sele0124"
+        # Everything else is its own subject.
+        assert ids[records.index("sel100")] == "sel100"
+
+    def test_the_stratification_class_is_provenance_and_says_so(self):
+        """``source_database``, because the release has no diagnostic label at all.
+
+        It is exposed as ``label_column`` too, so the docstring has to warn against
+        training on it — a provenance column in that slot looks like a target.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.labels.qtdb import attach_stratify_class
+
+        df = pd.DataFrame({"source_database": ["edb", "sddb", "mitdb"]})
+        out = attach_stratify_class(df)
+        assert list(out["stratify_class"]) == ["edb", "sddb", "mitdb"]
+        assert load_config("qtdb").label_column == "source_database"
+        doc = attach_stratify_class.__doc__ or ""
+        assert "Table 1" in doc
+        assert "no record-level diagnosis" in doc
+
+    def test_the_annotated_window_fits_every_record(self):
+        """Ground truth is confined to the last five minutes, so the window is fixed.
+
+        Measured over the release the earliest manual annotation sits at 600.464 s and
+        the latest at 896.916 s. The window's length is set by the shortest record
+        (224,993 samples), so a user can apply it to all 105 without
+        ``WindowOutOfRangeError``.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.labels.qtdb import ANNOTATED_WINDOW, SAMPLING_RATE
+
+        start, length = ANNOTATED_WINDOW
+        config = load_config("qtdb")
+        assert SAMPLING_RATE == config.default_sampling_rate == 250
+        # Starts at 600 s, exactly the paper's "final 5 minutes" boundary...
+        assert start / SAMPLING_RATE == 600.0
+        # ...and ends at the shortest record, which is what expected_samples pins.
+        assert start + length == config.validation.expected_samples[250] == 224993
+        # It covers the measured extremes of the annotation.
+        assert start <= 600.464 * SAMPLING_RATE
+        assert start + length >= 896.916 * SAMPLING_RATE
+
+    def test_no_ari_annotator_is_expected_even_though_the_paper_describes_one(self):
+        """The paper documents ``record.ari``; the release ships none.
+
+        Worth pinning because ``ecgbench.labels.sddb`` DOES read ``.ari`` and the two
+        modules sit side by side — a well-meaning edit could add it here and get zero
+        counts for all 105 records with no error.
+        """
+        from ecgbench.labels import qtdb
+
+        every = (
+            qtdb.MANUAL_ANNOTATORS
+            + qtdb.FIRST_PASS_ANNOTATORS
+            + qtdb.AUTO_ANNOTATORS
+            + (qtdb.BEAT_ANNOTATOR, qtdb.SOURCE_ANNOTATOR)
+        )
+        assert "ari" not in every
+        assert len(set(every)) == 9  # exactly what the shipped ANNOTATORS file lists
+        assert qtdb.SOURCE_ANNOTATOR == "atr"
+        assert qtdb.BEAT_ANNOTATOR == "man"

@@ -4818,3 +4818,228 @@ class TestSDDBSplitter:
             get_splitter("sddb").get_stratification_labels(
                 pd.DataFrame({"record_name": ["30"]}), config
             )
+
+
+class TestQTDBSplitter:
+    """105 delineation excerpts: provenance-stratified folds, two shared subjects."""
+
+    def _header(self, rec, source, offset, n_samples, leads, gain="200",
+                counter=None, clinical=(), delay=None):
+        rate = f"250/{counter}" if counter else "250"
+        # The four records that declare an explicit baseline are also the four with
+        # 11-bit resolution and an adc_zero of 1024 — that combination is what makes
+        # the baseline meaningful, so the fixture keeps them together.
+        res, zero = ("11", "1024") if "(" in gain else ("12", "0")
+        lines = [
+            f"{rec} 2 {rate} {n_samples}",
+            f"{rec}.dat 212 {gain} {res} {zero} 13 -10702 0 {leads[0]}",
+            f"{rec}.dat 212 {gain} {res} {zero} 20 -30717 0 {leads[1]}",
+        ]
+        lines += [f"#{line}" for line in clinical]
+        lines.append(f"#Produced by xform from record {source}, beginning at {offset}")
+        if delay:
+            lines.append(f"#The signal 0 was delayed with a delay={delay} samples")
+        return "\n".join(lines) + "\n"
+
+    def _tree(self, tmp_path, records):
+        """records: [(rec, source, offset, n_samples, leads, gain, counter, clinical)].
+
+        Every record gets a `.q1c` with two annotated beats and a `.man`; only some
+        get a `.atr`, because the 23 sudden-death excerpts have none. Written under a
+        letter-only extension and renamed, since ``wfdb.wrann`` refuses ``q1c``.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, source, offset, n_samples, leads, gain, counter, clinical, atr in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(
+                    rec, source, offset, n_samples, leads, gain, counter, clinical,
+                    delay=7 if n_samples == 224993 else None,
+                ),
+                encoding="utf-8",
+            )
+            samples, symbols, nums = [], [], []
+            for start in (150000, 150250):
+                for off, sym, num in (
+                    (0, "(", 0), (10, "p", 0), (20, ")", 0),
+                    (40, "(", 1), (50, "N", 1), (62, ")", 1),
+                    (100, "t", 2), (144, ")", 2),
+                ):
+                    samples.append(start + off)
+                    symbols.append(sym)
+                    nums.append(num)
+            wfdb.wrann(
+                rec, "qxc", sample=np.array(samples), symbol=symbols,
+                num=np.array(nums), fs=250, write_dir=str(tmp_path),
+            )
+            (tmp_path / f"{rec}.qxc").rename(tmp_path / f"{rec}.q1c")
+            wfdb.wrann(
+                rec, "man", sample=np.array([150050, 150300]), symbol=["N", "N"],
+                fs=250, write_dir=str(tmp_path),
+            )
+            if atr:
+                wfdb.wrann(
+                    rec, "atr", sample=np.arange(100) * 250 + 1000,
+                    symbol=["N"] * 99 + ["V"], fs=250, write_dir=str(tmp_path),
+                )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="qtdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="patient_id",
+            signal_path_columns={250: "signal_path"}, default_sampling_rate=250,
+            label_column="source_database", leads=2, zero_padded_identifiers=False,
+        )
+
+    #: (rec, source, offset, n_samples, leads, gain, counter, clinical, has_atr)
+    MITDB = ("sel100", "100", "7:00.000", 225000, ("MLII", "V5"), "200(0)", "360",
+             ("69 M 1085 1629 x1", "Aldomet, Inderal"), True)
+    SDDB = ("sel30", "30", "7:39:30.000", 224993, ("ECG1", "ECG2"), "200", None,
+            (), False)
+    EDB_A = ("sele0121", "e0121", "1:07:30.000", 225000, ("V4", "D3"), "200", None,
+             ("Age: 51  Sex: M", "Coronary artery disease"), True)
+    EDB_B = ("sele0122", "e0122", "40:00.000", 225000, ("V4", "D3"), "200", None,
+             ("Age: 51  Sex: M", "Coronary artery disease"), True)
+    LTDB = ("sel14046", "14046", "9:14:13.000", 224999, ("ECG1", "ECG2"), "0", "128",
+            (), True)
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.qtdb import QTDBSplitter
+
+        assert isinstance(get_splitter("qtdb"), QTDBSplitter)
+
+    def test_builds_provenance_annotation_summaries_and_signal_paths(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [self.MITDB, self.SDDB, self.LTDB])
+
+        df = get_splitter("qtdb").load_metadata(tree, config).set_index("record_name")
+
+        # Provenance: the source database is the release's own Table 1 stratum, and
+        # the source record and offset come from the header's xform line.
+        assert df.loc["sel100", "source_database"] == "mitdb"
+        assert df.loc["sel100", "source_record"] == "100"
+        assert df.loc["sel100", "source_offset_secs"] == 420.0
+        assert df.loc["sel100", "source_sampling_rate"] == 360
+        assert bool(df.loc["sel100", "resampled_from_source"]) is True
+        # sddb is already 250 Hz, so no counter frequency and no resampling.
+        assert df.loc["sel30", "source_database"] == "sddb"
+        assert bool(df.loc["sel30", "resampled_from_source"]) is False
+        assert df.loc["sel30", "signal_0_delay_samples"] == 7
+        assert df.loc["sel30", "n_samples"] == 224993
+        # The leakage partner, which is what makes the overlap actionable.
+        assert df.loc["sel100", "source_catalogue_slug"] == "mit-bih-arrhythmia-database"
+        assert df.loc["sel14046", "source_catalogue_slug"] == ""   # ltdb is not in it
+
+        # Manual boundaries: two beats each, both with a QT and a P wave, no U wave.
+        assert df.loc["sel100", "n_annotated_beats"] == 2
+        assert df.loc["sel100", "n_p_waves"] == 2
+        assert df.loc["sel100", "n_t_ends"] == 2
+        assert df.loc["sel100", "n_u_waves"] == 0
+        assert df.loc["sel100", "median_qt_ms"] == pytest.approx(416.0)
+        assert df.loc["sel100", "waveform_pattern"] == "(p)(N)t)"
+        # Which is the paper's own pattern for this record, so the check passes.
+        assert bool(df.loc["sel100", "waveform_pattern_matches_published"]) is True
+
+        # Inherited .atr, absent for the sudden-death excerpt.
+        assert bool(df.loc["sel100", "has_source_annotations"]) is True
+        assert bool(df.loc["sel30", "has_source_annotations"]) is False
+        assert df.loc["sel100", "n_source_beats"] == 100
+        assert df.loc["sel100", "n_source_aami_V"] == 1
+
+        # Calibration: the +5.12 mV pedestal on sel100, and ltdb's declared gain of 0.
+        assert df.loc["sel100", "dc_pedestal_mv"] == pytest.approx(5.12)
+        assert df.loc["sel30", "dc_pedestal_mv"] == 0.0
+        assert df.loc["sel14046", "declared_gain_0"] == 0.0
+        assert bool(df.loc["sel14046", "amplitude_calibrated"]) is False
+        assert bool(df.loc["sel30", "amplitude_calibrated"]) is False   # an estimate
+        assert bool(df.loc["sel100", "amplitude_calibrated"]) is True
+
+        # Per-record lead names, and the flag for the 57 that name no anatomy.
+        assert df.loc["sel100", "lead_names"] == "MLII;V5"
+        assert bool(df.loc["sel100", "positional_lead_names"]) is False
+        assert bool(df.loc["sel30", "positional_lead_names"]) is True
+
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["sel100", "sel14046", "sel30"]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_the_two_shared_edb_subjects_survive_the_csv_round_trip(
+        self, sample_config, tmp_path
+    ):
+        """`sele0121` and `sele0122` are one man, and the group id must not be lost.
+
+        The second call reads the CSV the first one wrote, which is the path
+        ``validate_dataset`` and every later run take — a patient id that only exists
+        in memory would put the same person in train and test.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [self.MITDB, self.EDB_A, self.EDB_B])
+
+        splitter = get_splitter("qtdb")
+        first = splitter.load_metadata(tree, config).set_index("record_name")
+        cached = splitter.load_metadata(tree, config).set_index("record_name")
+
+        for df in (first, cached):
+            assert df.loc["sele0121", "patient_id"] == "sele0121"
+            assert df.loc["sele0122", "patient_id"] == "sele0121"
+            assert df.loc["sel100", "patient_id"] == "sel100"
+            # Three records, two subjects.
+            assert df["patient_id"].nunique() == 2
+            # The ESC clinical vintage, which is coarser than edb's own.
+            assert df.loc["sele0121", "clinical_source"] == "esc_header"
+            assert df.loc["sele0121", "age"] == 51.0
+            assert df.loc["sele0121", "clinical_findings"] == "Coronary artery disease"
+
+    def test_stratification_labels_come_from_the_loader_not_a_second_derivation(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [self.MITDB, self.SDDB, self.EDB_A, self.LTDB])
+
+        splitter = get_splitter("qtdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "source_database"
+        assert labels.tolist() == ["mitdb", "sddb", "edb", "ltdb"]
+
+    def test_missing_stratify_column_names_the_fix(self, sample_config, tmp_path):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("qtdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["sel100"]}), config
+            )
+
+    def test_a_record_outside_the_papers_table_is_refused_rather_than_guessed(
+        self, sample_config, tmp_path
+    ):
+        """The source database cannot be derived from the record name, so it must fail.
+
+        ``sel17152`` and ``sel17453`` differ only in their last three digits and come
+        from different sources, so any rule that infers the source from the name is
+        wrong for at least one record. A release with a record the transcribed table
+        does not cover has to raise rather than fall back.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        unknown = ("sel999", "999", "0", 225000, ("ECG1", "ECG2"), "200", None,
+                   (), False)
+        tree = self._tree(tmp_path, [self.MITDB, unknown])
+
+        with pytest.raises(ValueError, match="SOURCE_DATABASE_RECORDS"):
+            get_splitter("qtdb").load_metadata(tree, config)
