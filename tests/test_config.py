@@ -1191,18 +1191,20 @@ def test_mitdb_declares_every_lead_layout_in_the_release():
     assert config.alternate_lead_names is None
 
 
-def test_mitdb_is_the_only_config_declaring_per_record_lead_layouts():
-    """A second one would need the same evidence: layouts counted from the headers.
+def test_only_mitdb_and_edb_declare_per_record_lead_layouts():
+    """Each one needs the same evidence: layouts counted from the headers.
 
     This is not a style rule. Declaring the field switches ``ECGDataset`` from
     resolving leads once to reading every record's header, so it should appear
-    only where the layout genuinely varies.
+    only where the layout genuinely varies. Two releases in the catalogue qualify,
+    and ``edb`` is the more extreme of them: 15 layouts over 90 records against
+    ``mitdb``'s 6 over 48, and no lead present in every record.
     """
     declaring = [
         slug for slug in list_available_configs()
         if load_config(slug).record_lead_layouts
     ]
-    assert declaring == ["mitdb"]
+    assert declaring == ["edb", "mitdb"]
 
 
 def test_load_afdb_config():
@@ -1663,3 +1665,106 @@ def test_svdb_label_column_is_derived_from_beats_not_released():
     # One more band than there are edges, or pd.cut silently mislabels.
     assert len(SVEB_BURDEN_BANDS) == len(SVEB_BURDEN_EDGES) + 1
     assert SVEB_BURDEN_EDGES == (0.01, 0.03, 0.10)
+
+
+def test_load_edb_config():
+    """Test loading edb.yaml produces a valid DatasetConfig."""
+    config = load_config("edb")
+    assert isinstance(config, DatasetConfig)
+    assert config.name == "European ST-T Database"
+    assert config.slug == "edb"
+    assert config.version == "1.0.0"
+    assert config.leads == 2
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    # 1,800,000 samples at 250 Hz is exactly two hours, uniform across all 90.
+    assert config.duration_seconds == 7200.0
+    # Format 212 at a gain of 200 adu/mV with mV in every header, so wfdb's
+    # p_signal is already millivolts and nothing rescales it.
+    assert config.signal_format == "wfdb"
+    assert config.signal_unit_scale == 1.0
+    # The MODAL layout, covering 19 of 90 records — see the lead-layout tests in
+    # tests/test_dataset.py. Never index positionally against it.
+    assert config.lead_names == ["V5", "MLI"]
+    assert config.record_lead_layouts is not None
+    assert len(config.record_lead_layouts) == 15
+    assert config.alternate_lead_names is None
+    # EDBSplitter generates this from the headers and .atr files on first run, so
+    # download_url must stay null.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.download_url is None
+    assert config.record_id_column == "record_name"
+    # 79 subjects over 90 records, reconstructed from the header — the release
+    # publishes no subject id, and ungrouped folds would split seven subjects.
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {250: "signal_path"}
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.license == "ODC-By-1.0"
+    assert config.publish_fold_csvs is True
+    # Records are named e0103, e0154, e1304: they begin with a letter, so pandas
+    # reads the column as strings anyway and the zero-padding trap cannot bite.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "st_t_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_edb_enables_the_truncation_check_because_length_is_uniform():
+    """All 90 records are exactly 1,800,000 samples (7200.0 s at 250 Hz).
+
+    Unlike afdb, ptbdb and nsrdb, which leave expected_samples empty to DISABLE
+    the check for genuinely variable-length data, this release is uniform, so the
+    rate is declared and the check actually runs. It also means a ``window=`` that
+    fits one record fits all 90.
+    """
+    config = load_config("edb")
+    assert config.validation.expected_samples == {250: 1800000}
+    assert "truncated_signal" in config.validation.checks
+    assert 1800000 / 250 == pytest.approx(config.duration_seconds)
+
+
+def test_edb_amplitude_range_is_the_adc_rail_because_the_dc_offset_is_uncorrected():
+    """An absolute amplitude window means nothing for this release.
+
+    Gain was calibrated against the original analog calibration signals; offset was
+    not. 116 of the 180 signals sit more than 1 mV off zero and 58 more than 3 mV,
+    up to +9.05 mV, and 21 records never cross 0 mV at all — e0114 lives entirely
+    between +5.635 and +9.785 mV. So absolute amplitude here measures the offset
+    rather than the ECG, and the only defensible threshold is the hardware rail:
+    format 212 is 12-bit two's complement, so at adc_zero 0 and 200 adu/mV full
+    scale is exactly [-2048, 2047] adu = -10.240 to +10.235 mV.
+
+    At the rail the check still guards something real — a copy read with the wrong
+    gain or unit scale would be 200x out — while passing all 90 records, whose
+    samples run -8.195 to +10.045 mV.
+    """
+    config = load_config("edb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.235)
+    assert low == pytest.approx(-2048 / 200.0)
+    assert high == pytest.approx(2047 / 200.0)
+    # The observed extremes sit inside the rail, so no record saturates.
+    assert low < -8.195
+    assert high > 10.045
+
+
+def test_edb_stratification_bands_are_fixed_and_cover_the_zero_case():
+    """Folds balance on ST-episode count, banded at fixed edges rather than quantiles.
+
+    Fixed edges mean a re-release with one extra episode cannot silently relabel
+    records that did not change. The lowest band is records with **no** ST episode
+    at all — 4 of the 90 — which is fewer than the 10 folds ECGBench generates and
+    is kept as its own band deliberately: those four are the negative controls an
+    ST detector is scored against.
+    """
+    from ecgbench.labels.edb import ST_BURDEN_BANDS, ST_BURDEN_EDGES
+
+    config = load_config("edb")
+    assert config.label_column == "st_t_class"
+    assert config.stratification.method == "custom_function"
+    # One more band than there are edges, or np.digitize indexes out of range.
+    assert len(ST_BURDEN_BANDS) == len(ST_BURDEN_EDGES) + 1
+    assert ST_BURDEN_EDGES == (1, 3, 6)
+    assert ST_BURDEN_BANDS[0] == "none"

@@ -15,6 +15,7 @@ from . import (  # noqa: F401
     ecgdmmld,
     ecgrdvq,
     echonext,
+    edb,
     generic,
     ikem,
     incartdb,

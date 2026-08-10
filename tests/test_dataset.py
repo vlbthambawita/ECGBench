@@ -1592,6 +1592,48 @@ class TestPerRecordLeadLayouts:
         assert {tuple(load_config(s).lead_names) for s in slugs} == {("ECG1", "ECG2")}
         assert load_config("mitdb").lead_names == ["MLII", "V1"]
 
+    def test_edb_declares_fifteen_layouts_and_no_lead_common_to_every_record(self):
+        """The most varied lead layout in the catalogue, and the weakest ``lead_names``.
+
+        All 90 European ST-T records store two leads, and they use FIFTEEN different
+        orderings of eleven different lead pairs, counted from the 90 headers. Two
+        consequences the mitdb case does not have:
+
+        - ``lead_names`` describes only 19 of the 90 records, so unlike every other
+          config here it is a genuine minority. It exists to name the modal layout,
+          not to be indexed against.
+        - **no lead is present in all 90 records** — V5 reaches 51, MLIII 47, V4 34
+          and D3 exactly one — so every name-based selection on this dataset raises
+          for some records. That is the documented behaviour, not a bug, but it means
+          ``leads=`` cannot be used to make edb batchable without also restricting
+          which records are loaded.
+
+        MLIII/V4 and V4/MLIII are both declared, 15 records each: the same pair in
+        either order, so ``signal[0]`` is a limb lead in one half and a chest lead in
+        the other with nothing in the fold CSVs to say which.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("edb")
+        assert config.lead_names == ["V5", "MLI"]
+        assert config.leads == 2
+        layouts = config.record_lead_layouts
+        assert len(layouts) == 15
+        assert config.lead_names in layouts
+        # Every layout holds 2 leads — the reason a count-keyed map is useless here.
+        assert {len(layout) for layout in layouts} == {2}
+        assert config.alternate_lead_names is None
+        # The same pair in both orders, which is what breaks positional indexing.
+        assert ["MLIII", "V4"] in layouts
+        assert ["V4", "MLIII"] in layouts
+        names = {name for layout in layouts for name in layout}
+        assert names == {"V5", "MLI", "MLIII", "V4", "V1", "V2", "V3", "D3"}
+        # No lead is in every layout, so there is no universally selectable lead.
+        assert not {n for n in names if all(n in layout for layout in layouts)}
+
+    # Which configs may declare record_lead_layouts is pinned once, in
+    # tests/test_config.py::test_only_mitdb_and_edb_declare_per_record_lead_layouts.
+
 
 class TestZeroPaddedRecordIds:
     """Fold CSVs must round-trip identifiers as strings, or afdb silently breaks.

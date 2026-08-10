@@ -102,8 +102,10 @@ BEAT_NAMES = {
 #: AAMI EC57 five-class reduction, symbol -> class. This is what makes the beat
 #: labels comparable with ``mitdb``, whose supraventricular beats are ``A`` and
 #: whose bundle-branch-block beats are ``L``/``R``; only the symbols occurring in
-#: one of the two databases are listed, because a symbol in neither would be a
-#: silent no-op here and is better raised as "unexpected" by the scanner.
+#: one of the MIT-BIH-family databases in this catalogue are listed, because a symbol
+#: in none of them would be a silent no-op here and is better raised as "unexpected"
+#: by the scanner. ``ecgbench.labels.edb`` imports this rather than keeping a second
+#: copy — ``n`` (supraventricular escape) occurs only there, 5 beats of 790,565.
 AAMI_CLASSES = {
     "N": "N",
     "L": "N",
@@ -115,6 +117,7 @@ AAMI_CLASSES = {
     "a": "S",
     "J": "S",
     "S": "S",
+    "n": "S",
     "V": "V",
     "E": "V",
     "F": "F",

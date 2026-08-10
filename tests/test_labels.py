@@ -7078,3 +7078,473 @@ class TestSVDBLabels:
 
         with pytest.raises(LabelSourceMissingError, match="svdb"):
             scan_records(tmp_path)
+
+
+class TestEDBLabels:
+    """European ST-T: episode annotations, and four traps in reading them.
+
+    Unlike the four MIT-BIH two-lead Holters, this release's product is not beat
+    labels — it is 368 ST and 401 T *episodes*, each an onset/extremum/end triple
+    whose meaning lives entirely in the annotation's aux text. Everything that can
+    go wrong goes wrong in that text: it carries bytes past its NUL terminator, its
+    ``++``/``--`` forms are sub-markers rather than episodes, and its lower-case
+    forms are recognised artefact that must not be counted as findings. The fourth
+    trap is the ``~`` subtype table in the shipped documentation, which disagrees
+    with the files.
+    """
+
+    HEADER = (
+        "e0103 2 250 1800000\n"
+        "e0103.dat 212 200 12 0 91 56457 0 V4\n"
+        "e0103.dat 212 200 12 0 751 48959 0 MLIII\n"
+        "\n"
+        "#Age: 62  Sex: M\n"
+        "#Mixed angina\n"
+        "#1-vessel disease (RCA)\n"
+        "#Medications: nitrates, diltiazem\n"
+        "#Recorder type: ICR 7200\n"
+    )
+    HEADER_UNKNOWN_SUBJECT = (
+        "e0166 2 250 1800000\n"
+        "e0166.dat 212 200 12 0 -12 123 0 V5\n"
+        "e0166.dat 212 200 12 0 -30 456 0 MLIII\n"
+        "\n"
+        "#Age: -  Sex: -\n"
+        "#Effort angina\n"
+        "#Myocardial infarction\n"
+        "#Recorder type: Applied Cardiac Systems\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("edb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers and .atr files are the source
+        assert spec.join_column == "record_name"
+
+    def test_aux_note_is_truncated_at_the_nul_not_stripped(self):
+        """Seven T-episode onsets carry trailing bytes, and stripping leaves them.
+
+        This is the trap that silently splits the episode counts: ``'(T0+\\x00\\x13'``
+        is an onset of T elevation in signal 0, and both ``.strip()`` and
+        ``.rstrip('\\x00')`` leave a distinct string that no comparison matches. Left
+        untruncated, the release's 401 T episodes count as 394.
+        """
+        from ecgbench.labels.edb import _aux
+
+        assert _aux("(T0+\x00\x13") == "(T0+"
+        assert _aux("(T0-\x00N") == "(T0-"
+        assert _aux("(T1-\x00\x1a") == "(T1-"
+        # rstrip is not enough -- pin the difference, not just the result.
+        assert "(T0+\x00\x13".rstrip("\x00") != "(T0+"
+        assert _aux("(ST0+") == "(ST0+"
+        assert _aux(None) == ""
+        assert _aux("") == ""
+
+    def test_an_episode_is_an_onset_an_extremum_and_an_end(self):
+        """`(ST0+`, `AST0+600`, `ST0+)` — one episode, three annotations.
+
+        The symbol (`s`/`T`) says nothing about which of the three an annotation is,
+        so the aux text is the only source. The magnitude on the extremum is the peak
+        deviation in microvolts, relative to that subject's own reference waveform.
+        """
+        from ecgbench.labels.edb import EPISODE_RE
+
+        onset = EPISODE_RE.match("(ST0+")
+        assert onset and onset.group(1) == "(" and onset.group(3) == "ST"
+        assert onset.group(4) == "0" and onset.group(5) == "+"
+
+        extremum = EPISODE_RE.match("AST0+600")
+        assert extremum and extremum.group(2) == "A" and extremum.group(6) == "600"
+
+        end = EPISODE_RE.match("ST0+)")
+        assert end and end.group(7) == ")" and not end.group(1) and not end.group(2)
+
+        # T episodes use the same grammar with a shorter kind.
+        assert EPISODE_RE.match("(T1-").group(3) == "T"
+        assert EPISODE_RE.match("AT0-1100").group(6) == "1100"
+
+    def test_double_signs_are_threshold_crossings_not_episodes(self):
+        """`++`/`--` mark 400 uV crossings INSIDE a T episode.
+
+        There are 166 of them. Counting them as episodes inflates the T total by
+        41%, which is why the direction group is length-checked rather than taken as
+        a single character.
+        """
+        from ecgbench.labels.edb import EPISODE_RE
+
+        extreme = EPISODE_RE.match("(T0++")
+        assert extreme and len(extreme.group(5)) == 2
+        plain = EPISODE_RE.match("(T0+")
+        assert plain and len(plain.group(5)) == 1
+
+    def test_lower_case_episode_text_is_artefact_and_must_not_be_case_folded(self):
+        """`(st0+` is an axis shift; `(ST0+` is ischaemia. Case is the only difference.
+
+        The annotators marked 21 spans in six records where a positional change
+        mimics ST or T change, spelling them in lower case on ``"`` comment
+        annotations precisely so they can be told apart. Case-folding the aux text
+        would merge recognised artefact into the findings.
+        """
+        from ecgbench.labels.edb import AXIS_SHIFT_RE, EPISODE_RE
+
+        # The episode grammar must reject the lower-case spellings outright.
+        assert EPISODE_RE.match("(st0+") is None
+        assert EPISODE_RE.match("ast0+200") is None
+        assert EPISODE_RE.match("(t1-") is None
+        # And the artefact grammar must accept them.
+        assert AXIS_SHIFT_RE.match("(st0+")
+        assert AXIS_SHIFT_RE.match("ast0+200")
+        assert AXIS_SHIFT_RE.match("st0+)")
+        assert AXIS_SHIFT_RE.match("(t1--")
+        # ...while rejecting the upper-case findings.
+        assert AXIS_SHIFT_RE.match("(ST0+") is None
+
+    def test_quality_subtype_is_a_bitmask_and_the_shipped_table_is_wrong(self):
+        """Three of the nine documented values do not occur; three that occur are undocumented.
+
+        ``annotations.shtml`` gives ``un`` as 0x12, ``cu`` as 0x20 and ``nu`` as
+        0x21. The release contains 0x13, 0x22 and 0x23 instead and none of the
+        documented three. The table is internally inconsistent — its own ``uc`` is
+        0x11, which already sets signal 0's noisy bit — so the bitmask reading is
+        the one that fits every one of the 8,918 annotations: bit 0/1 noisy for
+        signal 0/1, bit 4/5 unreadable, and unreadable also sets noisy.
+        """
+        from ecgbench.labels.edb import decode_quality
+
+        # The six values the documentation and the files agree on.
+        assert decode_quality(0x00) == ("clean", "clean")
+        assert decode_quality(0x01) == ("noisy", "clean")
+        assert decode_quality(0x02) == ("clean", "noisy")
+        assert decode_quality(0x03) == ("noisy", "noisy")
+        assert decode_quality(0x11) == ("unreadable", "clean")
+        assert decode_quality(0x33) == ("unreadable", "unreadable")
+        # The three that occur in the files but not in the documented table.
+        assert decode_quality(0x13) == ("unreadable", "noisy")
+        assert decode_quality(0x22) == ("clean", "unreadable")
+        assert decode_quality(0x23) == ("noisy", "unreadable")
+        # The three the documentation lists and the files never use decode the same
+        # way regardless, so nothing depends on which reading is "official".
+        assert decode_quality(0x12) == ("unreadable", "noisy")
+        assert decode_quality(0x20) == ("clean", "unreadable")
+        assert decode_quality(0x21) == ("noisy", "unreadable")
+
+    def test_quality_seconds_account_for_the_whole_record_per_channel(self):
+        """Each channel's states must sum to 7200 s, or a span has been lost.
+
+        No record has a `~` at sample 0 — the first falls at a median of 9.3 min —
+        so the leading span is clean by implication and reported separately.
+        """
+        from ecgbench.labels.edb import RECORD_SECONDS, _span_seconds
+
+        # 250 Hz: 250 samples = 1 s. Transition into noise on signal 1, then both
+        # unreadable, then back to clean.
+        secs, head = _span_seconds(
+            [(250, ("clean", "noisy")), (500, ("unreadable", "unreadable")),
+             (750, ("clean", "clean"))]
+        )
+        assert head == pytest.approx(1.0)
+        assert secs["sig1_noisy_secs"] == pytest.approx(1.0)
+        assert secs["sig0_unreadable_secs"] == pytest.approx(1.0)
+        assert secs["sig1_unreadable_secs"] == pytest.approx(1.0)
+        # 1 s implied head + 1 s of the first span + everything after 750.
+        assert secs["sig0_clean_secs"] == pytest.approx(RECORD_SECONDS - 1.0)
+        for channel in ("sig0", "sig1"):
+            total = sum(
+                secs[f"{channel}_{state}_secs"]
+                for state in ("clean", "noisy", "unreadable")
+            )
+            assert total == pytest.approx(RECORD_SECONDS)
+
+        # A record with no `~` at all is clean end to end (e0121 is the one).
+        secs, head = _span_seconds([])
+        assert secs["sig0_clean_secs"] == pytest.approx(RECORD_SECONDS)
+        assert head == pytest.approx(RECORD_SECONDS)
+
+    def test_episode_seconds_summed_over_signals_can_exceed_the_record(self):
+        """The two signals are annotated independently, so their episodes overlap.
+
+        e0607 reaches 131.5 min of ST episode in a 120-min recording, which is not an
+        error — it is 2 x 60 min of concurrent ST depression in both channels.
+        ``st_secs_any_signal`` is the bounded union for anyone who needs a fraction.
+        """
+        from ecgbench.labels.edb import RECORD_SAMPLES, _union_seconds
+
+        # Two overlapping spans of 4 s each, overlapping by 2 s -> 6 s of union.
+        assert _union_seconds([(0, 1000), (500, 1500)]) == pytest.approx(6.0)
+        # Disjoint spans add.
+        assert _union_seconds([(0, 250), (1000, 1250)]) == pytest.approx(2.0)
+        # A span fully inside another contributes nothing extra.
+        assert _union_seconds([(0, 2500), (250, 500)]) == pytest.approx(10.0)
+        # Out-of-order input must still be handled.
+        assert _union_seconds([(1000, 1250), (0, 250)]) == pytest.approx(2.0)
+        assert _union_seconds([]) == 0.0
+        # The union can never exceed the record.
+        assert _union_seconds([(0, RECORD_SAMPLES)]) == pytest.approx(7200.0)
+
+    def test_header_comments_parse_into_clinical_fields_and_keep_the_raw_text(self, tmp_path):
+        from ecgbench.labels.edb import parse_header_comments
+
+        (tmp_path / "e0103.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "e0103.hea")
+
+        assert fields["age"] == 62.0
+        assert fields["sex"] == "M"
+        assert fields["recorder_type"] == "ICR 7200"
+        assert fields["angina_type"] == "mixed"
+        assert fields["n_diseased_vessels"] == 1.0
+        assert fields["diseased_vessels"] == "RCA"
+        assert fields["medications"] == "nitrates|diltiazem"
+        assert fields["myocardial_infarction"] is False
+        # The parse is lossy by design, so the verbatim text is kept alongside it.
+        assert fields["clinical_findings"] == "Mixed angina|1-vessel disease (RCA)"
+
+    def test_a_missing_age_is_nan_not_zero(self, tmp_path):
+        """`-` is the release's "unknown", and edb.txt says one subject's is missing.
+
+        e0166 has neither age nor sex and e0418 has no age. Reading "-" as 0 would
+        drag the mean age of a 30-84 cohort down by a year.
+        """
+        from ecgbench.labels.edb import parse_header_comments
+
+        (tmp_path / "e0166.hea").write_text(self.HEADER_UNKNOWN_SUBJECT, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "e0166.hea")
+
+        assert np.isnan(fields["age"])
+        assert fields["sex"] == ""
+        assert fields["angina_type"] == "effort"
+        assert fields["myocardial_infarction"] is True
+        assert fields["mi_location"] == "unspecified"
+
+    def test_lead_names_are_read_per_record_because_fifteen_layouts_exist(self, tmp_path):
+        from ecgbench.labels.edb import parse_lead_names
+
+        (tmp_path / "e0103.hea").write_text(self.HEADER, encoding="utf-8")
+        assert parse_lead_names(tmp_path / "e0103.hea") == ["V4", "MLIII"]
+
+    def test_the_subject_key_compares_findings_as_a_set(self):
+        """e0126 lists the same five findings as its subject's other records, reordered.
+
+        "Aortic valvular regurgitation" and "1-vessel disease (LAD)" are swapped
+        relative to e0123-e0125. An order-sensitive comparison drops e0126 from the
+        group, which puts one subject's fourth recording in a different fold from the
+        other three — and gives 81 subjects instead of 80 before the final merge.
+        """
+        from ecgbench.labels.edb import _subject_key
+
+        base = pd.Series({
+            "age": 58.0, "sex": "M", "recorder_type": "ICR 7200",
+            "medications": "nitrates|diltiazem",
+            "clinical_findings": "Resting angina|Anterior myocardial infarction|"
+                                 "1-vessel disease (LAD)|Aortic valvular regurgitation",
+        })
+        reordered = base.copy()
+        reordered["clinical_findings"] = (
+            "Resting angina|Anterior myocardial infarction|"
+            "Aortic valvular regurgitation|1-vessel disease (LAD)"
+        )
+        assert _subject_key(base) == _subject_key(reordered)
+        assert base["clinical_findings"] != reordered["clinical_findings"]
+
+    def test_patient_ids_are_reconstructed_and_merge_the_age_differing_pair(self):
+        """79 subjects over 90 records, and the release publishes no subject id.
+
+        Two merges happen: records agreeing on the whole header profile, and the one
+        pair (e0206/e0210) that agrees on everything except age. Without the second,
+        the reconstruction gives 80 and no longer matches the published count.
+        """
+        from ecgbench.labels.edb import reconstruct_patient_ids
+
+        df = pd.DataFrame([
+            # One subject recorded twice: identical profile.
+            {"record_name": "e0118", "age": 51.0, "sex": "M", "recorder_type": "ICR 7200",
+             "medications": "nitrates", "clinical_findings": "Resting angina"},
+            {"record_name": "e0119", "age": 51.0, "sex": "M", "recorder_type": "ICR 7200",
+             "medications": "nitrates", "clinical_findings": "Resting angina"},
+            # A different subject: same everything but a different medication.
+            {"record_name": "e0120", "age": 51.0, "sex": "M", "recorder_type": "ICR 7200",
+             "medications": "verapamil", "clinical_findings": "Resting angina"},
+            # The age-differing pair, which only the explicit merge catches.
+            {"record_name": "e0206", "age": 55.0, "sex": "M",
+             "recorder_type": "Oxford Medilog MR-20", "medications": "",
+             "clinical_findings": "3-vessel disease"},
+            {"record_name": "e0210", "age": 53.0, "sex": "M",
+             "recorder_type": "Oxford Medilog MR-20", "medications": "",
+             "clinical_findings": "3-vessel disease"},
+        ])
+        ids = reconstruct_patient_ids(df)
+
+        assert ids.iloc[0] == ids.iloc[1]           # e0118 / e0119
+        assert ids.iloc[2] != ids.iloc[0]           # e0120 is someone else
+        assert ids.iloc[3] == ids.iloc[4]           # e0206 / e0210, despite the age
+        assert ids.nunique() == 3
+        # The subject is named after their first record, so the id is a record id.
+        assert ids.iloc[0] == "e0118"
+
+    def test_stratify_class_is_the_st_burden_band_and_is_derived_once(self):
+        """Fixed edges at 1/3/6 episodes, and `none` is kept as its own band.
+
+        The splitter reads ``stratify_class`` rather than recomputing it, so the
+        exposed label and the fold label cannot drift. ``st_t_class`` is computed
+        here too but is deliberately *not* the fold label — two of its four classes
+        hold 2 records in the real release.
+        """
+        from ecgbench.labels.edb import attach_stratify_class
+
+        df = pd.DataFrame({
+            "n_st_episodes": [0, 1, 2, 3, 5, 6, 20],
+            "n_t_episodes": [0, 0, 4, 0, 2, 1, 19],
+        })
+        out = attach_stratify_class(df)
+
+        assert list(out["st_burden_band"]) == [
+            "none", "1-2", "1-2", "3-5", "3-5", "6+", "6+"
+        ]
+        assert list(out["stratify_class"]) == list(out["st_burden_band"])
+        assert list(out["st_t_class"]) == [
+            "none", "st_only", "st_and_t", "st_only", "st_and_t", "st_and_t", "st_and_t"
+        ]
+
+    def test_st_t_class_marks_a_t_only_record(self):
+        """Two records have T change and no ST change at all; they are not `none`."""
+        from ecgbench.labels.edb import attach_stratify_class
+
+        out = attach_stratify_class(
+            pd.DataFrame({"n_st_episodes": [0], "n_t_episodes": [3]})
+        )
+        assert out["st_t_class"].iloc[0] == "t_only"
+        assert out["st_burden_band"].iloc[0] == "none"
+
+    def test_annotations_summarise_into_episodes_beats_and_markers(self, tmp_path):
+        """One ST episode, one artefact marker and three beats, end to end.
+
+        The `|` artefact marker is the one that mattered: it is a non-beat symbol
+        carrying no aux text, and reaching the episode parser with an empty note made
+        every record holding one log an "unparsed aux_note" warning.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.edb import summarise_annotations
+
+        wfdb.wrann(
+            "e0103",
+            "atr",
+            sample=np.array([100, 200, 300, 400, 500, 600, 700, 800]),
+            symbol=["+", "N", "s", "V", "s", "|", "s", "N"],
+            subtype=np.array([0, 0, 0, 0, 0, 0, 0, 0]),
+            aux_note=["(N", "", "(ST0-", "", "AST0-250", "", "ST0-)", ""],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "e0103")
+
+        assert counts["n_beats"] == 3  # N, V, N
+        assert counts["n_st_episodes"] == 1
+        assert counts["n_st_episodes_sig0"] == 1
+        assert counts["n_st_down"] == 1
+        assert counts["n_st_up"] == 0
+        assert counts["peak_st_deviation_uv"] == 250
+        # Onset at 300, end at 700 -> 400 samples at 250 Hz.
+        assert counts["st_episode_secs"] == pytest.approx(1.6)
+        assert counts["st_secs_any_signal"] == pytest.approx(1.6)
+        assert counts["n_unterminated_episodes"] == 0
+        assert counts["n_isolated_artifacts"] == 1
+        assert counts["n_st_annotations"] == 3
+        assert counts["n_t_episodes"] == 0
+        # The whole record is sinus, from the `+` at sample 100.
+        assert counts["dominant_rhythm"] == "N"
+        assert sum(counts[f"aami_{c}"] for c in ("N", "S", "V", "F", "Q")) == counts["n_beats"]
+
+    def test_an_unterminated_episode_is_closed_at_the_record_end(self, tmp_path):
+        """Twelve episodes have an onset and extremum but no end.
+
+        Ten open in the last four minutes and plainly run past the record; e0409's two
+        ST depressions open at 8.4 and 17.2 min and simply stop being annotated.
+        Dropping them would zero e0409's ST seconds entirely, so they are closed at
+        the record end and counted.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.edb import RECORD_SAMPLES, summarise_annotations
+
+        wfdb.wrann(
+            "e0409",
+            "atr",
+            sample=np.array([100, 200, 300, 400]),
+            symbol=["+", "N", "s", "s"],
+            subtype=np.array([0, 0, 0, 0]),
+            aux_note=["(N", "", "(ST0-", "AST0-400"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "e0409")
+
+        assert counts["n_st_episodes"] == 1
+        assert counts["n_unterminated_episodes"] == 1
+        assert counts["st_episode_secs"] == pytest.approx((RECORD_SAMPLES - 300) / 250)
+        assert counts["st_secs_any_signal"] == pytest.approx((RECORD_SAMPLES - 300) / 250)
+
+    def test_axis_shift_spans_are_counted_apart_from_episodes(self, tmp_path):
+        """A lower-case span is recognised artefact and must not reach n_st_episodes."""
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.edb import summarise_annotations
+
+        wfdb.wrann(
+            "e0161",
+            "atr",
+            sample=np.array([100, 200, 300, 400, 500]),
+            symbol=["+", "N", '"', '"', '"'],
+            subtype=np.array([0, 0, 0, 0, 0]),
+            aux_note=["(N", "", "(st0+", "ast0+200", "st0+)"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "e0161")
+
+        assert counts["n_axis_shift_episodes"] == 1
+        assert counts["n_st_episodes"] == 0
+        assert counts["st_episode_secs"] == 0.0
+        assert counts["peak_st_deviation_uv"] == 0
+        assert counts["n_comment_annotations"] == 3
+
+    def test_extreme_t_markers_do_not_count_as_episodes(self, tmp_path):
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.edb import summarise_annotations
+
+        wfdb.wrann(
+            "e0613",
+            "atr",
+            sample=np.array([100, 200, 300, 400, 500, 600]),
+            symbol=["+", "N", "T", "T", "T", "T"],
+            subtype=np.array([0, 0, 0, 0, 0, 0]),
+            aux_note=["(N", "", "(T0+", "(T0++", "T0++)", "T0+)"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "e0613")
+
+        assert counts["n_t_episodes"] == 1
+        assert counts["n_extreme_t_markers"] == 2  # the ++ onset and its close
+        assert counts["t_episode_secs"] == pytest.approx((600 - 300) / 250)
+
+    def test_supraventricular_escape_has_an_aami_class(self):
+        """`n` occurs only in this release — 5 beats — and must not vanish from aami_*.
+
+        The AAMI table is shared with ``svdb`` rather than copied, so this pins that
+        the shared table covers every symbol edb actually uses.
+        """
+        from ecgbench.labels.edb import AAMI_CLASSES, BEAT_NAMES, BEAT_SYMBOLS
+
+        assert set(BEAT_SYMBOLS) == set(BEAT_NAMES)
+        assert set(BEAT_SYMBOLS) <= set(AAMI_CLASSES)
+        assert AAMI_CLASSES["n"] == "S"
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.edb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="European ST-T"):
+            scan_records(tmp_path)

@@ -1,0 +1,253 @@
+# ECGBench Config: European ST-T Database
+# =======================================
+# https://physionet.org/content/edb/1.0.0/
+#
+# The reference benchmark for ST-segment and T-wave change analysis: 90 two-hour
+# ambulatory recordings from 79 subjects with diagnosed or suspected myocardial
+# ischaemia, annotated by two cardiologists working independently with a third
+# resolving their disagreements. The released ground truth is 368 ST episodes and
+# 401 T episodes, each with an annotated onset, extremum and end, marked
+# separately in each of the two signals.
+#
+# Five things set it apart in this catalogue, all verified against the files:
+#
+#   - LEAD LAYOUT VARIES MORE THAN IN ANY OTHER DATASET HERE. All 90 records store
+#     two leads, but they use FIFTEEN different orderings of eleven different lead
+#     pairs, and NO lead is present in all 90 records — V5 reaches 51, MLIII 47,
+#     V4 34, and D3 appears once. Selecting a lead by index is wrong for at least
+#     71 of the 90 records, so `record_lead_layouts` below is not optional.
+#   - the recordings carry a LARGE UNCORRECTED DC OFFSET. Gain was calibrated
+#     against the original analog calibration signals, offset was not: 116 of the
+#     180 signals sit more than 1 mV off zero and 58 more than 3 mV, up to
+#     +9.05 mV, and 21 records never cross 0 mV at all. Peak-to-peak is a normal
+#     4.02 mV median. Baseline removal is a prerequisite, not a refinement.
+#   - the ST/T annotations are DEVIATIONS from each subject's own reference
+#     waveform taken from the first 30 s of their record, not absolute ST levels.
+#     The arbitrary DC offset above is consistent with that, and it is why a fixed
+#     ST-level threshold cannot reproduce these labels. The reference waveforms
+#     themselves were printed on plastic rulers and no longer exist.
+#   - the records are LONG: 1,800,000 samples each, so batching needs `window=`;
+#   - its primary product is EPISODE annotation, not a record-level diagnosis. The
+#     header clinical text (angina pattern, vessel disease, infarction) is subject
+#     background, and `dominant_rhythm` is sinus for all 90 records.
+
+name: "European ST-T Database"
+slug: "edb"
+version: "1.0.0"
+url: "https://physionet.org/content/edb/1.0.0/"
+download_url: null  # EDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution v1.0, from the PhysioNet landing page
+description: >
+  90 annotated two-hour excerpts of ambulatory ECG from 79 subjects (70 men aged
+  30-84, 8 women, information missing for one), each with diagnosed or suspected
+  myocardial ischaemia. Assembled between 1985 and 1990 by a European Society of
+  Cardiology concerted action across centres in seven countries, coordinated by
+  the CNR Institute of Clinical Physiology in Pisa, and selected to give a
+  representative spread of ECG abnormality rather than to sample any population.
+  Each record holds two signals at 250 Hz with 12-bit resolution over a nominal
+  20 mV range, rescaled after digitisation to a uniform 200 ADC units per
+  millivolt. Two cardiologists annotated every record beat by beat and marked the
+  onset, extremum and end of each interval of significant ST-segment or T-wave
+  change in each signal independently, applying predefined criteria — 0.1 mV of ST
+  deviation or 0.2 mV of T deviation, sustained for at least 30 s, measured
+  against a reference waveform from that record's first 30 seconds. Disagreements
+  were resolved by the coordinating group. The reference annotation files hold
+  802,909 annotations in total, including 790,565 beats, 368 ST episodes and 401
+  T episodes, with peak displacements from 100 uV to more than 1 mV.
+citation: >
+  Taddei, A., Distante, G., Emdin, M., Pisani, P., Moody, G.B., Zeelenberg, C.,
+  Marchesi, C. The European ST-T Database: standard for evaluating systems for the
+  analysis of ST-T changes in ambulatory electrocardiography. European Heart
+  Journal 13:1164-1172 (1992).
+doi: "10.13026/C2D59Z"
+
+creators:
+  - type: Organization
+    name: "CNR Institute of Clinical Physiology, Pisa / European Society of Cardiology"
+    url: "https://physionet.org/content/edb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 12-bit format 212 at a gain of 200 adu/mV with adc_zero 0, identical in all 90
+# records, and every header declares units of mV. wfdb divides by the header gain,
+# so p_signal is already millivolts. Verified by reading all 90.
+signal_unit_scale: 1.0
+leads: 2
+# The MODAL layout, and it covers only 19 of the 90 records — the weakest such
+# claim in this catalogue. Do not index leads positionally against it; use
+# ECGDataset(leads=[...]) , which resolves names against each record's own header
+# via record_lead_layouts below, and read the per-record `lead_names` column from
+# ecgbench.labels.edb for the truth about any given record.
+lead_names: ["V5", "MLI"]
+# Every layout in the release, counted from the 90 headers:
+#   V5/MLI    19      V1/V5      4      V2/V4     2
+#   V4/MLIII  15      MLIII/V3   3      D3/V4     1
+#   MLIII/V4  15      V3/MLIII   2      V5/V2     1
+#   V5/MLIII  11      V3/V5      2      V2/MLIII  1
+#   V5/V1      7      V2/V5      6      V5/V4     1
+# Note that MLIII/V4 and V4/MLIII are both present, 15 records each: the same lead
+# pair stored in either order, so signal[0] is a limb lead in one half and a chest
+# lead in the other with nothing in the metadata to warn you. Declaring these
+# makes ECGDataset(leads=...) read each record's own header, resolve the requested
+# NAMES against it, and raise for a record whose layout lacks a requested lead
+# rather than returning whichever signal sits at that index.
+# There is no lead common to all 90 records, so EVERY name-based selection here
+# raises for some records. V5 (51) and MLIII (47) are the widest available.
+record_lead_layouts:
+  - ["V5", "MLI"]
+  - ["V4", "MLIII"]
+  - ["MLIII", "V4"]
+  - ["V5", "MLIII"]
+  - ["V5", "V1"]
+  - ["V2", "V5"]
+  - ["V1", "V5"]
+  - ["MLIII", "V3"]
+  - ["V3", "MLIII"]
+  - ["V3", "V5"]
+  - ["V2", "V4"]
+  - ["D3", "V4"]
+  - ["V5", "V2"]
+  - ["V2", "MLIII"]
+  - ["V5", "V4"]
+duration_seconds: 7200.0  # 1,800,000 samples at 250 Hz, uniform across all 90
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in a machine-readable form. EDBSplitter builds one from
+# the header comments and the .atr annotations on first run, via
+# ecgbench.labels.edb. The validation engine re-reads it from disk, so the dataset
+# root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# 79 subjects over 90 records. The release ships NO subject identifier — edb.txt
+# states the count and nothing in the files says which records go together — so
+# this column is RECONSTRUCTED from the header (age, sex, recorder, medications
+# and the set of clinical findings, plus one age-differing merge). It reproduces
+# the published 79 and the published "70 men aged 30 to 84" exactly, which is the
+# check that it is not merely plausible. See
+# ecgbench.labels.edb.reconstruct_patient_ids before relying on it. Ungrouped,
+# seven subjects would straddle train and test — one 51-year-old man contributed
+# e0118, e0119, e0121 and e0122.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  250: "signal_path"  # bare record stem, e.g. "e0103" — the tree is flat
+
+# --- Labels ---
+# Which change types the record holds: st_and_t (68), st_only (18), t_only (2),
+# none (2). A genuine record-level summary of the released ground truth, unlike
+# dominant_rhythm, which is sinus for all 90. Not the fold label — two of its four
+# classes hold 2 records.
+label_column: "st_t_class"
+label_format: "single"
+
+stratification:
+  # EDBSplitter takes stratify_class from the label loader: the ST-episode count
+  # banded at fixed edges of 1, 3 and 6 episodes, giving 4 / 32 / 29 / 25 records.
+  # ST change is what this database exists to evaluate and the burden is very
+  # uneven (e0604 holds 20 episodes, four records hold none), so balancing folds on
+  # it is what stops a fold being all quiet or all busy.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # Uniform: all 90 records are exactly 1,800,000 samples, so unlike ptbdb and
+  # challenge2021 the truncation check can be switched on.
+  expected_samples:
+    250: 1800000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Set at the ADC rail, and here that is the ONLY defensible value. Format 212 is
+  # 12-bit two's complement, so with adc_zero 0 and a gain of 200 the full scale is
+  # exactly -10.240 to +10.235 mV and no sample can lie outside it. A tighter
+  # physiologic window would be meaningless for this release because the DC offset
+  # is uncorrected and large — 21 records never cross 0 mV and one sits entirely
+  # above +5.6 mV — so absolute amplitude here measures the offset, not the ECG.
+  # At the rail the check still does real work: it is a guard against a copy read
+  # with the wrong gain or unit scale, which would put every sample 200x out.
+  # Measured across all 90 records, samples run -8.195 to +10.045 mV, so no record
+  # saturates and all 90 pass. There are no NaN samples and no flat leads.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/edb.py parses the header comments and summarises the
+# .atr reference annotations into the ST/T episode inventory, beat counts, rhythm
+# durations and per-channel signal quality. There is no source CSV to point at —
+# the headers and annotations are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "myocardial ischemia"
+    - "ST segment"
+    - "T wave"
+    - "ST-T change"
+    - "episode annotations"
+    - "beat annotations"
+    - "two-lead"
+    - "ambulatory"
+    - "Holter"
+    - "PhysioNet"
+  rai_data_collection: >
+    Collected between 1985 and 1990 under a European Society of Cardiology
+    concerted action on ambulatory monitoring, coordinated by the CNR Institute of
+    Clinical Physiology in Pisa, with recordings contributed by centres in seven
+    countries. Every subject had myocardial ischaemia diagnosed or suspected;
+    further selection criteria were applied to obtain a representative spread of
+    ECG abnormality. Two-hour excerpts of ambulatory Holter tape were digitised at
+    250 Hz with 12-bit resolution over a nominal 20 mV range, on ten different
+    recorder models, and rescaled to a uniform 200 ADC units per millivolt using
+    calibration signals from the original analog recordings. An initial set of beat
+    labels came from a slope-sensitive QRS detector; each record was then printed
+    in full disclosure at two minutes per page and reviewed independently by two
+    cardiologists, neither from the group that submitted the record, who corrected
+    every beat label and marked changes in ST and T morphology, rhythm and signal
+    quality using record-specific transparent rulers. ST and T deviations were
+    measured against a reference waveform from the record's first 30 seconds, at
+    80 ms after the J point below 120 bpm and 60 ms above it. Disagreements between
+    the two annotators were resolved by a third cardiologist of the coordinating
+    group who had seen both sets.
+  rai_data_biases: >
+    Not a population sample and not intended as one. Every subject was selected for
+    diagnosed or suspected myocardial ischaemia and the mix of abnormalities was
+    chosen deliberately, so the prevalence of ST and T change here reflects the
+    selection criteria rather than any clinical population. The cohort is 70 men to
+    8 women, so sex is effectively a constant; ages run 30 to 84. 79 subjects
+    contribute 90 records, with one man recorded four times, so between-subject
+    variation is limited and subject-grouped folds are necessary rather than
+    optional. Episode burden is very uneven: four records hold no ST episode at all
+    while e0604 holds 20, and the ST episodes are 250 depressions to 118
+    elevations. The recordings predate modern equipment and ten recorder models
+    were used, one accounting for 37 of the 90 records, so recorder-specific
+    artefact is a real confounder; in six records the annotators explicitly marked
+    axis shifts from positional change that mimic ST or T change. Lead placement
+    was not standardised across contributing centres, which is why fifteen
+    different two-lead layouts appear and no lead is common to all records — a
+    model trained on this data without resolving leads by name is trained on a
+    mixture of physical leads. Subjects were medicated as clinically indicated,
+    predominantly with nitrates, calcium-channel blockers and beta-blockers.
+  rai_personal_sensitive_info: >
+    De-identified. The WFDB header comments retain the subject's age and sex, a
+    free-text clinical description (angina pattern, coronary angiography findings,
+    prior infarction, comorbidities), the medications they were taking and the
+    Holter recorder model. Age is recorded as "-" for two records and sex for one,
+    which edb.txt attributes to information missing for one subject. No subject
+    identifier is published, so the patient grouping ECGBench uses is reconstructed
+    from those header fields rather than released; no dates, institutions or
+    geographic identifiers are attached to individual records.

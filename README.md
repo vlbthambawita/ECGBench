@@ -171,10 +171,22 @@ plus nine interval/axis measurements for `mimic_iv_ecg`, reference beat counts f
 `incartdb`, protocol phase and balloon-occlusion timings for `staffiii`,
 AHA/ACC/HRS statements with their modifiers for `sph`, the ablation-confirmed
 arrhythmia origin for `ningbo_iva`, per-symbol beat counts plus their AAMI EC57
-reduction for `svdb`. A dataset
+reduction for `svdb`, and an **ST/T episode inventory** for `edb`. A dataset
 that genuinely has none (`mimic_iv_ecg_demo`) raises
 `LabelsUnavailableError` naming where labels could come from, rather than
 returning empty columns.
+
+**One dataset's ground truth is episodes rather than labels.** The European ST-T
+Database annotates the onset, extremum and end of every interval of significant ST
+or T change — 368 and 401 of them — separately in each of its two signals, so
+`edb`'s loader returns counts per signal and direction, the peak deviation in
+microvolts, and time-in-episode both summed over signals and as a bounded union
+(`st_secs_any_signal`, `ischaemic_fraction`). Two things to know before using them:
+the deviations are measured against **each subject's own reference waveform** from
+their record's first 30 s, not an absolute isoelectric line, so a fixed ST threshold
+cannot reproduce them; and `st_episode_secs` can legitimately exceed the 7,200 s
+recording, because concurrent change in both channels counts twice. See
+`examples/load_edb.py`.
 
 **Beat symbols are not comparable across the MIT-BIH databases, so `svdb` exposes
 the AAMI reduction alongside them.** A supraventricular beat is annotated `S` in
@@ -182,8 +194,9 @@ the AAMI reduction alongside them.** A supraventricular beat is annotated `S` in
 concatenating the two on the raw symbol trains a model on two disjoint
 vocabularies for one phenomenon. The `aami_N/S/V/F/Q` columns collapse `A`, `a`,
 `J` and `S` to class `S` — and `L`, `R`, `B` to `N` — and are what to join on.
-`AAMI_CLASSES` covers both databases' symbols, so it also reduces `mitdb`, whose
-loader exposes raw per-symbol counts only:
+`AAMI_CLASSES` covers every symbol used by the MIT-BIH-family databases here, so it
+also reduces `mitdb`, whose loader exposes raw per-symbol counts only, and is what
+`edb` imports rather than keeping a second copy:
 
 ```python
 from ecgbench.labels.svdb import AAMI_CLASSES
@@ -251,6 +264,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ltafdb` | **`ECG1`, `ECG2`** — worse than `afdb`: every header calls **both** channels `ECG`, the same string twice, so there is nothing to tell them apart by. These two names are positions ECGBench assigns so `leads=` works at all. Again not MLII/V1 |
 | `nsrdb` | **`ECG1`, `ECG2`** — like `afdb`, and from the same Beth Israel arrhythmia laboratory as `mitdb`: the headers spell the two names and state no electrode placement, so these are channel positions too |
 | `svdb` | **`ECG1`, `ECG2`** — like `afdb` and `nsrdb`. Worth singling out because this catalogue's own entry claimed **`MLII` + `V1` at 360 Hz** before the config was written, and both halves were wrong: the recordings are **128 Hz** and all 78 headers name the channels `ECG1`/`ECG2` with no placement stated. The values came from assuming `mitdb`'s properties carry across, which is the exact failure `lead_names` exists to prevent |
+| `edb` | **`V5, MLI` in only 19 of 90 records** — the most varied layout in the catalogue: **fifteen orderings of eleven lead pairs**, and **no lead present in every record** (V5 reaches 51, MLIII 47, D3 exactly 1). `MLIII/V4` and `V4/MLIII` are both present, 15 records each. See below |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -275,7 +289,7 @@ single layout, and behaves exactly as before. Note that batching `zzu_pecg` need
 `leads=` as well as `window=`: a batch mixing 9- and 12-lead records cannot be
 stacked.
 
-**And one dataset varies the lead *names* at a constant lead count**, which a
+**And two datasets vary the lead *names* at a constant lead count**, which a
 count-keyed map cannot express at all. Every one of `mitdb`'s 48 records stores
 exactly 2 leads, but only 40 store `MLII, V1`: two each store `MLII, V5`, `MLII, V2`
 and `V5, V2`, one stores `MLII, V4`, and record 114 stores `V5, MLII` — the
@@ -293,6 +307,29 @@ ds[0]["signal"]    # record 100: MLII from position 0
                    # record 114: MLII from position 1 -- an index returns V5
                    # record 102: ValueError -- it stores V5/V2 and has no MLII
 ```
+
+`edb` is the same problem several times over, and is the reason to take this
+mechanism seriously rather than treat `mitdb` as a curiosity. Lead placement was never
+standardised across the seven countries that contributed to the European ST-T
+Database, so its 90 two-lead records use **fifteen different orderings of eleven
+different lead pairs** — and, unlike `mitdb`, **no lead appears in every record**. V5
+reaches 51 of 90, MLIII 47, V4 34, and `D3` exactly one. Worse, `MLIII, V4` and
+`V4, MLIII` are *both* present, 15 records each, so for a third of the release
+`signal[0]` is a limb lead or a chest lead with equal probability and nothing
+distinguishes the two cases. The declared `lead_names` covers 19 records:
+
+```python
+ds = ECGDataset("edb", split="train", data_path="...",
+                window=(0, 2500), leads=["V5"])
+
+len(ds)            # 74 records in the split...
+ds[0]              # ValueError: Record 'e0104' stores ['MLIII', 'V4'] ... 43 of the
+                   # 74 resolve; the other 31 store no V5 at all
+```
+
+Because no lead is universal, **`leads=` alone does not make `edb` batchable** — you
+need a lead *and* a record filter, and V5 at 57% of the release is the widest choice
+available. The per-record layout is in the labels as `lead_names`.
 
 `record_lead_layouts` is wfdb-only, because no other format names its leads per
 record. Datasets that do not declare it are unaffected.
