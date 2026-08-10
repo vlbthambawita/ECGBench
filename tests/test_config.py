@@ -1368,13 +1368,15 @@ class TestIdentifierDtypes:
         genuinely numeric ids whose values are quoted as ints on their dataset
         pages. Making identifiers uniformly strings is defensible but is a separate
         change, so the coercion guard is opt-in and only the datasets that need it
-        opt in: afdb (00735, 03665, 04015) and ltafdb (00, 01, 03, 05, 06, 07, 08).
+        opt in: afdb (00735, 03665, 04015), ltafdb (00, 01, 03, 05, 06, 07, 08) and
+        shdb_af, whose de-identification assigned every recording a three-digit id
+        in 000-143 "padded with zeros to maintain consistent length".
         """
         opting_in = sorted(
             slug for slug in list_available_configs()
             if load_config(slug).zero_padded_identifiers
         )
-        assert opting_in == ["afdb", "ltafdb"]
+        assert opting_in == ["afdb", "ltafdb", "shdb_af"]
         # And a dataset that has not opted in is left exactly as it was.
         assert load_config("mitdb").identifier_dtypes() == {}
 
@@ -2114,3 +2116,123 @@ def test_qtdb_labels_are_module_based_with_no_source_csv():
     assert config.labels.available is True
     assert config.labels.source_csv is None
     assert config.labels.join_column == config.record_id_column
+
+
+def test_load_shdb_af_config():
+    """SHDB-AF: 200 Hz upsampled from 125, documented CC5/NASA channels, zero-padded ids."""
+    config = load_config("shdb_af")
+    assert config.slug == "shdb_af"
+    assert config.version == "1.0.1"
+    assert config.signal_format == "wfdb"
+    # Every header declares a gain in adu/mV, so wfdb returns millivolts and there
+    # is nothing to rescale. The gains are per-channel normalisation constants
+    # rather than amplifier settings — 254 distinct values over 256 signal lines,
+    # each with its own nonzero baseline — which makes amplitudes incomparable
+    # ACROSS records but correct within one. That is a comparability problem, not a
+    # units problem, so the scale stays 1.0.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # The source's own names, and unlike every other two-lead Holter here they mean
+    # something: the release documents ECG1 as a modified CC5 lead and ECG2 as NASA.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    # 200 Hz is what the files hold. The Fukuda recorder digitised at 125 Hz and the
+    # release upsampled after band-passing, so there is no 125 Hz copy to offer.
+    assert config.sampling_rates == [200]
+    assert config.default_sampling_rate == 200
+    assert config.signal_path_columns == {200: "signal_path"}
+    # AdditionalData.csv is real, but it has no signal-path column, so SHDBAFSplitter
+    # joins it to the annotation summary and writes this.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "Data_ID"
+    # Load-bearing: 122 subjects over 128 recordings, six contributing two each.
+    assert config.patient_id_column == "Subject_ID"
+    # NOT optional. De-identification assigned ids in 000-143 "padded with zeros to
+    # maintain consistent length", so pandas turns "001" into 1 and every record
+    # then fails corrupt_header looking for a file called "1".
+    assert config.zero_padded_identifiers is True
+    assert config.identifier_dtypes() == {
+        "Data_ID": "str", "Subject_ID": "str", "signal_path": "str",
+    }
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # A clinical diagnosis from the medical report, not a measurement of the signal.
+    assert config.label_column == "AF_Type"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # One layout in all 128 headers, so neither per-record mechanism applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+
+
+def test_shdb_af_expected_samples_is_empty_because_one_record_is_nine_hours():
+    """10 distinct lengths, and the shortest is a real 9-hour recording.
+
+    87 of the 128 records hold exactly 17,280,000 samples (24.00 h at 200 Hz) and
+    126 fall between 23.53 h and 24.08 h, but record 022 holds 14,357,400 (19.94 h)
+    and record 107 only 6,480,000 (9.00 h). A threshold at the nominal day would
+    report both truncated; a threshold at 6,480,000 would pass a record truncated to
+    9 hours. Neither is useful, so the check is
+    disabled for the rate — which is what an empty dict does. ``truncated_signal``
+    stays in the check list so a uniform re-release needs one line, not two.
+    """
+    config = load_config("shdb_af")
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    # The nominal duration is still declared, and is NOT what gets validated.
+    assert config.duration_seconds == 86400.0
+    assert config.duration_seconds * config.default_sampling_rate == 17_280_000
+
+
+def test_shdb_af_amplitude_range_is_the_union_of_256_different_rails():
+    """Every channel was scaled to fill int16, so each has its own millivolt rail.
+
+    (+/-32768 - baseline) / gain, with 254 distinct gains from 2,880.0 to 33,488.6
+    adu/mV. The narrowest channel (141 ECG2) is confined to [-0.732, 1.225] mV and
+    the widest (113 ECG1) to [-11.912, 10.844] — an 11.6-fold spread — so only a
+    bound sized to the widest cannot fire on a sound record.
+
+    The slack matters here for the reason it mattered in chfdb: the rails are
+    ATTAINED. 240 of the 256 channels reach digital -32767, one step short of the
+    -32768 that wfdb converts to NaN, so the observed extremes ([-11.9113, 10.8432],
+    both in record 113's ECG1) sit within one adu of the computed bound and a bound
+    set to the exact rail would exclude the record it was computed from.
+    """
+    config = load_config("shdb_af")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-11.92, 10.85)
+    # The widest channel's rail, from record 113's ECG1 (gain 2879.9603, baseline
+    # 1537): the bound clears it by under a hundredth of a millivolt in each
+    # direction, which is slack rather than looseness.
+    assert low < (-32768 - 1537) / 2879.9603101895036 < low + 0.01
+    assert high - 0.01 < (32767 - 1537) / 2879.9603101895036 < high
+    # And the narrowest, record 141's ECG2 at 33,488.6 adu/mV, spans 1.96 mV in
+    # total — the 11.6-fold spread this single bound has to accommodate.
+    narrow = (32767 - -8262) / 33488.649888139254 - (-32768 - -8262) / 33488.649888139254
+    wide = (32767 - 1537) / 2879.9603101895036 - (-32768 - 1537) / 2879.9603101895036
+    assert narrow == pytest.approx(1.957, abs=5e-4)
+    assert wide / narrow == pytest.approx(11.6, abs=0.05)
+    # Much wider than the 200 adu/mV rail the MIT-BIH Holters use, because this
+    # release's gains are normalisation constants rather than amplifier settings.
+    assert high > 2047 / 200.0
+
+
+def test_shdb_af_labels_name_a_source_csv_but_still_need_a_module():
+    """The clinical table cannot be read declaratively, and the reasons are structural.
+
+    ``AdditionalData.csv`` is a real 45-column metadata file — unlike ltafdb's, which
+    does not exist — so ``source_csv`` names it. It still cannot drive the
+    declarative path: the rhythm labels live in the ``.atr`` files rather than the
+    table, there is no signal-path column, and seven of its yes/no columns ship as
+    ``1.0``/``0.0`` floats where ten ship as ``True``/``False`` strings.
+    """
+    config = load_config("shdb_af")
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv == "AdditionalData.csv"
+    assert config.labels.join_column == config.record_id_column == "Data_ID"
+
+    from ecgbench.labels import _custom_loaders
+
+    assert "shdb_af" in _custom_loaders()

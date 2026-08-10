@@ -304,6 +304,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `chfdb` | **`ECG1`, `ECG2`** — like `afdb`, `nsrdb` and `svdb`, and from the same Beth Israel hospital as `mitdb`: no electrode placement is stated anywhere, so these are channel positions. Note that only the **current** `.hea` files name them — the 15 superseded `.hea-` copies shipped beside them (and listed in the release's own `SHA256SUMS.txt`) carry no signal descriptions at all, because the 2012 revision is what added them |
 | `sddb` | **`ECG1`, `ECG2`** — the `ltafdb` case, not the `afdb` one: every current header calls **both** channels `ECG`, the same string twice, so these two names are positions ECGBench assigns. The 23 superseded `.hea-` copies say `record 30, signal 0` instead — the 2008 revision is what introduced `ECG`. No electrode placement is stated in the headers or on the landing page, so again not MLII/V1. This is also the one dataset whose **ADC gain varies between records**: 800 adu/mV for 21 and **200 for records 39 and 47**, which moves the 12-bit rail from ±2.55875 mV to ±10.235 mV |
 | `qtdb` | **`ECG1`, `ECG2` in 57 of 105 records, and 19 further layouts in the other 48** — the most varied in the catalogue, and the only one whose *modal* layout is a placeholder. Those 57 (every excerpt from `svdb`, `nsrdb`, `stdb`, MIT-BIH Long-Term and the sudden-death Holters) state no electrode placement at all. The 15 MIT-BIH Arrhythmia excerpts match `mitdb`'s names exactly; the 33 European ST-T ones use the ESC's **original electrode nomenclature** (`D3`, `CM5`, `CC5`, `ML5`, `CM2`, `mod.V1`, `V2-V3`) and agree with `edb`'s names for the same bit-identical channels in only **2 of 33**. `D3, V4` and `V4, D3` are both present. See below |
+| `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -402,6 +403,14 @@ known anatomical lead, and the obvious inference from `mitdb` is not supported b
 anything in the data. Where `mitdb` documents which of MLII/V1/V5 each record holds,
 `afdb` documents nothing, and the honest config is the one that says so.
 
+`shdb_af` is the one exception in the whole two-lead group, and it is worth knowing
+about because it makes the others' silence look like the choice it is. Its headers spell
+`ECG1`/`ECG2` like `afdb`'s, but the release also says what they are — `ECG1` a modified
+CC5 lead and `ECG2` a NASA lead — so those two names carry a placement rather than only
+a position. The config still declares the names the files use rather than `CC5`/`NASA`,
+because spelling leads as the source spells them is the rule and the headers are the
+source. Both are Holter placements, not members of the standard twelve.
+
 `ltafdb` goes one step further and does not even number them: every one of its 84
 headers ends **both** signal lines with the bare description `ECG`. Two identically
 named channels cannot be resolved by name — `_resolve_leads` keys on the first
@@ -410,7 +419,7 @@ channel 1 unreachable through `leads=` entirely. Its config therefore declares t
 positional names `ECG1`/`ECG2`, matching `afdb` so cross-dataset code sees one
 convention, and says plainly that they are ECGBench's names rather than the files'.
 
-**Two datasets' record ids are zero-padded numbers**, which is a bigger deal than it
+**Three datasets' record ids are zero-padded numbers**, which is a bigger deal than it
 sounds. `afdb`'s records are named `00735`, `03665`, `04015`; read with pandas'
 default type inference they become 735, 3665, 4015, and from there the record id
 stops matching the source, the label join misses, and `data_path / "735"` is not a
@@ -423,9 +432,18 @@ strings. If you read the published fold CSVs yourself, do the same:
 pd.read_csv("afdb/clean/folds.csv", dtype={"record_name": str, "signal_path": str})
 ```
 
-`ltafdb` is the other one, and it loses more: seven of its 84 records are named
+`ltafdb` is the second, and it loses more: seven of its 84 records are named
 `00`, `01`, `03`, `05`, `06`, `07` and `08`, which collapse to single digits that
 resolve to nothing at all.
+
+`shdb_af` is the third, and the only one where the padding is a stated part of the
+de-identification rather than an accident of numbering: every recording was given a
+random three-digit id in `000`-`143` and "padded with zeros to maintain consistent
+length", so **all** 128 ids are three characters and **88** of them begin with a zero.
+It is also the only one of the three where the padding hides a second problem: the ids
+are not sequential — 16 values in `000`-`143` are unused, including the `016` and `030`
+that v1.0.1 withdrew as duplicates — so a gap in the numbering is not evidence of a
+missing download.
 
 The flag is opt-in, because forcing it on would change `ds[0]["record_id"]` from an
 int to a string for the six datasets whose ids are genuinely numeric. Forgetting it

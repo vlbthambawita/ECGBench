@@ -5043,3 +5043,168 @@ class TestQTDBSplitter:
 
         with pytest.raises(ValueError, match="SOURCE_DATABASE_RECORDS"):
             get_splitter("qtdb").load_metadata(tree, config)
+
+
+class TestSHDBAFSplitter:
+    """128 Japanese Holters: a real clinical CSV that still cannot drive the split."""
+
+    CLINICAL = (
+        "Data_ID,Subject_ID,Annotated,Age_at_Holter,Sex,AF_Type,CHF,HTN\n"
+        "001,2043771,True,65,M,PAF,0.0,False\n"
+        "005,4899921,True,47,M,PAF,0.0,False\n"
+        "020,4899921,True,50,M,PAF,0.0,False\n"
+        "066,5133906,False,53,M,non-AF,0.0,True\n"
+        "118,5133906,True,53,M,non-AF,0.0,True\n"
+        "143,9000001,False,70,F,PerAF,1.0,True\n"
+    )
+
+    def _tree(self, tmp_path, records):
+        """records: [(rec, n_samples, annotated)] — .qrs always, .atr only if annotated."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, n_samples, annotated in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                f"{rec} 2 200 {n_samples}\n"
+                f"{rec}.dat 16 8105.233566939608(-9270)/mV 16 0 -9267 62791 0 ECG1\n"
+                f"{rec}.dat 16 11470.645879660451(543)/mV 16 0 408 55919 0 ECG2\n",
+                encoding="utf-8",
+            )
+            # Beats every second, starting at 1 s — never at sample 0, which
+            # wfdb.wrann drops for a comment annotation.
+            beats = np.arange(1, 101) * 200
+            wfdb.wrann(rec, "qrs", sample=beats, symbol=["N"] * len(beats),
+                       fs=200, write_dir=str(tmp_path))
+            if annotated:
+                # Every annotation a '"' comment, the rhythm code only on the first
+                # beat of each interval: the layout this dataset actually uses.
+                aux = ["(AFIB"] + [""] * 49 + ["(N"] + [""] * 49
+                wfdb.wrann(rec, "atr", sample=beats, symbol=['"'] * len(beats),
+                           aux_note=aux, fs=200, write_dir=str(tmp_path))
+        (tmp_path / "RECORDS.txt").write_text(
+            "\n".join(r for r, _, _ in records) + "\n", encoding="utf-8"
+        )
+        (tmp_path / "AdditionalData.csv").write_text(self.CLINICAL, encoding="utf-8")
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="shdb_af", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="Data_ID", patient_id_column="Subject_ID",
+            signal_path_columns={200: "signal_path"}, default_sampling_rate=200,
+            label_column="AF_Type", leads=2, zero_padded_identifiers=True,
+        )
+
+    RECORDS = [("001", 200 * 200, True), ("005", 200 * 200, True),
+               ("020", 200 * 200, True), ("066", 200 * 200, False),
+               ("118", 200 * 200, True), ("143", 200 * 150, False)]
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.shdb_af import SHDBAFSplitter
+
+        assert isinstance(get_splitter("shdb_af"), SHDBAFSplitter)
+
+    def test_joins_the_clinical_table_to_the_annotations_and_adds_a_signal_path(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, self.RECORDS)
+
+        df = get_splitter("shdb_af").load_metadata(tree, config).set_index("Data_ID")
+
+        assert len(df) == 6
+        # The clinical side.
+        assert df.loc["001", "AF_Type"] == "PAF"
+        assert df.loc["001", "Subject_ID"] == "2043771"
+        # The reason a custom splitter is needed at all: no shipped column is this.
+        assert df.loc["001", "signal_path"] == "001"
+        # The annotation side, forward-filled out of the '"' comments.
+        assert df.loc["001", "beats_AFIB"] == 50
+        assert df.loc["001", "beats_N"] == 50
+        assert df.loc["001", "af_beat_fraction"] == pytest.approx(0.5)
+        assert bool(df.loc["001", "has_rhythm_annotation"]) is True
+        # And the unannotated records still get a full row.
+        assert bool(df.loc["066", "has_rhythm_annotation"]) is False
+        assert df.loc["066", "n_detections"] == 100
+        assert pd.isna(df.loc["066", "af_burden"])
+        # The duplicate pair is flagged in both directions.
+        assert df.loc["005", "duplicate_of"] == "020"
+        assert df.loc["020", "duplicate_of"] == "005"
+        assert df.loc["001", "duplicate_of"] in ("", None) or pd.isna(df.loc["001", "duplicate_of"])
+
+    def test_the_metadata_csv_is_written_to_disk_because_validation_rereads_it(
+        self, sample_config, tmp_path
+    ):
+        """``validate_dataset`` reads ``metadata_csv`` from disk, not this DataFrame.
+
+        An in-memory-only frame leaves validation with no metadata at all — the bug
+        Chapman shipped for months, where every record failed ``corrupt_header``.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, self.RECORDS)
+
+        first = get_splitter("shdb_af").load_metadata(tree, config)
+        assert (tree / "ecgbench_metadata.csv").exists()
+
+        # And the second call reads the cache, with the ids still strings.
+        second = get_splitter("shdb_af").load_metadata(tree, config)
+        assert list(second["Data_ID"]) == list(first["Data_ID"]) == [
+            "001", "005", "020", "066", "118", "143"
+        ]
+        assert list(second["signal_path"]) == ["001", "005", "020", "066", "118", "143"]
+
+    def test_the_fold_label_is_read_not_recomputed(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, self.RECORDS)
+
+        splitter = get_splitter("shdb_af")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "af_type_annotation_class"
+        assert list(labels) == [
+            "PAF+annotated", "PAF+annotated", "PAF+annotated",
+            "non-AF+unannotated", "non-AF+annotated", "PerAF",
+        ]
+
+    def test_a_frame_without_the_label_column_is_refused(self, sample_config):
+        config = self._config(sample_config)
+        df = pd.DataFrame({"Data_ID": ["001"], "AF_Type": ["PAF"]})
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("shdb_af").get_stratification_labels(df, config)
+
+    def test_folds_keep_the_duplicate_recording_and_its_subject_together(
+        self, sample_config, tmp_path
+    ):
+        """005 and 020 are the same recording; grouping on Subject_ID is what saves it.
+
+        Not a property of the splitter's cleverness — both rows happen to carry
+        Subject_ID 4899921. This asserts the mechanism that makes the release's own
+        missed duplicate harmless, so a later change to ``patient_id_column`` cannot
+        quietly reintroduce the leak.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, self.RECORDS)
+        splitter = get_splitter("shdb_af")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=3, random_state=42)
+        assert result.group_column == "Subject_ID"
+
+        fold_of = {
+            row["Data_ID"]: fold
+            for fold, frame in result.folds.items()
+            for _, row in frame.iterrows()
+        }
+        assert fold_of["005"] == fold_of["020"]
+        assert fold_of["066"] == fold_of["118"]

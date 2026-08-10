@@ -8816,3 +8816,402 @@ class TestQTDBLabels:
         assert len(set(every)) == 9  # exactly what the shipped ANNOTATORS file lists
         assert qtdb.SOURCE_ANNOTATOR == "atr"
         assert qtdb.BEAT_ANNOTATOR == "man"
+
+
+class TestSHDBAFLabels:
+    """SHDB-AF: a clinical table AND rhythm annotations, in a layout nothing else uses.
+
+    Two things have to be got right here that no other module in this package needs.
+    The annotation files carry **no** ``+`` rhythm changes and **no** typed beat
+    symbols — every annotation is a ``"`` comment and the rhythm code rides in the
+    ``aux_note`` of the one sitting on the interval's first beat — so a loader
+    written against the ordinary WFDB layout reads these files as empty. And the
+    clinical table ships the same kind of yes/no fact in two different types.
+    """
+
+    HEADER = (
+        "001 2 200 17220000\n"
+        "001.dat 16 8105.233566939608(-9270)/mV 16 0 -9267 62791 0 ECG1\n"
+        "001.dat 16 11470.645879660451(543)/mV 16 0 408 55919 0 ECG2\n"
+    )
+
+    CLINICAL = (
+        "Data_ID,Subject_ID,Annotated,Height,Weight,BMI,Age_at_Holter,Sex,AF_Type,"
+        "CHF,HTN,Ablation1_PVI,Holter_start_time\n"
+        "001,2043771,True,1.73,63.5,21.2,65,M,PAF,0.0,False,1.0,10:10 AM\n"
+        "002,2043772,False,1.60,55.0,21.5,70,F,non-AF,1.0,True,,10:55 AM\n"
+    )
+
+    def test_labels_name_the_clinical_csv_and_dispatch_to_this_module(self):
+        from ecgbench.config import load_config
+        from ecgbench.labels import _custom_loaders
+
+        spec = load_config("shdb_af").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv == "AdditionalData.csv"
+        assert spec.join_column == "Data_ID"
+        # Named, but not usable declaratively — the rhythm labels are in the .atr
+        # files and the table has no signal path.
+        assert _custom_loaders()["shdb_af"].__module__ == "ecgbench.labels.shdb_af"
+
+    def test_reads_the_signal_specification_the_gains_and_the_baselines(self, tmp_path):
+        """The baseline is not optional here: it is nonzero on all 256 channels.
+
+        A reader that takes only the gain out of ``8105.2336(-9270)/mV`` is off by
+        9,270 adu, which at that gain is 1.14 mV — larger than most of the QRS
+        complexes in the record.
+        """
+        from ecgbench.labels.shdb_af import read_header
+
+        (tmp_path / "001.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = read_header(tmp_path / "001.hea")
+
+        assert fields["n_leads"] == 2
+        assert fields["n_samples"] == 17220000
+        # 200 Hz in the files, upsampled by the release from the recorder's 125 Hz.
+        assert fields["sampling_rate"] == 200
+        # Read, not assumed — and unlike ltafdb's the two names differ, and unlike
+        # afdb's they correspond to documented electrode placements (CC5 and NASA).
+        assert fields["lead_names"] == "ECG1|ECG2"
+        assert fields["adc_gains"] == "8105.233566939608|11470.645879660451"
+        assert fields["adc_baselines"] == "-9270|543"
+
+    def test_headers_carry_no_timestamp_because_v101_moved_it_to_the_csv(self, tmp_path):
+        """v1.0.0 put base_time in the .dat; v1.0.1 moved it to Holter_start_time.
+
+        The shipped README still describes the old arrangement. Pinned because a
+        reader expecting a fifth field on the record line gets nothing here and the
+        obvious "fix" is to invent one.
+        """
+        from ecgbench.labels.shdb_af import read_header
+
+        (tmp_path / "001.hea").write_text(self.HEADER, encoding="utf-8")
+        assert len(self.HEADER.splitlines()[0].split()) == 4
+        fields = read_header(tmp_path / "001.hea")
+        assert "start_time" not in fields and "start_date" not in fields
+
+    def test_rhythm_codes_include_the_undocumented_ab_code(self):
+        """``(AB`` is in 3 intervals of 2 records and in no documentation at all.
+
+        The landing page and the shipped README both list five categories. Dropping
+        a code because its documentation is missing would silently reassign 5,021
+        beats, so it is carried — and asserted, so a later "cleanup" against the
+        published list cannot remove it quietly.
+        """
+        from ecgbench.labels import ltafdb as ltafdb_labels
+        from ecgbench.labels import shdb_af as shdb_labels
+
+        assert set(shdb_labels.RHYTHM_NAMES) == {
+            "N", "AFIB", "AFL", "AT", "PAT", "NOD", "AB"
+        }
+        # Flutter IS annotated here, unlike ltafdb — and it is deliberately NOT
+        # folded into af_burden, so the two databases' af_burden means the same
+        # thing while this one also has afl_burden.
+        assert "AFL" in shdb_labels.RHYTHM_NAMES
+        assert "AFL" not in ltafdb_labels.RHYTHM_NAMES
+        assert shdb_labels.AF_CODES == ltafdb_labels.AF_CODES == ("AFIB",)
+        # Every positive class, i.e. everything except the residual N.
+        assert set(shdb_labels.SVT_CODES) == set(shdb_labels.RHYTHM_NAMES) - {"N"}
+
+    def test_n_is_documented_as_a_residual_class_not_sinus_rhythm(self):
+        """The release annotated supraventricular arrhythmia only.
+
+        ``N`` pools sinus rhythm with ventricular ectopy, pauses and noise, so it
+        cannot be used as a sinus-rhythm label. Asserted on the description because
+        that string is what a user reads.
+        """
+        from ecgbench.labels.shdb_af import RHYTHM_NAMES, UNLABELLED_CODE
+
+        assert UNLABELLED_CODE == "N"
+        assert "not annotated" in RHYTHM_NAMES["N"]
+        assert "sinus" in RHYTHM_NAMES["N"]  # named as one of the things it pools
+
+    def test_the_duplicate_pair_is_recorded_in_both_directions(self):
+        """005 and 020 are the same recording: identical SHA-256 for .dat and .qrs.
+
+        v1.0.1 removed duplicates 016 and 030 and missed this pair, so the release
+        holds 127 distinct recordings rather than 128. Both rows carry Subject_ID
+        4899921, so patient-grouped folds keep them together — but a per-record
+        metric double-counts one recording unless it knows.
+        """
+        from ecgbench.labels.shdb_af import DUPLICATE_RECORDINGS
+
+        assert DUPLICATE_RECORDINGS == {"005": "020", "020": "005"}
+
+    def _write(self, tmp_path, rec, n_samples, atr=None, qrs=None):
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        (tmp_path / f"{rec}.hea").write_text(
+            f"{rec} 2 200 {n_samples}\n"
+            f"{rec}.dat 16 8105.233566939608(-9270)/mV 16 0 -9267 62791 0 ECG1\n"
+            f"{rec}.dat 16 11470.645879660451(543)/mV 16 0 408 55919 0 ECG2\n",
+            encoding="utf-8",
+        )
+        if qrs:
+            wfdb.wrann(rec, "qrs", sample=np.array(qrs["sample"]),
+                       symbol=qrs["symbol"], fs=200, write_dir=str(tmp_path))
+        if atr:
+            wfdb.wrann(rec, "atr", sample=np.array(atr["sample"]),
+                       symbol=atr["symbol"], aux_note=atr.get("aux_note"),
+                       fs=200, write_dir=str(tmp_path))
+        return tmp_path
+
+    def test_rhythm_marks_are_forward_filled_over_comment_annotations(self, tmp_path):
+        """The whole point of this module: no ``+``, no typed beats, one code per interval.
+
+        Ten beats, all ``"``, with a code on beat 0 and another on beat 4. A reader
+        looking for ``+`` finds no episodes; a reader looking for ``N``/``A``/``V``
+        finds no beats. Forward-filling gives 4 AFIB beats and 6 N beats.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.shdb_af import summarise_annotations
+
+        n_samples = 200 * 100  # 100 s
+        # Beats at 1 s, 2 s, ... 10 s. NOT starting at sample 0 — see
+        # test_wfdb_cannot_write_a_comment_annotation_at_sample_zero below.
+        samples = [200 * (i + 1) for i in range(10)]
+        self._write(
+            tmp_path, "001", n_samples,
+            atr={"sample": samples, "symbol": ['"'] * 10,
+                 "aux_note": ["(AFIB", "", "", "", "(N", "", "", "", "", ""]},
+        )
+        out = summarise_annotations(tmp_path / "001", n_samples)
+
+        assert out["n_beats"] == 10
+        assert out["n_rhythm_marks"] == 2
+        assert out["beats_AFIB"] == 4
+        assert out["beats_N"] == 6
+        assert out["n_episodes_AFIB"] == 1 and out["n_episodes_N"] == 1
+        # AFIB runs beat 0 to beat 4, i.e. 1 s to 5 s.
+        assert out["rhythm_secs_AFIB"] == pytest.approx(4.0)
+        # N runs from beat 4 to the END OF THE RECORD, not to the last beat.
+        assert out["rhythm_secs_N"] == pytest.approx(95.0)
+        # 99 s, not 100: the second before the first detected beat is classified by
+        # nothing, exactly as the release's ~8 s lead-in is.
+        assert out["rhythm_annotated_secs"] == pytest.approx(99.0)
+        assert out["af_burden"] == pytest.approx(4.0 / 99.0)
+        assert out["dominant_rhythm"] == "N"
+
+    def test_the_beat_fraction_and_the_time_fraction_are_different_numbers(self, tmp_path):
+        """``af_beat_fraction`` is what the release's table counts; ``af_burden`` is time.
+
+        AF beats are faster than the rest of the record, so the beat fraction runs
+        higher. Both are exposed because the release publishes the first and every
+        other AF database in this catalogue publishes the second.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.shdb_af import summarise_annotations
+
+        n_samples = 200 * 120
+        # Four fast AFIB beats over 2 s, then six slow beats spread over 117.5 s.
+        samples = [100, 200, 300, 400, 500] + [200 * 20 * i for i in range(1, 6)]
+        self._write(
+            tmp_path, "001", n_samples,
+            atr={"sample": samples, "symbol": ['"'] * 10,
+                 "aux_note": ["(AFIB", "", "", "", "(N", "", "", "", "", ""]},
+        )
+        out = summarise_annotations(tmp_path / "001", n_samples)
+
+        # 4 of 10 beats are AFIB...
+        assert out["af_beat_fraction"] == pytest.approx(0.4)
+        # ...but only 2 s of the 119.5 annotated seconds are.
+        assert out["af_burden"] == pytest.approx(2.0 / 119.5)
+        assert out["af_beat_fraction"] > 20 * out["af_burden"]
+
+    def test_a_mark_on_the_last_beat_is_closed_at_the_record_end(self, tmp_path):
+        """18 of the 98 records do this, and without the convention it is 0 seconds.
+
+        The final interval has no mark after it, so it runs to the end of the
+        signal — PhysioNet's own summary tables do the same. A mark landing on the
+        very last annotated beat is the degenerate case.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.shdb_af import summarise_annotations
+
+        n_samples = 200 * 100
+        self._write(
+            tmp_path, "003", n_samples,
+            atr={"sample": [0, 200, 400], "symbol": ['"'] * 3,
+                 "aux_note": ["(AFIB", "", "(N"]},
+        )
+        out = summarise_annotations(tmp_path / "003", n_samples)
+
+        assert out["beats_N"] == 1
+        # 2 s to 100 s, not 2 s to 2 s.
+        assert out["rhythm_secs_N"] == pytest.approx(98.0)
+        # And the tail is measured from the last beat, so it stays non-negative.
+        assert out["unannotated_tail_secs"] == pytest.approx(98.0)
+
+    def test_the_qrs_layer_covers_records_the_atr_layer_does_not(self, tmp_path):
+        """30 records have .qrs and no .atr, and must still get a complete row.
+
+        Same schema either way, so a groupby cannot silently drop them — and
+        ``af_class`` says ``unannotated`` rather than reporting a burden of zero,
+        because 11 of those 30 have a PAF diagnosis.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.labels.shdb_af import AF_UNANNOTATED, attach_stratify_class, scan_records
+
+        n_samples = 200 * 100
+        beats = [200 * (i + 1) for i in range(10)]
+        self._write(tmp_path, "001", n_samples,
+                    qrs={"sample": beats, "symbol": ["N"] * 10},
+                    atr={"sample": beats, "symbol": ['"'] * 10,
+                         "aux_note": ["(AFIB"] + [""] * 9})
+        self._write(tmp_path, "002", n_samples, qrs={"sample": beats, "symbol": ["N"] * 10})
+        (tmp_path / "RECORDS.txt").write_text("001\n002\n", encoding="utf-8")
+
+        df = scan_records(tmp_path).set_index("Data_ID")
+        assert list(df.index) == ["001", "002"]
+        assert bool(df.loc["001", "has_rhythm_annotation"]) is True
+        assert bool(df.loc["002", "has_rhythm_annotation"]) is False
+        # Same columns for both, and the detector still gives the unannotated one a
+        # beat count and a heart rate.
+        assert df.loc["002", "n_detections"] == 10
+        assert df.loc["002", "n_beats"] == 10
+        assert pd.isna(df.loc["002", "af_burden"])
+
+        df["AF_Type"] = ["PAF", "PAF"]
+        out = attach_stratify_class(df)
+        assert out.loc["002", "af_class"] == AF_UNANNOTATED
+        assert out.loc["001", "af_class"] == "sustained"
+
+    def test_the_fold_label_crosses_diagnosis_with_annotation_except_for_peraf(self):
+        """PerAF is left uncrossed because its own cross is 9 and 6.
+
+        ``StratifiedGroupKFold`` does not raise for a class it cannot spread over ten
+        folds — it quietly leaves folds without one. So the cross is taken only where
+        the counts allow: PAF splits 69/11 and non-AF 20/13, and PerAF's 15 stays
+        whole rather than becoming a 6.
+        """
+        from ecgbench.labels.shdb_af import attach_stratify_class
+
+        df = pd.DataFrame(
+            {
+                "AF_Type": ["PAF", "PAF", "PerAF", "PerAF", "non-AF", "non-AF"],
+                "has_rhythm_annotation": [True, False, True, False, True, False],
+                "af_burden": [0.5, None, 1.0, None, 0.0, None],
+            }
+        )
+        out = attach_stratify_class(df)
+
+        assert list(out["stratify_class"]) == [
+            "PAF+annotated", "PAF+unannotated",
+            "PerAF", "PerAF",
+            "non-AF+annotated", "non-AF+unannotated",
+        ]
+
+    def test_the_numeric_yes_no_columns_become_nullable_booleans(self, tmp_path):
+        """The source ships the same kind of fact in two types; ten as strings, seven as floats.
+
+        ``HTN`` is ``True``/``False`` and ``CHF`` is ``1.0``/``0.0``/blank. Without
+        the conversion, ``df["CHF"] & df["HTN"]`` is a type error and
+        ``df["CHF"].sum()`` returns a float count of a boolean fact.
+        """
+        from ecgbench.labels.shdb_af import NUMERIC_FLAG_COLUMNS, load_clinical
+
+        (tmp_path / "AdditionalData.csv").write_text(self.CLINICAL, encoding="utf-8")
+        df = load_clinical(tmp_path)
+
+        assert "CHF" in NUMERIC_FLAG_COLUMNS and "HTN" not in NUMERIC_FLAG_COLUMNS
+        assert df["CHF"].dtype == "boolean"
+        assert df["Ablation1_PVI"].dtype == "boolean"
+        assert df.loc["001", "CHF"] is False or df.loc["001", "CHF"] == False  # noqa: E712
+        assert df.loc["002", "CHF"] == True  # noqa: E712
+        # Blank stays missing rather than becoming False.
+        assert pd.isna(df.loc["002", "Ablation1_PVI"])
+        # And the two encodings are now combinable.
+        assert bool((df["CHF"] & df["HTN"]).loc["002"]) is True
+
+    def test_the_record_id_survives_the_csv_round_trip_as_a_string(self, tmp_path):
+        """``001`` must not become ``1``, on either side of the join."""
+        from ecgbench.labels.shdb_af import load_clinical
+
+        (tmp_path / "AdditionalData.csv").write_text(self.CLINICAL, encoding="utf-8")
+        df = load_clinical(tmp_path)
+
+        assert list(df.index) == ["001", "002"]
+        # Strings, not integers: object dtype on pandas 2, StringDtype on pandas 3.
+        assert not pd.api.types.is_numeric_dtype(df.index)
+        assert not pd.api.types.is_numeric_dtype(df["Subject_ID"])
+        # Subject_ID too, so a future release with a padded subject id cannot break
+        # the grouping quietly.
+        assert df["Subject_ID"].tolist() == ["2043771", "2043772"]
+
+    def test_a_missing_records_txt_says_that_the_txt_is_the_point(self, tmp_path):
+        """Every other WFDB release here ships an extensionless ``RECORDS``.
+
+        A glob for that finds nothing and falls back to whatever ``*.hea`` is on
+        disk, which for a 7.7 GB release makes a partial download look like a
+        smaller database. So the error names the file.
+        """
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.shdb_af import scan_records
+
+        (tmp_path / "RECORDS").write_text("001\n", encoding="utf-8")  # the wrong name
+        with pytest.raises(LabelSourceMissingError, match="RECORDS.txt"):
+            scan_records(tmp_path)
+
+    def test_a_missing_clinical_csv_points_at_the_release(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.shdb_af import load_clinical
+
+        with pytest.raises(LabelSourceMissingError, match="AdditionalData.csv"):
+            load_clinical(tmp_path)
+
+    def test_a_v100_clinical_csv_is_refused_with_the_reason(self, tmp_path):
+        """v1.0.0 named the columns ``Study ID``/``UID`` and had no subject id at all.
+
+        Without ``Subject_ID`` the six subjects who contributed two recordings each
+        are invisible, so patient-grouped folds are impossible — and one of those
+        pairs is a byte-identical duplicate. Refusing beats grouping on nothing.
+        """
+        from ecgbench.labels.shdb_af import load_clinical
+
+        (tmp_path / "AdditionalData.csv").write_text(
+            "Study ID,UID,Annotated,Age,Dx\n2043771,001,True,65,PAF\n", encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match="Subject_ID"):
+            load_clinical(tmp_path)
+
+    def test_wfdb_cannot_write_a_comment_annotation_at_sample_zero(self, tmp_path):
+        """A fixture-writing trap, pinned so the next person does not lose an hour to it.
+
+        ``wfdb.wrann`` silently DROPS a ``"`` annotation at sample 0, taking its
+        ``aux_note`` with it. A fixture built the obvious way — beats every 200
+        samples from zero, opening rhythm mark on the first — therefore comes back
+        with no opening mark at all, and the beats before the second mark are
+        classified by nothing. A typed beat symbol at sample 0 round-trips fine, so
+        this is specific to the comment symbol, which is the only symbol this
+        database uses.
+
+        Real SHDB-AF files are unaffected: the earliest first beat in the release is
+        at sample 780, because the detector needs a lead-in.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        (tmp_path / "001.hea").write_text(
+            "001 2 200 20000\n"
+            "001.dat 16 100/mV 16 0 0 0 0 ECG1\n"
+            "001.dat 16 100/mV 16 0 0 0 0 ECG2\n",
+            encoding="utf-8",
+        )
+        wfdb.wrann("001", "atr", sample=np.array([0, 200, 400]),
+                   symbol=['"'] * 3, aux_note=["(AFIB", "", "(N"],
+                   fs=200, write_dir=str(tmp_path))
+        read = wfdb.rdann(str(tmp_path / "001"), "atr")
+
+        # Three written, two read: the sample-0 annotation and its "(AFIB" are gone.
+        assert list(read.sample) == [200, 400]
+        assert "(AFIB" not in read.aux_note
+
+        # A typed beat at sample 0 survives, which is why this is easy to miss.
+        wfdb.wrann("002", "atr", sample=np.array([0, 200, 400]),
+                   symbol=["N"] * 3, aux_note=["(AFIB", "", "(N"],
+                   fs=200, write_dir=str(tmp_path))
+        (tmp_path / "002.hea").write_text(
+            (tmp_path / "001.hea").read_text().replace("001", "002"), encoding="utf-8"
+        )
+        assert list(wfdb.rdann(str(tmp_path / "002"), "atr").sample) == [0, 200, 400]

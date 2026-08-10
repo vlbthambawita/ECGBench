@@ -1637,6 +1637,31 @@ class TestPerRecordLeadLayouts:
         assert _resolve_leads(["ECG2"], config.lead_names, "sddb")[0] == [1]
         assert _resolve_leads(["ECG2", "ECG1"], config.lead_names, "sddb")[0] == [1, 0]
 
+    def test_shdb_af_is_the_one_two_lead_holter_whose_channel_names_mean_something(self):
+        """ECG1 is a modified CC5 lead and ECG2 a NASA lead, and the release says so.
+
+        Every other two-lead Holter in this catalogue exposes ECG1/ECG2 as bare
+        channel positions, because none of them states an electrode placement
+        anywhere. This one does — in the Data Description section and in the shipped
+        README — so ``leads=["ECG1"]`` here selects a known placement rather than
+        merely position 0. That does not make them stackable with 12-lead data:
+        modified CC5 and NASA are neither of them any of the standard twelve.
+
+        The names still come from the headers rather than from the documentation,
+        which is why they read ECG1/ECG2 and not CC5/NASA — spelling leads as the
+        source spells them is the rule, and the release spells them this way in all
+        128 headers.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("shdb_af")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        # One layout in all 128 headers, so neither per-record mechanism applies.
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II", "CC5", "NASA"} & set(config.lead_names)
+
     def test_the_six_two_lead_mit_bih_holters_present_one_convention(self):
         """afdb, ltafdb, nsrdb, svdb, chfdb and sddb all expose ECG1/ECG2.
 

@@ -1,0 +1,360 @@
+# ECGBench Config: SHDB-AF (Saitama Heart Database — Atrial Fibrillation)
+# =======================================================================
+# https://physionet.org/content/shdb-af/1.0.1/
+#
+# 128 twenty-four-hour two-lead Holter recordings from 122 Japanese subjects with
+# paroxysmal atrial fibrillation, 3,050.4 hours in total, with beat-level rhythm
+# annotations on 98 of them and a 45-column clinical table on all of them.
+#
+# It exists because none of the AF databases that came before it hold a single
+# Japanese subject. MITDB, AFDB, LTAFDB, IRIDIA-AF, Icentia11k and CPSC2021 are all
+# American, European or Chinese, and this release was collected to measure how far
+# an AF detector trained on those generalises — which is what makes it a test set
+# more than a training set, and what makes the clinical table worth as much as the
+# waveforms.
+#
+# EIGHT THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. RECORDS 005 AND 020 ARE THE SAME RECORDING. `005.dat` and `020.dat` have the
+#    same SHA-256 in the release's own SHA256SUMS.txt, and so do `005.qrs` and
+#    `020.qrs`; only the `.atr` differs. The clinical table presents them as two
+#    separate Holters three years apart — ages 47 and 50, dates 2021-05-21 and
+#    2024-02-21 — so nothing but the checksum gives it away. v1.0.1's release notes
+#    say duplicates 016 and 030 were removed; this pair was missed, and the release
+#    therefore holds 127 distinct recordings rather than 128. ECGBench's folds are
+#    not leaky because of it, but only because both rows carry Subject_ID 4899921
+#    and folds are grouped on Subject_ID. `duplicate_of` in the labels names the
+#    partner so a per-record metric can drop one. The two `.atr` files also give
+#    this database its only annotation-repeatability estimate: same 17 marks, same
+#    9 N / 8 AFIB episodes, three beats moved, AF burden 0.03640 against 0.03637.
+#
+# 2. THE ANNOTATION FILES USE A LAYOUT NO OTHER DATABASE HERE USES, AND ORDINARY
+#    WFDB CODE READS THEM AS EMPTY. Every annotation in every `.atr` is a `"`
+#    comment — 10,349,733 of them, not one `+` and not one typed beat symbol — and
+#    the rhythm code sits in the `aux_note` of the `"` on the first beat of each
+#    interval. A reader filtering `symbol == "+"` finds no episodes and one
+#    filtering `symbol in "NAVQ"` finds no beats. `ecgbench.labels.shdb_af`
+#    forward-fills the marks instead.
+#
+# 3. `(N` MEANS "NOT LABELLED", NOT SINUS RHYTHM. The protocol annotated
+#    supraventricular arrhythmia only — the release says "Normal sinus rhythm and
+#    other rhythms were not annotated" — so `N` is a residual class holding sinus
+#    rhythm, ventricular ectopy, pauses and noise together. Do not train a
+#    sinus-rhythm detector on it. This is the sharpest difference from `ltafdb`,
+#    whose nine codes include VT, SVT, bigeminy and bradycardia as positive classes.
+#
+# 4. THERE IS AN UNDOCUMENTED SIXTH CODE IN THE FILES: `(AB`, atrial bigeminy, in
+#    3 intervals across 2 records (047, 051), covering 5,021 beats and 3,674.2 s.
+#    Neither the landing page nor the shipped README lists it and it appears in no
+#    row of the release's published beat table. ECGBench counts it, because dropping
+#    an annotation for want of documentation would silently reassign those beats.
+#
+#    THE PUBLISHED BEAT TABLE DOES NOT REPRODUCE, AND THE REASON IS THE VERSION.
+#    Recomputed over the 98 annotated recordings, AFL (195,659 beats, 45 intervals),
+#    AT (48,800, 57) and PAT+NOD (4,416, 9) match the landing page **exactly**,
+#    while N is 170,276 beats short of its published 7,812,308 and AFIB 59,154 short
+#    of 2,512,959, with 794 AFIB intervals against a published 809. That gap is
+#    224,409 beats, or 2.12 times the mean 105,610 beats per recording — two
+#    recordings' worth, which is what v1.0.1 removed when it withdrew 016 and 030 as
+#    duplicates. The table was computed for v1.0.0's 100 annotated recordings and
+#    was not regenerated, which also explains why its interval-duration summary does
+#    not reproduce: it gives a 2.5 s minimum and a 47.5 s median where the shipped
+#    files give 0.630 s and 58.91 s, with 50 intervals under 2.5 s.
+#
+# 5. THE FILES ARE 200 Hz, BUT THE RECORDER WAS 125 Hz. Fukuda Holter monitors
+#    digitised at 125 Hz; the release band-passed at [0.67-100] Hz and then
+#    *upsampled* to 200 Hz with an anti-aliasing filter. So `sampling_rates: [200]`
+#    is what the headers say and what `wfdb` returns, while the true information
+#    bandwidth is that of a 125 Hz recording — there is no content above 62.5 Hz,
+#    and 1.6 of every 2 samples is interpolation. Anything measuring high-frequency
+#    content, QRS slope or fiducial timing to better than 8 ms should know that
+#    before comparing against a natively-200 Hz database.
+#
+# 6. RECORDS ARE A FULL DAY LONG, SO BATCHING NEEDS `window=`. 24 h at 200 Hz is
+#    17,280,000 samples x 2 leads, 138 MB of float32 per record. Length is nearly
+#    but not quite uniform: 10 distinct lengths over the 128 records, of which 87
+#    are exactly 17,280,000 and 126 fall between 23.53 h and 24.08 h. The other two
+#    are the ones that matter: record 022 runs 19.94 h (14,357,400 samples) and
+#    record 107 only 9.00 h (6,480,000). A window must fit inside record 107.
+#
+# 7. EVERY CHANNEL WAS SCALED TO FILL THE 16-BIT RANGE, SO THE MILLIVOLT RAIL IS
+#    RECORD-DEPENDENT AND THE GAINS ARE MEANINGLESS AS AMPLIFIER SETTINGS. The 256
+#    signal lines carry 254 distinct gains, from 2,880.0 to 33,488.6 adu/mV, and 255
+#    of them a nonzero baseline (only 050's ECG1 is zero) — these are per-channel
+#    normalisation constants, not equipment calibration. The scaling is tight: 240 of
+#    the 256 channels reach digital -32767 and the other 16 stop at -32766, so the
+#    physical span differs 11.6-fold between the narrowest channel (141 ECG2, 1.96
+#    mV peak-to-peak) and the widest (113 ECG1, 22.75 mV). Do not compare absolute
+#    amplitudes across records in this release.
+#
+#    ONE STEP OF HEADROOM SAVED THE WHOLE RELEASE FROM READING AS NaN. -32768 is
+#    WFDB's invalid-sample marker for format 16, and `wfdb` converts it to NaN on
+#    read. Not one sample of the 780 million in this release is -32768 — the
+#    quantisation stops at -32767 — so `nan_values` passes everywhere. Had the
+#    scaling used the full range, most of the release would have failed it.
+#
+# 8. THE PUBLISHED DEMOGRAPHIC SUMMARY IS NOT REPRODUCIBLE AND THE SHIPPED README
+#    IS THE v1.0.0 ONE. The landing page mixes recording-level and subject-level
+#    counts ("Female: 47 (38.5%), Male: 75 (61.4%)" sums to the 122 subjects but 47
+#    is a recording count; per subject it is 44 F / 78 M), gives age as 68.0 +/-
+#    11.3 where the file yields 65.8 +/- 12.1, and gives stroke as 11.7% where
+#    19/128 is 14.8%. The shipped README.md documents v1.0.0's column names
+#    (`Study ID`, `UID`, `Height (m)`), claims 127 unique patients, and says the
+#    `.dat` files carry `base_year`/`base_time` fields that v1.0.1 moved out of the
+#    headers. Follow the landing page and the recomputed figures.
+#
+# Note also that the record list ships as RECORDS.txt, not the extensionless
+# RECORDS every other WFDB release in this catalogue uses. Code that globs for
+# RECORDS finds nothing and silently falls back to whatever is on disk.
+#
+# ALL 488 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt.
+
+name: "SHDB-AF: Saitama Heart Database Atrial Fibrillation"
+slug: "shdb_af"
+version: "1.0.1"
+url: "https://physionet.org/content/shdb-af/1.0.1/"
+download_url: null  # SHDBAFSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per LICENSE.txt
+description: >
+  128 twenty-four-hour Holter recordings from 122 Japanese adults who underwent
+  ambulatory monitoring at Saitama Medical University International Medical Center
+  between May 2019 and May 2023, published to give AF research a Japanese cohort
+  where MITDB, AFDB, LTAFDB, IRIDIA-AF, Icentia11k and CPSC2021 offer none. Two
+  channels were recorded on a Fukuda Holter monitor at 125 Hz — ECG1 a modified CC5
+  lead, ECG2 a NASA lead — then band-passed at [0.67-100] Hz and resampled to
+  200 Hz. 98 of the recordings carry rhythm annotations placed beat by beat in
+  PhysioZoo by a cardiology fellow, covering atrial fibrillation, atrial flutter,
+  atrial tachycardia and other supraventricular tachycardias; normal sinus rhythm
+  and everything else was deliberately left unlabelled, so the `N` code is a
+  residual class rather than a sinus-rhythm label. R-peak positions for all 128
+  recordings come from the epltd implementation of Pan-Tompkins and are unaudited.
+  AdditionalData.csv adds 45 columns of clinical and demographic data per
+  recording — diagnosis, comorbidity, medication, echocardiography and ablation
+  history — which makes this one of very few Holter releases where record-level
+  clinical context and time-resolved rhythm labels ship together.
+citation: >
+  Tsutsui K, Biton Brimer S, Ben-Moshe N, Sellal JM, Oster J, Mori H, Ikeda Y,
+  Arai T, Nakano S, Kato R, Behar JA. SHDB-AF: a Japanese Holter ECG database of
+  atrial fibrillation. Scientific Data (2025); arXiv:2406.16974.
+doi: "10.13026/n6yq-fq90"
+
+creators:
+  - type: Organization
+    name: "Saitama Medical University International Medical Center; Technion — Israel Institute of Technology"
+    url: "https://physionet.org/content/shdb-af/1.0.1/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 1.0 because every header declares a gain in adu/mV and wfdb divides by it, so
+# p_signal arrives in millivolts. The gains here are NOT amplifier settings — see
+# point 7 above: each channel was independently scaled to fill the 16-bit range, so
+# 254 of the 256 signal lines carry a distinct value between 2,880.0 and 31,697.7
+# adu/mV, each with its own nonzero baseline. That makes the conversion correct
+# per record and the amplitudes incomparable between records; `adc_gains` and
+# `adc_baselines` in the labels carry the pair so a user can see it.
+signal_unit_scale: 1.0
+leads: 2
+# THE ONLY TWO-LEAD HOLTER IN THIS CATALOGUE WHOSE CHANNEL NAMES MEAN SOMETHING.
+# afdb, nsrdb, svdb and chfdb spell ECG1/ECG2 in their headers and state no
+# placement; ltafdb and sddb call both channels "ECG" and ECGBench numbers them.
+# Here the headers spell ECG1/ECG2 *and* the release documents what they are:
+# ECG1 is a modified CC5 lead and ECG2 a NASA lead. The names are still the source's
+# own, so leads=["ECG1"] selects a known electrode placement rather than a bare
+# position — but they are not any of the standard twelve, so do not stack them with
+# 12-lead data by index or by name.
+lead_names: ["ECG1", "ECG2"]
+# 24 h at 200 Hz = 17,280,000 samples, which 87 of the 128 records hold exactly.
+# NOT uniform: 10 distinct lengths from 6,480,000 (record 107, 9.00 h) to
+# 17,340,000 (24.08 h). This is the nominal duration, not a value to validate on.
+duration_seconds: 86400.0
+# 200 Hz is what the files hold. The recorder was 125 Hz and the release upsampled
+# — see point 5. There is no 125 Hz copy in the release to offer as a second rate.
+sampling_rates: [200]
+default_sampling_rate: 200
+
+# --- File Structure ---
+# AdditionalData.csv is a real metadata file, unlike ltafdb's non-existent one, but
+# it has no signal-path column and no column that configuration alone can turn into
+# one. SHDBAFSplitter joins it to the annotation summary from
+# ecgbench.labels.shdb_af, adds signal_path, and writes this CSV on first run. The
+# validation engine re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "Data_ID"
+# NOT OPTIONAL HERE. Every record id is a zero-padded three-digit number — the
+# release's de-identification assigned ids in 000-143 and "padded with zeros to
+# maintain consistent length" — so pandas' default inference turns "001" into 1,
+# after which the id names no record and data_path / "1" is not a file. Every
+# record would fail corrupt_header with nothing in the traceback to say why.
+# export_splits refuses to write the fold CSVs while this is false.
+zero_padded_identifiers: true
+# Set, and load-bearing: 122 subjects contributed the 128 recordings, six of them
+# two each (005/020, 015/047, 035/036, 052/128, 066/118, 129/133). Without grouping,
+# a record-level split puts the same person on both sides — and in the 005/020 case
+# the same *recording*.
+patient_id_column: "Subject_ID"
+
+signal_path_columns:
+  200: "signal_path"  # zero-padded record stem, e.g. "001" — the tree is flat
+
+# --- Labels ---
+# The release's own post-Holter diagnosis, one value per recording: PAF (80),
+# PerAF (15), non-AF (33). It is a clinical diagnosis rather than a measurement of
+# the recording, and it agrees with the annotations closely but not perfectly —
+# see the labels module.
+label_column: "AF_Type"
+label_format: "single"
+
+stratification:
+  # SHDBAFSplitter takes stratify_class from the label loader: AF_Type crossed with
+  # whether the recording carries a .atr, which is the axis a user actually slices
+  # on and is not in any shipped column. PerAF is left uncrossed because its own
+  # cross is 9 annotated and 6 unannotated and a class of 6 cannot be spread over
+  # ten folds. See attach_stratify_class for the resulting five classes.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like ptbdb, challenge2021, afdb, ltafdb and sddb: length
+  # varies legitimately. 10 distinct lengths from 6,480,000 to 17,340,000 samples,
+  # and record 107's 9.00 h is a genuine short recording rather than a truncated
+  # day, so no single threshold separates the two. Omitting the rate disables the check
+  # rather than making it fire; truncated_signal stays in the list below only so a
+  # future release with uniform lengths needs one line here and not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The union of all 256 channels' 16-bit rails, computed from the headers rather
+  # than guessed, plus a thousandth of a millivolt of slack. This dataset needs the
+  # union rather than one number and needs the slack for the reason chfdb did.
+  #
+  # Every channel was scaled to fill the int16 range, so each has its OWN rail:
+  # (+/-32768 - baseline) / gain, with 254 distinct gains and 255 nonzero
+  # baselines. The narrowest channel (141 ECG2) is confined to [-0.732, 1.225] mV
+  # and the widest (113 ECG1) to [-11.912, 10.844], an 11.6-fold spread. A range
+  # that fits the widest is therefore the only one that cannot fire on a sound
+  # record.
+  #
+  # And the rails are ATTAINED, not approached: 240 of the 256 channels reach
+  # digital -32767 and 225 reach 32765 or more, so the observed extremes over the
+  # whole release ([-11.9113, 10.8432] mV, both in record 113's ECG1) sit within one
+  # adu of the computed bound.
+  # _load_signal casts to float32 and check_amplitude_outlier compares against the
+  # float64 bound from this file, so a bound set to the exact rail excludes the
+  # very record it was computed from — chfdb lost a record that way. Hence
+  # -11.92/10.85 rather than -11.9116/10.8439.
+  #
+  # What this guards is a mis-scaled copy — microvolts, or a re-release with the
+  # baselines dropped — which would exceed it by orders of magnitude on record one.
+  amplitude_range_mv: [-11.92, 10.85]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/shdb_af.py returns AdditionalData.csv's 45 clinical
+# columns joined to the annotation summary it computes from the .atr rhythm marks
+# and .qrs detections. There is a source CSV, but it cannot be used declaratively —
+# it has no signal path, the rhythm labels are in the annotation files rather than
+# the table, and seven of its yes/no columns ship as floats where ten ship as
+# True/False strings.
+labels:
+  source_csv: "AdditionalData.csv"
+  join_column: "Data_ID"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "atrial fibrillation"
+    - "atrial flutter"
+    - "atrial tachycardia"
+    - "AF burden"
+    - "rhythm annotations"
+    - "Holter"
+    - "long-term"
+    - "two-lead"
+    - "Japan"
+    - "generalization"
+    - "PhysioNet"
+  rai_data_collection: >
+    128 twenty-four-hour ambulatory Holter recordings from 122 adults who underwent
+    monitoring on their treating physician's order at Saitama Medical University
+    International Medical Center between May 2019 and May 2023, approved by that
+    institution's ethics committee as IRB 2023-145 with written consent waived for
+    a retrospective study. 145 recordings were collected and 128 retained; 17 were
+    excluded as duplicates, for missing clinical information, or for low signal
+    quality. Two channels were recorded on a Fukuda Holter monitor and digitised at
+    125 Hz — ECG1 a modified CC5 lead, ECG2 a NASA lead — then band-passed with a
+    zero-phase second-order IIR filter over [0.67-100] Hz and resampled to 200 Hz
+    with an anti-aliasing filter. R-peak positions were then detected with the
+    epltd implementation of the Pan-Tompkins algorithm and are unaudited. 98 of the
+    recordings were re-annotated rhythm by rhythm in the PhysioZoo software by a
+    single cardiology fellow working on a secure remote server, at an average of 45
+    minutes per 24-hour recording, following the protocol of Biton et al.: atrial
+    fibrillation, atrial flutter, atrial tachycardia and other supraventricular
+    tachycardias were marked and normal sinus rhythm and all other rhythms were
+    left unmarked. Those 98 were chosen from a subset stratified on age, sex and AF
+    diagnosis, of which 80 came from subjects diagnosed with AF; the remaining 30
+    recordings were added in v1.0.1 to complete the release and carry no rhythm
+    annotations. Clinical and demographic data was extracted from the electronic
+    medical record into AdditionalData.csv.
+  rai_data_biases: >
+    This is a single-institution Japanese cohort of 122 subjects, collected
+    explicitly so that AF detectors trained on American, European and Chinese
+    databases could be tested outside their training distribution — which means it
+    is a generalisation test set, and a model that has been tuned on it no longer
+    measures generalisation for anyone. It is also small: 128 recordings, and only
+    98 with any rhythm label. The annotation is the narrowest in this catalogue in
+    two ways. It covers supraventricular arrhythmia only, so the `N` code is a
+    residual class pooling sinus rhythm with ventricular ectopy, pauses and noise
+    and cannot be used as a sinus-rhythm label; and every rhythm mark was placed by
+    one cardiology fellow, so there is no inter-observer estimate of any kind
+    except the accidental one created by records 005 and 020 being the same
+    recording annotated twice. The beat positions themselves are unaudited
+    Pan-Tompkins output for all 128 recordings, so no beat count here is a verified
+    beat count. Class balance is extreme: of the annotated time, atrial
+    fibrillation holds 455.9 h in 77 recordings against 1,829.9 h left unlabelled,
+    while atrial flutter holds 35.8 h in 12 recordings, atrial tachycardia 7.2 h in
+    4, atrial bigeminy 1.0 h in 2, and the other supraventricular tachycardias 0.3 h
+    each in a single recording apiece — far too rare to train on as classes. 33 of the 128 recordings are from subjects with no AF diagnosis
+    and 80 from subjects with paroxysmal AF, so the cohort measures detection in a
+    population already selected for suspected arrhythmia and cannot measure AF
+    prevalence. The 30 unannotated recordings are not a random sample of the rest:
+    the annotated 98 were drawn from a subset stratified on age, sex and diagnosis,
+    so filtering to `Annotated` changes the demographic mix. Every recording was
+    upsampled from 125 Hz, so nothing above 62.5 Hz is real signal, and each
+    channel was independently rescaled to fill the 16-bit range, so absolute
+    amplitudes are not comparable between recordings. Six subjects contributed two
+    recordings each and one of those pairs is a byte-identical duplicate, so any
+    record-level split without patient grouping leaks.
+  rai_personal_sensitive_info: >
+    De-identified under HIPAA guidance and local regulation, but this release
+    carries substantially more indirect identifying information than the other
+    long-term databases in this catalogue, because the clinical table is its point.
+    AdditionalData.csv holds age at recording, sex, height, weight, BMI, the
+    documented indication for the Holter, the post-Holter diagnosis, prior stroke,
+    heart failure, hypertension, diabetes and vascular disease, named permanent
+    medications, pacemaker status and indication, echocardiographic left atrial
+    diameter and ejection fraction, valve findings, and dates and details of up to
+    two catheter ablations — per recording, for 128 recordings. Subject identifiers
+    are random five- to seven-digit numbers with no stated relation to any hospital
+    record, and recording identifiers are random three-digit numbers in 000-143
+    zero-padded to three characters, so the record names are not sequential and
+    carry no admission order. Every date linked to a subject was randomly shifted
+    by at least one year, which is why Date_Holter reaches 2024-02-21 for a cohort
+    collected to May 2023; the shift is per subject, so date arithmetic between rows
+    is meaningless and AF_Duration_Months is the release's own pre-shift interval.
+    Holter_start_time is a time of day with no date. The free-text Comments,
+    Indication_Holter, PPM_Indication, Redo_Detail and Echo_LV_Asynergy columns were
+    written by clinicians and are the fields most likely to carry something the
+    structured columns do not; they are returned verbatim. The signals themselves
+    are 24-hour ambulatory recordings, which are long enough to be re-identifiable
+    from heartbeat dynamics alone given a reference sample from the same subject.

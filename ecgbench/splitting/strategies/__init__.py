@@ -36,6 +36,7 @@ from . import (  # noqa: F401
     qtdb,
     sami_trop,
     sddb,
+    shdb_af,
     sph,
     staffiii,
     svdb,
