@@ -1,0 +1,369 @@
+# ECGBench Config: Sudden Cardiac Death Holter Database
+# =====================================================
+# https://physionet.org/content/sddb/1.0.0/
+#
+# 23 complete two-lead Holter recordings of patients who experienced sudden
+# cardiac death DURING the recording. 446.6 hours at 250 Hz, and the event that
+# makes the database is annotated in a header comment rather than in an annotation
+# file. Every other long-term database in this catalogue describes a rhythm the
+# subject lives with; this one describes the one they did not survive.
+#
+# SEVEN THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. `clean/` HOLDS 3 OF THE 23 RECORDS AND ITS val/test ARE EMPTY. USE
+#    `version="original"`. 20 records contain NaN samples and so fail
+#    `nan_values`, which has no threshold. The NaN is not corruption: digital -2048
+#    is WFDB's invalid-sample marker in format 212 and wfdb returns it as NaN.
+#    There are 201,708 such samples release-wide — short scattered analog-tape
+#    dropouts, at most 1.79 s in a run, median 4-84 ms, 26 to 900 runs per channel,
+#    worst 0.93% of a channel (record 39) — absent only from 31, 33 and 46, all
+#    three of which land in train folds. So `clean/val/fold_9.csv` and
+#    `clean/test/fold_10.csv` are header-only, and `ECGDataset("sddb",
+#    split="val")` — which defaults to version="clean" — fails in one of two ways,
+#    NEITHER of which names the real cause:
+#
+#      labels=True   ValueError: No record in split 'val' matched a label row.
+#                    (blames the label join)
+#      labels=False  constructs fine with len(ds) == 0, then IndexError on ds[0]
+#                    (says nothing at all)
+#
+#    The split is simply empty. `original/` splits 19/2/2 and is the one to use.
+#
+#    THE CHECK IS KEPT RATHER THAN QUIETLY DROPPED, and the trade-off is real
+#    rather than free. Dropping it would make `clean/` equal `original/` and leave
+#    `quality_issues` empty for every record, so a user would get NaN in their
+#    tensors — and a NaN loss — with no warning from ECGBench at all. A degenerate
+#    `clean/` fails loudly and is documented; silent NaN does not. `original/`
+#    carries the per-record count in `quality_issues`, and
+#    ecgbench.labels.sddb.scan_invalid_samples recomputes it from any copy. Handle
+#    it with `np.nan_to_num`, by masking the loss, or by dropping affected windows.
+#
+# 2. THE TERMINAL EVENT IS IN A HEADER COMMENT, NOT AN ANNOTATION. `#vfon:
+#    HH:MM:SS` gives the onset of the sustained ventricular tachyarrhythmia,
+#    ELAPSED FROM THE START OF THE RECORD, in 20 of the 23 headers. There is not a
+#    single `[` (VFON) or `]` (VFOFF) annotation anywhere in the release. Onset
+#    lands from 6.1% (record 37) to 98.9% (record 35) of the way through, leaving
+#    between 976 s and 85,007 s of signal after it, so a fixed window from the
+#    record start captures the event in some records and not in others. Window
+#    relative to `vf_onset_secs` from ecgbench.labels.sddb. Records 40, 42 and 49
+#    have no onset: the landing page marks them "(paced, no VF)", "(no VF)" and
+#    "(paced, no VF)".
+#
+# 3. THERE ARE TWO ANNOTATORS AND THEY COVER DIFFERENT RECORDS. The shipped
+#    ANNOTATORS file names `ari` "unaudited beat annotations" (all 23 records,
+#    1,888,495 beats) and `atr` "reference beat annotations" (only 12 records —
+#    30, 31, 32, 34, 35, 36, 41, 45, 46, 49, 51, 52 — 849,831 beats). PhysioNet
+#    calls the audited set "incomplete" and invites contributions to finish it.
+#    Every beat column in the labels is prefixed `ari_` or `atr_` for that reason;
+#    filter on `has_audited_annotation`. They also use disjoint symbol
+#    vocabularies: `atr` has 54,725 `B`, 23,123 `/` and 412 `f` and no `r`, while
+#    `ari` has 58,820 `r` and none of those three. Use the `aami_*` reductions.
+#
+# 4. THE `(AFIB` MARKERS ARE NOT AN AF LABEL. The `.ari` files carry 1,019 `+`
+#    rhythm markers ((AFIB / (N) in 22 of 23 records, and they disagree with the
+#    landing page's own rhythm column in BOTH directions: 72.9-99.4% AF in three of
+#    the four clinically-AF subjects but 0.95% in record 37, which is also AF, and
+#    22-36% in six clinically-SINUS records (33, 38, 39, 41, 44, 46). Use
+#    `underlying_rhythm` / `rhythm_class` from the clinical table instead.
+#
+# 5. THE AUDITED ANNOTATION STOPS EARLY, AND IN FOUR RECORDS AT EXACTLY 24 HOURS.
+#    `atr` beats end at 86,398.6-86,399.4 s in records 30, 32, 35 and 51 —
+#    recordings that run to 25.1 h — and 4,993.7 s short in record 49. Record 51 is
+#    also unannotated for its first 1,078.7 s. The unaudited files are the mirror
+#    image: they start 29.7-65.2 s in (50 `?` LEARN annotations per record, the
+#    detector's start-up) and reach within 0.2-452.7 s of the end. Check
+#    `atr_unannotated_tail_secs` before trusting reference beats in a late window.
+#
+# 6. THE ADC GAIN IS 200 rather than 800 FOR RECORDS 39 AND 47. wfdb applies each
+#    record's own gain so nothing downstream needs to care, but the 12-bit rail
+#    moves with it — +/-2.55875 mV at 800, +/-10.235 mV at 200 — which is what
+#    amplitude_range_mv below is set from. Record 42's channel 0 additionally sits
+#    at the positive rail for 2,337,660 samples, 10.3% of the record.
+#
+# 7. NOTHING CLINICAL IS IN THE FILES. Age, sex, history, medication and
+#    underlying rhythm exist only in the "Clinical information" table on the
+#    landing page, transcribed into ecgbench/labels/sddb.py as CLINICAL_TABLE.
+#    That table cannot be recomputed from the data; the one external check it
+#    admits is that its rhythm reduction reproduces PhysioNet's own cohort summary
+#    (18 sinus / 1 paced / 4 AF), and the loader raises if it stops doing so.
+#
+# THE LANDING PAGE'S DURATION FOR RECORD 49 IS STALE. Its table lists 25:01:40
+# (90,100 s) but `49.hea` declares 22,380,957 samples = 89,523.8 s (24:52:03.8).
+# The header was revised 2017-05-02, where every other header dates from
+# 2008-04-05, and the .dat size (67,142,872 bytes at 1.5 bytes per sample-pair)
+# confirms the shipped count. The file is right and the page was not updated; the
+# superseded `49.hea-` still declares the old 22,525,000. Every other record's
+# listed duration matches its header exactly.
+#
+# HALF-HOUR EXCERPTS OF THESE SAME RECORDINGS ARE THE MIT-BIH MALIGNANT
+# VENTRICULAR ECTOPY DATABASE (vfdb), which PhysioNet has distributed since 1989.
+# It is not in this catalogue, so there is no `related:` edge to declare, but
+# anyone combining the two is training and testing on the same recordings.
+#
+# ALL 109 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt. That
+# includes 23 superseded `.hea-` headers, which predate the 2008 revision that
+# renamed both signal descriptions to "ECG". The record list comes from the
+# shipped RECORDS file, so they cannot enter the partition.
+
+name: "Sudden Cardiac Death Holter Database"
+slug: "sddb"
+version: "1.0.0"
+url: "https://physionet.org/content/sddb/1.0.0/"
+download_url: null  # SDDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  23 complete long-term Holter recordings of patients who sustained a ventricular
+  tachyarrhythmia during the recording and, in most cases, an actual cardiac
+  arrest. The recordings were made mainly in the 1980s in Boston-area hospitals
+  and collected by Scott Greenwald at MIT, then compiled as part of a study of
+  ventricular arrhythmias; PhysioNet released them in 2004 as the first sudden
+  cardiac death database. Each record is two channels digitised from analog Holter
+  tape at 250 Hz with 12-bit resolution, running 3.93 h to 25.14 h for 446.6 hours
+  in total, and no two records are the same length. Both channels are described in
+  every header only as "ECG", with no statement of electrode placement. The cohort
+  is 18 subjects with underlying sinus rhythm (4 of them intermittently paced), 1
+  continuously paced and 4 in atrial fibrillation, aged 17 to 89 where an age was
+  recorded at all. The onset of the terminal arrhythmia is given as an elapsed time
+  in a header comment for 20 of the 23 records, and it is the only clinical
+  annotation the files carry. Two annotation layers ship: unaudited detector output
+  for all 23 records, 1,888,495 beats, and an explicitly incomplete audited
+  reference set for 12 of them, 849,831 beats. Because the collection is
+  retrospective, patient information is limited and sometimes absent entirely,
+  including drug regimens and doses.
+citation: >
+  Greenwald SD. Development and analysis of a ventricular fibrillation detector.
+  M.S. thesis, MIT Dept. of Electrical Engineering and Computer Science, 1986.
+  PhysioNet additionally asks for: Pollard T, Moody BE, Lehman L, Gow B, Fernandes
+  C, Xie C, Johnson A, Mark RG, Heldt T. PhysioNet as a global platform for
+  biomedical research. Nature Health (2026).
+doi: "10.13026/C2W306"
+
+creators:
+  - type: Organization
+    name: "MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/sddb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# The samples reach ECGBench as millivolts already: every header declares a real
+# gain (800 adu/mV for 21 records, 200 for 39 and 47) and wfdb divides by each
+# record's own value. Nothing needs scaling. Unlike afdb, nsrdb and chfdb, no
+# header here declares the uncalibrated `0`, so this is not wfdb's 200 adu/mV
+# fallback but the release's own statement.
+signal_unit_scale: 1.0
+leads: 2
+# POSITIONAL NAMES, NOT NAMES THE FILES USE. Every signal line in every current
+# header ends in the bare description "ECG", for both channels. The release states
+# no electrode placement anywhere — not in the headers, not on the landing page —
+# so these are channel positions, spelled ECG1/ECG2 to match afdb, nsrdb, chfdb
+# and ltafdb so cross-dataset code sees one convention.
+# `ECGDataset(leads=["ECG1"])` therefore selects channel 0, not a known lead. Do
+# NOT map them onto MLII/V1 by analogy with mitdb: nothing supports it.
+#
+# Read from the current `.hea` files. The 23 superseded `.hea-` copies shipped
+# alongside them say "record 30, signal 0" instead — the 2008 revision is what
+# introduced the "ECG" descriptions — so a reader pointed at those gets two
+# differently-named channels.
+lead_names: ["ECG1", "ECG2"]
+# Nominal 24 h. WILDLY NON-UNIFORM, and all 23 lengths differ: 3,540,000 samples
+# (14,160 s, 3.93 h, record 41) to 22,627,500 (90,510 s, 25.14 h, record 51).
+# Median 21,740,000. Any window a user applies has to fit inside 14,160 s, which
+# is the shortest record — see the note on expected_samples below.
+duration_seconds: 86400.0
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in any form. The headers carry only a `#Produced by
+# xform...` provenance line and, in 20 of 23, `#vfon: HH:MM:SS`; the clinical
+# table lives on the landing page and nowhere in the 109 files. SDDBSplitter
+# builds this CSV from the headers, both annotators and that transcribed table on
+# first run, via ecgbench.labels.sddb. The validation engine re-reads it from
+# disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "30" through "52", all
+# two-digit and none beginning with a zero, so pandas' integer inference cannot
+# destroy anything. Contrast afdb ("00735") and ltafdb ("00"), which both need it.
+# export_splits verifies this rather than trusting the flag.
+zero_padded_identifiers: false
+# Null, and for a different reason from nsrdb and svdb: this release DOES identify
+# its subjects, but it identifies them with the record name. The landing page
+# calls the clinical table's key "Subject Number" and its values are 30-52, one
+# record per subject, so a patient_id column would be a verbatim copy of the
+# index and grouping on it would be a no-op. 23 records, 23 subjects.
+patient_id_column: null
+
+signal_path_columns:
+  250: "signal_path"  # bare record stem, e.g. "30" — the tree is flat
+
+# --- Labels ---
+# The subject's underlying cardiac rhythm from the landing-page clinical table:
+# sinus (18), afib (4), paced (1). This is the release's own description of the
+# cohort, not something derived from the signals, and it is also what folds are
+# stratified on. It is NOT a target for the terminal arrhythmia — every subject
+# had one, so `cohort_label` is the constant "sudden_cardiac_death" and there is
+# no negative class here.
+label_column: "rhythm_class"
+label_format: "single"
+
+stratification:
+  # SDDBSplitter takes stratify_class from the label loader: rhythm_class, the
+  # underlying rhythm, 18 sinus / 4 afib / 1 paced. StratifiedKFold raises only
+  # when EVERY class is smaller than n_folds, so the 18-record class carries the
+  # split and the singleton `paced` class is tolerated (sklearn warns; 23 records
+  # over 10 folds gives 2-3 records a fold regardless). Ectopy burden, the axis
+  # svdb and chfdb use, is unusable here because 11 of the 23 records have no
+  # audited annotation at all, so the bands would mean two different things in one
+  # column. See ecgbench.labels.sddb.attach_stratify_class for the four candidates
+  # and why each of the others is worse.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like afdb, nsrdb, ltafdb, ptbdb and challenge2021 — and
+  # less marginally than any of them. All 23 records have DIFFERENT lengths,
+  # spanning 3,540,000 to 22,627,500 samples, a factor of 6.4. Every one is a
+  # complete recording, so any single threshold would drop most of the release as
+  # truncated. Omitting the rate disables the check rather than making it fire;
+  # `truncated_signal` stays in the list below only so a future release with
+  # uniform lengths needs one line here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # `nan_values` IS THE CHECK THAT MATTERS HERE AND IT FIRES ON 20 OF 23 RECORDS.
+  # That is point 1 of the header comment: WFDB's invalid-sample marker for format
+  # 212 is digital -2048, wfdb returns those samples as NaN, and 201,708 of them
+  # are scattered through this release as brief analog-tape dropouts. So `clean/`
+  # is 3 records (31, 33, 46) and `original/` is the version to use. The check is
+  # deliberately NOT removed: NaN reaching a training tensor is silent and fatal,
+  # and disabling the only warning about it — on the dataset where it is most
+  # widespread — would hide it. Nothing else fires: no lead is all-NaN or all-zero,
+  # whole-lead variance is large in every channel, wfdb reads all 23 headers, and
+  # amplitude stays inside the bound below.
+  #
+  # The 12-bit rail, computed from the hardware and taken as the UNION OF THE TWO
+  # GAINS. adc_zero is 0 and no channel declares a baseline, so a sample is
+  # confined to [-2047, 2047] adu once -2048 is excluded as the invalid marker. At
+  # the 800 adu/mV that 21 records declare that is +/-2.55875 mV; at the 200 of
+  # records 39 and 47 it is +/-10.235 mV. A single range has to accommodate the
+  # loosest record or it fires on a sound one, so this is the latter.
+  #
+  # It is not idle: records 39 and 47 REACH both rails, so +/-10.235 is attained
+  # rather than theoretical, and the observed extremes over all 3.2 billion samples
+  # are exactly -10.235 and +10.235 mV. No float32 slack is needed, unlike chfdb —
+  # `_load_signal` casts to float32 and float32(10.235) is 10.234999656677246,
+  # which rounds TOWARD zero, as does float32(-10.235). Both stay inside the bound.
+  # What the check guards is a mis-scaled copy — microvolts, or a re-release with
+  # the gains dropped — which would exceed it by orders of magnitude at once.
+  amplitude_range_mv: [-10.235, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/sddb.py carries the landing-page clinical table as
+# a literal (it is in none of the shipped files), parses the `#vfon:` onset out of
+# the headers, and summarises BOTH annotators separately under `atr_` and `ari_`
+# prefixes — beat counts per symbol, the AAMI EC57 reduction, ectopy and pacing
+# burden, isolated-artifact and quality markers, the unaudited ST-episode layer,
+# the seconds the detector called atrial fibrillation, each annotator's actual
+# coverage, and whole-record HRV. There is no source CSV to point at.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "sudden cardiac death"
+    - "ventricular fibrillation"
+    - "ventricular tachycardia"
+    - "cardiac arrest"
+    - "ventricular ectopy"
+    - "atrial fibrillation"
+    - "pacemaker"
+    - "beat annotations"
+    - "two-lead"
+    - "Holter"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    23 complete long-term ambulatory ECG recordings of patients who sustained a
+    ventricular tachyarrhythmia during the recording, most of whom had an actual
+    cardiac arrest. The recordings were made mainly in the 1980s in Boston-area
+    hospitals, collected by Scott Greenwald while at MIT and later compiled as part
+    of a study of ventricular arrhythmias; PhysioNet published them in July 2004.
+    Half-hour excerpts of the same recordings have been distributed since 1989 as
+    the MIT-BIH Malignant Ventricular Ectopy Database. Two channels were recorded
+    per subject and digitised from analog Holter tape at 250 Hz with 12-bit
+    resolution; each header declares its own gain, 800 adu/mV for 21 records and
+    200 for two, and describes both channels only as "ECG" with no electrode
+    placement stated. Record length runs from 3.93 h to 25.14 h and no two records
+    match, for 446.6 hours in total. The onset of the terminal arrhythmia is
+    recorded as an elapsed time in a header comment for 20 of the 23 records; three
+    have none, two of them continuously or intermittently paced. Two annotation
+    layers ship: unaudited automatic beat detections for all 23 records, 1,888,495
+    beats, carrying rhythm and ST-segment markers as well, and an audited reference
+    set that PhysioNet describes as incomplete, covering 12 records and 849,831
+    beats and stopping at 24 hours in four of them. Subject-level information —
+    age, sex, history, medication and underlying rhythm — was published only in a
+    table on the landing page and appears in none of the data files. PhysioNet
+    states that patient information is limited and sometimes completely
+    unavailable, including drug regimens and dosages, because the collection is
+    retrospective.
+  rai_data_biases: >
+    Every subject in this database sustained a ventricular tachyarrhythmia, so it
+    contains no negative class and cannot on its own measure discrimination of
+    sudden cardiac death: it is a positive cohort to be paired with a control
+    database, and PhysioNet warns that these cases "may not be representative of
+    spontaneous episodes of sudden death in what is likely a very heterogenous
+    group of subjects". The cohort is very small — 23 subjects, one recording each
+    — so within-subject data is abundant and between-subject variation almost
+    absent, which makes record-level splits essential and any sample-level split
+    meaningless. Clinical information is sparse and unevenly missing rather than
+    missing at random: age is absent for 4 subjects, sex for 2, and history and
+    medication are recorded as "Unknown" for 12 and 13 respectively, so any
+    analysis conditioned on them silently selects the better-documented subjects.
+    Five subjects were paced and six were on digoxin with five on quinidine, agents
+    that alter rate and repolarisation, and the one recorded medication list is
+    whatever a retrospective chart review preserved. The unaudited annotations are
+    output from a single 1980s detector, so every ectopy count, rhythm marker and
+    heart-rate-variability figure derived from them carries its error rate under
+    exactly the conditions such detectors fail — heavy ventricular ectopy,
+    pacing and a terminal arrhythmia. Its atrial-fibrillation markers demonstrably
+    disagree with the published clinical rhythm in both directions and must not be
+    used as labels. The audited reference set covers only 12 of the 23 records and
+    stops before the end of several, including at exactly 24 hours in four, so
+    late-record windows in those files have no reference behind them and the
+    absence of an annotation is not the absence of an event. 20 of the 23 records
+    contain brief invalid-sample dropouts that read back as NaN. Recordings were
+    digitised from analog tape in the 1980s at two different gains, so the
+    waveforms are not comparable in detail with modern digital ECG, and all come
+    from hospitals in one metropolitan area.
+  rai_personal_sensitive_info: >
+    De-identified. The data files carry no name, no date, no subject code and no
+    clinical text: each header holds a start time of day with no date attached, a
+    provenance line naming the conversion program, and in 20 of 23 records the
+    elapsed time of the terminal arrhythmia. The record names are the sequential
+    labels 30 to 52 and are also the "Subject Number" used by the clinical table on
+    the landing page, which is the only place age, sex, history, medication and
+    underlying rhythm appear. That table is coarse — a single free-text history
+    line per subject, and "Unknown" for most of them — but it is genuinely clinical
+    and it is published openly alongside the waveforms. One subject's age is given
+    as 89, the boundary at which the common 89-and-over aggregation convention
+    applies, and the youngest is 17; a pipeline enforcing that convention should
+    know the 89 is a real recorded value. The cohort is small and clinically
+    extreme — 23 patients who died or nearly died during a Holter recording in
+    Boston-area hospitals in the 1980s — and each subject is described by an
+    individual history line rather than a category, which is worth stating plainly
+    even though nothing in the release narrows it to a person.

@@ -275,6 +275,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `svdb` | **`ECG1`, `ECG2`** — like `afdb` and `nsrdb`. Worth singling out because this catalogue's own entry claimed **`MLII` + `V1` at 360 Hz** before the config was written, and both halves were wrong: the recordings are **128 Hz** and all 78 headers name the channels `ECG1`/`ECG2` with no placement stated. The values came from assuming `mitdb`'s properties carry across, which is the exact failure `lead_names` exists to prevent |
 | `edb` | **`V5, MLI` in only 19 of 90 records** — the most varied layout in the catalogue: **fifteen orderings of eleven lead pairs**, and **no lead present in every record** (V5 reaches 51, MLIII 47, D3 exactly 1). `MLIII/V4` and `V4/MLIII` are both present, 15 records each. See below |
 | `chfdb` | **`ECG1`, `ECG2`** — like `afdb`, `nsrdb` and `svdb`, and from the same Beth Israel hospital as `mitdb`: no electrode placement is stated anywhere, so these are channel positions. Note that only the **current** `.hea` files name them — the 15 superseded `.hea-` copies shipped beside them (and listed in the release's own `SHA256SUMS.txt`) carry no signal descriptions at all, because the 2012 revision is what added them |
+| `sddb` | **`ECG1`, `ECG2`** — the `ltafdb` case, not the `afdb` one: every current header calls **both** channels `ECG`, the same string twice, so these two names are positions ECGBench assigns. The 23 superseded `.hea-` copies say `record 30, signal 0` instead — the 2008 revision is what introduced `ECG`. No electrode placement is stated in the headers or on the landing page, so again not MLII/V1. This is also the one dataset whose **ADC gain varies between records**: 800 adu/mV for 21 and **200 for records 39 and 47**, which moves the 12-bit rail from ±2.55875 mV to ±10.235 mV |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -746,6 +747,30 @@ needs a `window=`; length is not uniform, so the window has to fit inside 06453'
 8,325,000 samples. Folds are stratified on a **binary** 20% burden cut and not on the
 3-class `af_class`, because 25 records over 10 folds leaves no room for a class of 3.
 See `examples/load_afdb.py`.
+
+`sddb` is the mirror of that case: the only dataset here whose **`clean` version is
+unusable**, so it must be loaded with `version="original"`. WFDB's invalid-sample
+marker in format 212 is digital −2048, which `wfdb` returns as NaN, and 20 of its 23
+records carry some — 201,708 samples release-wide, as brief scattered analog-tape
+dropouts at most 1.79 s long. `check_nan_values` has no threshold, so all 20 fail it,
+and because the three unaffected records all land in train folds, `clean` holds **3
+records with empty val and test** while `original` splits 19/2/2. Since `ECGDataset`
+defaults to `version="clean"`, `ECGDataset("sddb", split="val")` raises a misleading
+`No record in split 'val' matched a label row` — the split is simply empty. The check
+was kept rather than dropped because removing it would leave `quality_issues` empty
+for every record and hand users NaN tensors, and a NaN loss, with no warning at all;
+`scan_invalid_samples` gives the per-record counts.
+
+Three more things set it apart. Its defining event — the onset of the terminal
+ventricular arrhythmia — is recorded in a **header comment** (`#vfon:`, elapsed from
+the record start, in 20 of 23 records) and in no annotation file, and it lands from
+6.0% to 98.9% of the way through, so no single `window=` captures it. It is the only
+dataset with **two annotators covering different records**: unaudited `.ari` for all
+23 (1,888,495 beats) and audited `.atr` for only 12 (849,831), with disjoint symbol
+vocabularies, so every beat column is prefixed and `aami_*` is the only comparable
+count. And its `.ari` **`(AFIB` markers are not an AF label** — they miss one of the
+four published AF subjects and flag six sinus subjects at 22–36%; use `rhythm_class`.
+See `examples/load_sddb.py`.
 
 `challenge2017` is the first **single-lead** dataset here, and the only one whose
 label vocabulary includes "unusable signal": its 8,528 handheld AliveCor recordings are

@@ -1602,18 +1602,54 @@ class TestPerRecordLeadLayouts:
         assert config.alternate_lead_names is None
         assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
 
-    def test_the_five_two_lead_mit_bih_holters_present_one_convention(self):
-        """afdb, ltafdb, nsrdb, svdb and chfdb all expose ECG1/ECG2, for three reasons.
+    def test_sddb_channels_are_both_called_ecg_like_ltafdb_not_numbered_like_afdb(self):
+        """SDDB's headers call BOTH channels "ECG" — the ltafdb case, not the afdb one.
 
-        afdb's headers spell it; ltafdb's call both channels "ECG" and ECGBench
-        numbers them so both are reachable by name; nsrdb's, svdb's and chfdb's
-        spell it like afdb. None of the five states an electrode placement, so all
-        five are channel positions — and stacking any of them with mitdb by index
-        crosses leads.
+        Worth its own test because the two sibling situations look alike and are
+        not. afdb, nsrdb, svdb and chfdb ship headers that spell ECG1 and ECG2, so
+        the declared names are the source's own. Here — as in ltafdb — every signal
+        line of all 23 current headers ends in the bare description ``ECG``, twice,
+        so ["ECG", "ECG"] would be the literal reading and would make channel 1
+        unreachable through ``leads=`` entirely. ECGBench declares the positional
+        names instead.
+
+        A wrinkle specific to this release: the 23 superseded ``.hea-`` copies that
+        ship beside the current headers — and are listed in the release's own
+        SHA256SUMS.txt — describe the channels as "record 30, signal 0" and "record
+        30, signal 1". The 2008 revision is what replaced those with "ECG", so a
+        reader pointed at the backups gets two differently-named channels. Neither
+        naming states an electrode placement, in the headers or on the landing page.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.dataset import _resolve_leads
+
+        config = load_config("sddb")
+        assert config.lead_names == ["ECG1", "ECG2"]
+        assert config.leads == 2
+        assert config.sampling_rates == [250]
+        # One layout in all 23 headers, so neither per-record mechanism applies.
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
+
+        # Both positions stay reachable by name, which is why the names are
+        # positional rather than the literal duplicate the files carry.
+        assert _resolve_leads(["ECG2"], config.lead_names, "sddb")[0] == [1]
+        assert _resolve_leads(["ECG2", "ECG1"], config.lead_names, "sddb")[0] == [1, 0]
+
+    def test_the_six_two_lead_mit_bih_holters_present_one_convention(self):
+        """afdb, ltafdb, nsrdb, svdb, chfdb and sddb all expose ECG1/ECG2.
+
+        For two different reasons, which is the point of grouping them. afdb's,
+        nsrdb's, svdb's and chfdb's headers spell ECG1/ECG2 themselves; ltafdb's and
+        sddb's call both channels "ECG" and ECGBench numbers them so both are
+        reachable by name. None of the six states an electrode placement, so all six
+        are channel positions — and stacking any of them with mitdb by index crosses
+        leads.
         """
         from ecgbench.config import load_config
 
-        slugs = ("afdb", "ltafdb", "nsrdb", "svdb", "chfdb")
+        slugs = ("afdb", "ltafdb", "nsrdb", "svdb", "chfdb", "sddb")
         assert {tuple(load_config(s).lead_names) for s in slugs} == {("ECG1", "ECG2")}
         assert load_config("mitdb").lead_names == ["MLII", "V1"]
 

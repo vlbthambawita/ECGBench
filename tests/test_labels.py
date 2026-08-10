@@ -7864,3 +7864,433 @@ class TestCHFDBLabels:
 
         with pytest.raises(LabelSourceMissingError, match="Congestive Heart Failure"):
             scan_records(tmp_path)
+
+
+class TestSDDBLabels:
+    """Sudden Cardiac Death Holter: two annotators, an off-file clinical table, one event.
+
+    The sixth MIT-BIH-family two-lead Holter release in the catalogue, and its label
+    problem is unlike the other five. nsrdb and svdb have no rhythm layer; chfdb's
+    single annotator is unaudited; here there are **two annotators covering different
+    records with disjoint symbol vocabularies**, the clinical information exists only
+    on a web page, and the event the database is named for lives in a header comment
+    rather than an annotation. So what the loader has to get right is keeping the two
+    annotators apart, refusing to let the detector's `(AFIB` markers pass as an AF
+    label, and reproducing PhysioNet's cohort description from the transcribed table.
+    """
+
+    HEADER = (
+        "30 2 250 22099250 12:00:00\n"
+        "30.dat 212 800 12 0 51 -24065 0 ECG\n"
+        "30.dat 212 800 12 0 145 21051 0 ECG\n"
+        "#Produced by xform_new from record 30, beginning at 26:35.000\n"
+        "#vfon: 07:54:33\n"
+    )
+    HEADER_NO_VFON = (
+        "42 2 250 22622500 12:00:00\n"
+        "42.dat 212 800 12 0 -1129 -2818 0 ECG\n"
+        "42.dat 212 800 12 0 552 -30989 0 ECG\n"
+        "#Produced by xform from record 42, beginning at 18:10.000\n"
+    )
+    HEADER_LOW_GAIN = (
+        "47 2 250 21237500 12:00:00\n"
+        "47.dat 212 200 12 0 -18 -26505 0 ECG\n"
+        "47.dat 212 200 12 0 10 31895 0 ECG\n"
+        "#Produced by xform from record 47, beginning at 44:10.000\n"
+        "#vfon: 06:13:01\n"
+    )
+
+    def test_labels_come_from_headers_annotations_and_a_web_page_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("sddb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # nothing shipped could serve as one
+        assert spec.join_column == "record_name"
+
+    def test_there_are_two_annotators_and_the_audited_one_is_the_minority(self):
+        """`.ari` is unaudited and covers 23 records; `.atr` is audited and covers 12.
+
+        Pinning both constants because the temptation is to treat `.atr` as "the"
+        annotator, as every other MIT-BIH database in the catalogue does. Here that
+        would silently drop 11 records, and the shipped ANNOTATORS file names both.
+        """
+        from ecgbench.labels import sddb
+
+        assert sddb.REFERENCE_ANNOTATOR == "atr"
+        assert sddb.DETECTOR_ANNOTATOR == "ari"
+        assert "incomplete set of audited" in sddb.__doc__ or "only **12**" in sddb.__doc__
+        assert "unaudited" in sddb.__doc__.lower()
+
+    def test_the_two_vocabularies_are_disjoint_where_it_matters(self):
+        """`.atr` has B, / and f and no r; `.ari` has r and none of those three.
+
+        This is why every beat column is prefixed. Counting `beat_V` alone is not
+        ventricular ectopy in either file, and the shared AAMI table must cover every
+        symbol BOTH annotators use or the reduction silently loses beats.
+        """
+        from ecgbench.labels.sddb import (
+            BEAT_NAMES,
+            DETECTOR_BEAT_SYMBOLS,
+            REFERENCE_BEAT_SYMBOLS,
+        )
+        from ecgbench.labels.svdb import AAMI_CLASSES
+
+        both = set(REFERENCE_BEAT_SYMBOLS) | set(DETECTOR_BEAT_SYMBOLS)
+        assert both == set(BEAT_NAMES)
+        assert both <= set(AAMI_CLASSES)
+        # The symbols each annotator has and the other does not.
+        assert {"B", "/", "f"} <= set(REFERENCE_BEAT_SYMBOLS)
+        assert "r" not in REFERENCE_BEAT_SYMBOLS
+        assert "r" in DETECTOR_BEAT_SYMBOLS
+        assert not {"B", "/", "f"} & set(DETECTOR_BEAT_SYMBOLS)
+        # And the reductions that make them comparable.
+        assert AAMI_CLASSES["r"] == "V"
+        assert AAMI_CLASSES["B"] == "N"
+        assert AAMI_CLASSES["/"] == AAMI_CLASSES["f"] == "Q"
+
+    def test_learning_and_st_markers_are_not_beats(self):
+        """`?` (LEARN) and `s` (STCH) ride along in the `.ari` files and are not beats.
+
+        Every record opens with exactly 50 `?` annotations — the detector's start-up
+        phase — and 3,577 `s` markers delimit unaudited ST episodes. Together that is
+        4,727 annotations that would inflate `n_beats` if the scanner assumed every
+        symbol was a QRS. Neither is in the AAMI table, so they cannot be reduced
+        either.
+        """
+        from ecgbench.labels.sddb import (
+            DETECTOR_BEAT_SYMBOLS,
+            NON_BEAT_COLUMNS,
+            REFERENCE_BEAT_SYMBOLS,
+        )
+        from ecgbench.labels.svdb import AAMI_CLASSES
+
+        assert NON_BEAT_COLUMNS["?"] == "n_learning"
+        assert NON_BEAT_COLUMNS["s"] == "n_st_markers"
+        for symbol in ("?", "s", "+", "~", "|"):
+            assert symbol not in REFERENCE_BEAT_SYMBOLS
+            assert symbol not in DETECTOR_BEAT_SYMBOLS
+            assert symbol not in AAMI_CLASSES
+
+    def test_the_clinical_table_reproduces_physionets_cohort_description(self):
+        """18 sinus / 1 paced / 4 AF — the only external check the table admits.
+
+        The table is transcribed from the landing page and appears in none of the 109
+        shipped files, so it cannot be recomputed from the data. What it *can* be
+        checked against is PhysioNet's own prose summary of the cohort, and
+        ``clinical_frame`` raises rather than quietly rebalancing folds if a later
+        edit breaks the agreement.
+        """
+        from ecgbench.labels.sddb import (
+            CLINICAL_TABLE,
+            EXPECTED_RHYTHM_COUNTS,
+            clinical_frame,
+        )
+
+        assert len(CLINICAL_TABLE) == 23
+        df = clinical_frame()
+        assert df["rhythm_class"].value_counts().to_dict() == EXPECTED_RHYTHM_COUNTS
+        assert EXPECTED_RHYTHM_COUNTS == {"sinus": 18, "afib": 4, "paced": 1}
+        # "4 with intermittent pacing" plus the one continuously paced subject.
+        assert int(df["has_pacing"].sum()) == 5
+        # Record 43's "Intermittent ventricular pacing" has to count as SINUS for the
+        # 18 to come out, which is the one non-obvious assignment in the mapping.
+        assert df.set_index("record_name").loc["43", "rhythm_class"] == "sinus"
+        assert df.set_index("record_name").loc["40", "rhythm_class"] == "paced"
+
+    def test_an_unrecognised_rhythm_raises_instead_of_forming_its_own_class(self):
+        """A typo in the table would otherwise silently change every fold."""
+        from ecgbench.labels.sddb import _rhythm_class
+
+        assert _rhythm_class("Sinus") == "sinus"
+        with pytest.raises(ValueError, match="Unrecognised underlying rhythm"):
+            _rhythm_class("Sinus rhythm")
+
+    def test_unknown_age_and_sex_become_nan_and_blank_rather_than_zero(self):
+        """The page writes "Unknown", for 4 ages and 2 sexes.
+
+        Parsing an unknown age as 0 would put four newborns in the cohort; NaN
+        excludes them from statistics. "None listed" is the page's other way of
+        recording absence — record 52's medication — and means no medication was
+        *recorded*, not that there was none, so it is flagged False too.
+        """
+        from ecgbench.labels.sddb import clinical_frame
+
+        df = clinical_frame().set_index("record_name")
+        assert int(df["age"].isna().sum()) == 4
+        assert df.loc["38", "sex"] == "" and df.loc["32", "sex"] == ""
+        assert df["sex"].value_counts().to_dict() == {"M": 13, "F": 8, "": 2}
+        assert df.loc["52", "medication"] == "None listed"
+        assert bool(df.loc["52", "has_medication"]) is False
+        assert bool(df.loc["31", "has_medication"]) is True
+        # Record 37 is 89 — a real recorded value sitting exactly at the boundary of
+        # the usual age-ceiling convention, not a censored one.
+        assert df.loc["37", "age"] == 89.0
+
+    def test_the_vf_onset_comment_is_elapsed_time_and_may_be_absent(self, tmp_path):
+        """`#vfon: HH:MM:SS`, elapsed from the record start, in 20 of 23 headers.
+
+        Reading it as a time of day would be wrong in both directions: record 35's
+        onset is 24:34:56, which is not a clock time at all, and record 30's start
+        time is 12:00:00 while its onset is 07:54:33.
+        """
+        from ecgbench.labels.sddb import parse_header
+
+        (tmp_path / "30.hea").write_text(self.HEADER, encoding="utf-8")
+        assert parse_header(tmp_path / "30.hea")["vf_onset_secs"] == pytest.approx(28473.0)
+
+        # 42 is one of the three records the landing page marks "(no VF)".
+        (tmp_path / "42.hea").write_text(self.HEADER_NO_VFON, encoding="utf-8")
+        assert np.isnan(parse_header(tmp_path / "42.hea")["vf_onset_secs"])
+
+    def test_an_onset_past_twenty_four_hours_still_parses(self, tmp_path):
+        """Record 35's onset is `24:34:56` of a 24.87 h recording.
+
+        An hours field above 23 is legitimate here because the value is elapsed, so a
+        parser restricted to clock times would drop the single latest onset in the
+        release.
+        """
+        from ecgbench.labels.sddb import parse_header
+
+        (tmp_path / "35.hea").write_text(
+            "35 2 250 22380000 12:00:00\n"
+            "35.dat 212 800 12 0 -225 -29662 0 ECG\n"
+            "35.dat 212 800 12 0 198 -2153 0 ECG\n"
+            "#vfon: 24:34:56\n",
+            encoding="utf-8",
+        )
+        assert parse_header(tmp_path / "35.hea")["vf_onset_secs"] == pytest.approx(88496.0)
+
+    def test_the_afib_markers_become_seconds_and_the_docstring_disowns_them(self):
+        """Each `+` opens an interval to the next marker, or to the record end.
+
+        The arithmetic is the same as chfdb's, but the meaning is not: these are
+        detector output that disagrees with the published rhythm in both directions,
+        so the module has to say so rather than expose a plausible-looking AF column.
+        """
+        from ecgbench.labels.sddb import _rhythm_seconds, load_labels
+
+        # 250 samples = 1 s. AF from 10 s to 20 s, then normal to the 40 s end.
+        out = _rhythm_seconds([(2500, "(AFIB"), (5000, "(N")], sig_len=10_000, fs=250.0)
+        assert out["afib_secs"] == pytest.approx(10.0)
+        assert out["n_afib_episodes"] == 1
+        assert out["rhythm_asserted_secs"] == pytest.approx(30.0)
+        assert out["rhythm_head_unasserted_secs"] == pytest.approx(0.0)
+
+        # A trailing episode runs to the end of the record.
+        assert _rhythm_seconds([(2500, "(AFIB")], sig_len=10_000, fs=250.0)[
+            "afib_secs"
+        ] == pytest.approx(30.0)
+
+        # And the warning is in the docstrings a user actually reads — both the
+        # module header and load_labels itself, since either may be read alone.
+        from ecgbench.labels import sddb
+
+        assert "NOT AN ATRIAL FIBRILLATION LABEL" in sddb.__doc__
+        assert "not an AF label" in load_labels.__doc__
+        assert "never the ``ari_afib_*`` columns" in sddb.__doc__
+
+    def test_no_rhythm_markers_is_not_evidence_of_no_atrial_fibrillation(self):
+        """Record 51 carries no `+` at all, so its zero means "never marked"."""
+        from ecgbench.labels.sddb import _rhythm_seconds
+
+        out = _rhythm_seconds([], sig_len=10_000, fs=250.0)
+        assert out["afib_secs"] == pytest.approx(0.0)
+        assert out["n_afib_episodes"] == 0
+        assert out["rhythm_asserted_secs"] == pytest.approx(0.0)
+
+    def test_the_quality_subtype_51_is_not_read_as_a_channel_bitmask(self):
+        """WFDB would spell "both channels noisy" as 3; this release writes 51.
+
+        Every `~` in the release carries subtype 0 or 51, strictly alternating, so 51
+        plainly means "noisy" — but it is not a valid two-channel mask and must not be
+        reinterpreted as one. svdb and nsrdb do decode the documented 0/1/2/3 mask,
+        which is exactly why this needs pinning: the obvious "improvement" is to reuse
+        that code here and invent a per-channel attribution the data does not support.
+        """
+        from ecgbench.labels.sddb import _quality_seconds
+
+        # Noisy from 10 s to 20 s, clean to the 40 s end.
+        out = _quality_seconds([(2500, 51), (5000, 0)], sig_len=10_000, fs=250.0)
+        assert out["noisy_secs"] == pytest.approx(10.0)
+        assert out["clean_secs"] == pytest.approx(30.0)
+        assert out["quality_subtypes"] == "0|51"
+        # No per-channel columns, and that absence is the assertion.
+        assert not any("ECG1" in key or "ECG2" in key for key in out)
+
+    def test_a_leading_clean_marker_leaves_the_quality_head_unasserted(self):
+        """Record 35's single `~` is subtype 0, 12,600.3 s in — a transition INTO clean.
+
+        So the span before it was never asserted to be anything. Counted as clean,
+        which is what WFDB itself does, and reported separately so the assumption is
+        visible — the same choice ``svdb`` makes.
+        """
+        from ecgbench.labels.sddb import _quality_seconds
+
+        out = _quality_seconds([(2500, 0)], sig_len=10_000, fs=250.0)
+        assert out["quality_head_unasserted_secs"] == pytest.approx(10.0)
+        assert out["noisy_secs"] == pytest.approx(0.0)
+
+    def test_st_episodes_are_counted_from_openings_because_some_never_close(self, tmp_path):
+        """Record 44 has two `(ST` openings and no closings at all.
+
+        Counting all `s` markers and halving would report one episode there instead of
+        two, and would undercount every record whose last episode runs to the end of
+        the recording. Release-wide the openings exceed the closings by 12.
+        """
+        import wfdb
+
+        from ecgbench.labels.sddb import DETECTOR_BEAT_SYMBOLS, summarise_annotations
+
+        # Two openings on different channels, neither ever closed — record 44's shape.
+        symbols = ["N", "s", "N", "s", "N"]
+        samples = np.array([250, 300, 500, 600, 750])
+        aux = ["", "(ST0+", "", "(ST1+", ""]
+        wfdb.wrann(
+            "44", "ari", sample=samples, symbol=symbols,
+            subtype=np.zeros(len(symbols), dtype=int), aux_note=aux,
+            fs=250, write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(
+            tmp_path / "44", "ari", DETECTOR_BEAT_SYMBOLS, sig_len=250_000
+        )
+
+        assert counts["n_st_markers"] == 2
+        assert counts["n_st_episodes"] == 2  # not 1, which halving the markers gives
+        assert counts["n_beats"] == 3
+
+    def test_beats_rhythm_quality_and_st_are_counted_apart(self, tmp_path):
+        """One annotation file exercising every layer at once.
+
+        `+`, `~`, `|`, `?` and `s` must all stay out of `n_beats`, `r` must land in
+        the ventricular AAMI class, and the ST count must come from openings only.
+        """
+        import wfdb
+
+        from ecgbench.labels.sddb import DETECTOR_BEAT_SYMBOLS, summarise_annotations
+
+        symbols = ["?", "N", "r", "N", "+", "s", "N", "s", "N", "E"]
+        samples = np.array([100, 250, 500, 750, 800, 900, 1000, 1200, 1250, 1500])
+        aux = ["", "", "", "", "(AFIB", "(ST0+", "", "ST0+)", "", ""]
+        wfdb.wrann(
+            "30", "ari", sample=samples, symbol=symbols,
+            subtype=np.zeros(len(symbols), dtype=int), aux_note=aux,
+            fs=250, write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(
+            tmp_path / "30", "ari", DETECTOR_BEAT_SYMBOLS, sig_len=250_000
+        )
+
+        # Five beats: 4 N-or-r plus the E. The other five annotations are layers.
+        assert counts["n_beats"] == 6
+        assert counts["beat_N"] == 4 and counts["beat_r"] == 1 and counts["beat_E"] == 1
+        assert counts["n_learning"] == 1
+        assert counts["n_rhythm_changes"] == 1
+        assert counts["n_st_markers"] == 2
+        # One OPENING, so one episode — not two markers halved.
+        assert counts["n_st_episodes"] == 1
+        # `r` and `E` are both AAMI ventricular.
+        assert counts["aami_V"] == 2
+        assert counts["n_veb"] == 2
+        assert counts["available"] is True
+
+    def test_a_missing_annotation_file_is_the_normal_case_not_an_error(self, tmp_path):
+        """11 of the 23 records have no `.atr` at all, so this cannot raise."""
+        from ecgbench.labels.sddb import REFERENCE_BEAT_SYMBOLS, summarise_annotations
+
+        counts = summarise_annotations(
+            tmp_path / "33", "atr", REFERENCE_BEAT_SYMBOLS, sig_len=250_000
+        )
+        assert counts["available"] is False
+        assert counts["n_beats"] == 0
+        assert counts["n_annotations"] == 0
+
+    def test_the_cohort_label_is_a_constant_and_the_docstring_says_why(self):
+        """One class for all 23 records: every subject sustained the arrhythmia.
+
+        So there is no negative class and no classification task in the database
+        itself — it is a positive cohort to pair with a control database.
+        """
+        from ecgbench.labels import sddb
+
+        assert sddb.COHORT_LABEL == "sudden_cardiac_death"
+        assert "sudden cardiac death" in sddb.__doc__.lower()
+
+    def test_stratify_class_is_the_rhythm_and_is_derived_once(self):
+        """The splitter reads this column rather than recomputing it.
+
+        Two derivations of one label is the bug this rule exists to prevent —
+        PTB-XL had exactly that and they drifted apart.
+        """
+        from ecgbench.labels.sddb import attach_stratify_class
+
+        df = pd.DataFrame(
+            {"record_name": ["30", "35", "40"], "rhythm_class": ["sinus", "afib", "paced"]}
+        )
+        out = attach_stratify_class(df)
+        assert out["stratify_class"].tolist() == ["sinus", "afib", "paced"]
+        # A blank would otherwise become its own silent fold class.
+        blank = attach_stratify_class(pd.DataFrame({"rhythm_class": ["", "afib"]}))
+        assert blank["stratify_class"].tolist() == ["unknown", "afib"]
+
+    def test_the_singleton_paced_class_is_admissible_and_ectopy_is_not(self):
+        """18/4/1 splits; the ectopy banding svdb uses cannot be reproduced here.
+
+        ``StratifiedKFold`` raises only when EVERY class is smaller than n_folds, so
+        the 18-record sinus class carries the split and sklearn merely warns about the
+        singleton. What rules out the clinically richer axis is not arithmetic but
+        provenance: 11 of the 23 records have no audited annotation, so an ectopy band
+        would measure a detector in half the release and a cardiologist in the other
+        half. This pins that the reasoning stays where a later "improvement" would
+        look for it.
+        """
+        from sklearn.model_selection import StratifiedKFold
+
+        from ecgbench.labels.sddb import attach_stratify_class
+
+        doc = attach_stratify_class.__doc__
+        assert "no audited annotation" in doc
+
+        rhythms = ["sinus"] * 18 + ["afib"] * 4 + ["paced"]
+        kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+        assert len(list(kf.split(np.zeros(23), rhythms))) == 10
+        # For contrast: a split where every class is too small does raise.
+        with pytest.raises(ValueError, match="cannot be greater"):
+            list(kf.split(np.zeros(23), ["a"] * 8 + ["b"] * 8 + ["c"] * 7))
+
+    def test_the_invalid_sample_scan_is_deliberately_not_part_of_load_labels(self):
+        """It reads 1.6 GB of packed samples; everything else reads headers.
+
+        Exposed as a separate function so ``load_labels`` stays a seconds-long call.
+        The marker itself is pinned because the whole NaN story depends on it: digital
+        -2048 is WFDB's invalid-sample code in format 212, which is why 20 of 23
+        records fail ``nan_values``.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        from ecgbench.labels import sddb
+
+        assert sddb.INVALID_SAMPLE_ADU == -2048
+        # It must be POINTED AT in the docstrings but never CALLED on the load path,
+        # so compare against the parsed body with the docstring node dropped rather
+        # than against the raw source.
+        for function in (sddb.load_labels, sddb.scan_records):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]
+            assert isinstance(tree, ast.FunctionDef)
+            called = {
+                node.func.id
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            assert "scan_invalid_samples" not in called
+        assert "scan_invalid_samples" in sddb.load_labels.__doc__
+        assert "201,708" in sddb.scan_invalid_samples.__doc__
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.sddb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="Sudden Cardiac Death"):
+            scan_records(tmp_path)

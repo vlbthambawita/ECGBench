@@ -4644,3 +4644,177 @@ class TestCHFDBSplitter:
         )
         assert len(assigned) == 15
         assert sorted(result.folds) == list(range(1, 11))
+
+
+class TestSDDBSplitter:
+    """23 sudden-cardiac-death subjects: two annotators, an off-file clinical table."""
+
+    def _header(self, rec, n_samples, gain=800, vfon="07:54:33"):
+        """A real SDDB header: BOTH channels described as bare "ECG", plus #vfon:."""
+        lines = [
+            f"{rec} 2 250 {n_samples} 12:00:00",
+            f"{rec}.dat 212 {gain} 12 0 51 -24065 0 ECG",
+            f"{rec}.dat 212 {gain} 12 0 145 21051 0 ECG",
+            f"#Produced by xform_new from record {rec}, beginning at 26:35.000",
+        ]
+        if vfon:
+            lines.append(f"#vfon: {vfon}")
+        return "\n".join(lines) + "\n"
+
+    def _tree(self, tmp_path, records, n_samples=250_000):
+        """records: [(rec, gain, vfon, audited)] -> header, .ari, optional .atr, RECORDS.
+
+        Every record gets a `.ari` (all 23 real ones do) opening with 50 `?` LEARN
+        annotations, which is the shape of the real files. Only ``audited`` records
+        get a `.atr`, because 11 of the 23 have none — the asymmetry the prefixed
+        columns exist for. The `.atr` uses `/` and `f`, which the `.ari` never does.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, gain, vfon, audited in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, n_samples, gain, vfon), encoding="utf-8"
+            )
+            # 50 learning annotations, then 100 beats 1 s apart with three R-on-T.
+            learn = np.arange(50) * 100 + 100
+            beats = np.arange(100) * 250 + 10_000
+            symbols = ["?"] * 50 + ["N"] * 100
+            for i in range(3):
+                symbols[50 + i + 1] = "r"
+            wfdb.wrann(
+                rec, "ari",
+                sample=np.concatenate([learn, beats]),
+                symbol=symbols,
+                subtype=np.zeros(150, dtype=int),
+                aux_note=[""] * 150,
+                fs=250, write_dir=str(tmp_path),
+            )
+            if audited:
+                # Paced beats and one paced/normal fusion — symbols the .ari lacks.
+                wfdb.wrann(
+                    rec, "atr",
+                    sample=beats,
+                    symbol=["/"] * 99 + ["f"],
+                    subtype=np.zeros(100, dtype=int),
+                    aux_note=[""] * 100,
+                    fs=250, write_dir=str(tmp_path),
+                )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="sddb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={250: "signal_path"}, default_sampling_rate=250,
+            label_column="rhythm_class", leads=2, zero_padded_identifiers=False,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.sddb import SDDBSplitter
+
+        assert isinstance(get_splitter("sddb"), SDDBSplitter)
+
+    def test_builds_the_clinical_table_both_annotators_and_signal_paths(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        # 30 has an audited .atr; 33 does not. 47 declares the low gain.
+        tree = self._tree(
+            tmp_path,
+            [("30", 800, "07:54:33", True), ("33", 800, "04:46:19", False),
+             ("47", 200, "06:13:01", False)],
+        )
+
+        df = get_splitter("sddb").load_metadata(tree, config).set_index("record_name")
+
+        # The clinical table is transcribed from the landing page, not the files.
+        assert df.loc["30", "sex"] == "M" and df.loc["30", "age"] == 43
+        assert df.loc["33", "sex"] == "F" and df.loc["33", "age"] == 30
+        assert set(df["rhythm_class"]) == {"sinus"}
+        # The per-record gain, which is 200 for 47 and 800 for the rest.
+        assert df.loc["47", "adc_gain"] == "200|200"
+        assert df.loc["30", "adc_gain"] == "800|800"
+        # Both channels are described as bare "ECG" in the files themselves.
+        assert set(df["lead_names"]) == {"ECG|ECG"}
+        # Two annotators, kept apart. Only 30 has the audited one.
+        assert bool(df.loc["30", "has_audited_annotation"]) is True
+        assert bool(df.loc["33", "has_audited_annotation"]) is False
+        assert df.loc["30", "atr_n_beats"] == 100
+        assert df.loc["33", "atr_n_beats"] == 0
+        # The unaudited file's 50 LEARN annotations are NOT beats.
+        assert df.loc["30", "ari_n_beats"] == 100
+        assert df.loc["30", "ari_n_learning"] == 50
+        assert df.loc["30", "ari_beat_r"] == 3
+        assert df.loc["30", "ari_aami_V"] == 3
+        # And the two vocabularies reduce differently: / and f are AAMI Q.
+        assert df.loc["30", "atr_aami_Q"] == 100
+        assert df.loc["30", "atr_n_paced_beats"] == 100
+        # One class for every record, asserted by the release rather than derived.
+        assert set(df["cohort_label"]) == {"sudden_cardiac_death"}
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["30", "33", "47"]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_the_vf_onset_survives_the_csv_round_trip_and_may_be_absent(
+        self, sample_config, tmp_path
+    ):
+        """Records 40, 42 and 49 have no `#vfon:`, and that must stay NaN not 0.
+
+        Zero would claim the terminal arrhythmia began at the first sample of the
+        recording, which is both wrong and exactly the kind of value a downstream
+        mean would swallow.
+        """
+        pytest.importorskip("wfdb")
+        import numpy as np
+
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path, [("30", 800, "07:54:33", False), ("42", 800, None, False)]
+        )
+
+        splitter = get_splitter("sddb")
+        first = splitter.load_metadata(tree, config).set_index("record_name")
+        # Second call reads the CSV it just wrote, which is the path that matters.
+        cached = splitter.load_metadata(tree, config).set_index("record_name")
+
+        for df in (first, cached):
+            assert df.loc["30", "vf_onset_secs"] == 28473.0
+            assert bool(df.loc["30", "has_vf_onset"]) is True
+            assert np.isnan(df.loc["42", "vf_onset_secs"])
+            assert bool(df.loc["42", "has_vf_onset"]) is False
+
+    def test_stratification_labels_come_from_the_loader_not_a_second_derivation(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [("30", 800, "07:54:33", False),   # sinus
+             ("35", 800, "24:34:56", False),   # atrial fibrillation
+             ("40", 800, None, False)],        # continuously paced
+        )
+
+        splitter = get_splitter("sddb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "rhythm_class"
+        assert labels.tolist() == ["sinus", "afib", "paced"]
+
+    def test_missing_stratify_column_names_the_fix(self, sample_config, tmp_path):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="load_metadata"):
+            get_splitter("sddb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["30"]}), config
+            )

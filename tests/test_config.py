@@ -1884,3 +1884,124 @@ def test_chfdb_labels_are_module_based_with_no_source_csv():
     config = load_config("chfdb")
     assert config.labels.source_csv is None
     assert config.labels.join_column == config.record_id_column
+
+
+def test_load_sddb_config():
+    """Sudden Cardiac Death Holter: two unnamed channels, per-record gain, one cohort."""
+    config = load_config("sddb")
+    assert config.slug == "sddb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a REAL gain — 800 adu/mV for 21 records and 200 for
+    # records 39 and 47 — so wfdb divides by each record's own value and reports
+    # millivolts. Unlike afdb, nsrdb, ltafdb and chfdb, no header here declares the
+    # uncalibrated `0`, so this is not wfdb's 200 adu/mV fallback but the release's
+    # own statement. Nothing to rescale either way.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # CHANNEL POSITIONS. Both signal lines of every current header end in the bare
+    # description "ECG", as in ltafdb — so these must not be "corrected" to MLII/V1
+    # by analogy with mitdb, which came out of the same hospital.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    assert config.signal_path_columns == {250: "signal_path"}
+    # No metadata ships in any form — the clinical table is published only on the
+    # landing page. SDDBSplitter generates this from the headers, both annotators
+    # and that transcribed table.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null for a DIFFERENT reason from nsrdb and svdb, which ship no subject
+    # identifier at all: this release does identify its subjects, and identifies
+    # them with the record name ("Subject Number" 30-52, one record each), so a
+    # patient column would be a verbatim copy of the index.
+    assert config.patient_id_column is None
+    # A single layout in all 23 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "30".."52": two digits, none leading with a zero, so unlike
+    # afdb ("00735") and ltafdb ("00") the CSV round-trip cannot strip anything.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "rhythm_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_sddb_disables_the_truncation_check_because_no_two_records_match():
+    """All 23 lengths differ, 3,540,000 to 22,627,500 samples — a factor of 6.4.
+
+    This is the least marginal case for the empty-expected_samples escape hatch in
+    the catalogue: chfdb's records vary by 232 s and nsrdb's by three hours, while
+    here the longest record is more than six times the shortest and every one is a
+    complete recording. Any single threshold would drop most of the release as
+    truncated. An empty expected_samples DISABLES the check — check_truncated_signal
+    returns [] when the rate has no key.
+    """
+    config = load_config("sddb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_sddb_amplitude_range_is_the_union_of_two_gains_and_needs_no_float32_slack():
+    """Two rails, because the gain is per-record, and neither needs slack.
+
+    adc_zero is 0 and no channel declares a baseline, so a sample is confined to
+    [-2047, 2047] adu once -2048 is excluded as WFDB's invalid-sample marker. At the
+    800 adu/mV that 21 records declare that is +/-2.55875 mV; at the 200 of records
+    39 and 47 it is +/-10.235 mV. The bound has to be the looser one or it fires on
+    a sound record, so it is +/-10.235 — and records 39 and 47 ATTAIN both ends, so
+    it is measured rather than theoretical.
+
+    Unlike chfdb, no float32 slack is needed. ``_load_signal`` casts to float32 and
+    both float32(10.235) and float32(-10.235) round TOWARD zero, so neither can
+    trip a bound set at the exact rail.
+    """
+    import numpy as np
+
+    config = load_config("sddb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.235, 10.235)
+    # The rail at each declared gain, and which one the bound is.
+    assert 2047 / 200.0 == pytest.approx(10.235)
+    assert 2047 / 800.0 == pytest.approx(2.55875)
+    assert high == pytest.approx(2047 / 200.0)
+    # Why no slack: float32 pulls both rails inside the bound rather than outside.
+    assert float(np.float32(10.235)) < high
+    assert float(np.float32(-10.235)) > low
+
+
+def test_sddb_keeps_the_nan_check_even_though_it_excludes_twenty_of_twenty_three():
+    """The check that makes `clean/` degenerate, kept on purpose.
+
+    Digital -2048 is WFDB's invalid-sample marker in format 212 and wfdb returns
+    those samples as NaN: 201,708 of them, in 20 of the 23 records, as brief
+    scattered analog-tape dropouts. ``check_nan_values`` has no threshold, so all 20
+    fail and `clean/` holds 3 records (31, 33, 46) with empty val and test.
+
+    Dropping the check would make `clean/` equal `original/` and leave
+    `quality_issues` empty for every record, so a user would get NaN in their
+    tensors — and a NaN loss — with no warning from ECGBench at all. This pins the
+    trade-off against a well-meaning "fix" that would silence it.
+    """
+    config = load_config("sddb")
+    assert "nan_values" in config.validation.checks
+
+
+def test_sddb_labels_are_module_based_with_no_source_csv():
+    """No file ships that could be a source_csv, and the clinical table is off-file.
+
+    ``ecgbench.labels.sddb`` reads the 23 headers and both annotation layers, and
+    carries the landing page's clinical information table as a literal because it
+    appears in none of the 109 shipped files. ``join_column`` still has to match
+    ``record_id_column`` or the fold CSVs would not join.
+    """
+    config = load_config("sddb")
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == config.record_id_column
