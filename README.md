@@ -196,7 +196,16 @@ vocabularies for one phenomenon. The `aami_N/S/V/F/Q` columns collapse `A`, `a`,
 `J` and `S` to class `S` — and `L`, `R`, `B` to `N` — and are what to join on.
 `AAMI_CLASSES` covers every symbol used by the MIT-BIH-family databases here, so it
 also reduces `mitdb`, whose loader exposes raw per-symbol counts only, and is what
-`edb` imports rather than keeping a second copy:
+`edb` and `chfdb` import rather than keeping a second copy.
+
+`chfdb` is the sharper case of the same trap, in the other direction: 10,353 of its
+beats are `r` — R-on-T premature ventricular contractions, which AAMI classes as
+**ventricular** — and `r` **outnumbers plain `V` in 9 of its 15 records**. Counting
+`beat_V` there undercounts ventricular ectopy across most of the database, so its
+loader exposes `n_veb`/`veb_fraction` from `aami_V` rather than from the raw symbol.
+Note also that `chfdb`'s annotations are the one set in this family that is
+**unaudited** — an automated detector's uncorrected output, per PhysioNet — so its
+counts describe the recording rather than establishing ground truth:
 
 ```python
 from ecgbench.labels.svdb import AAMI_CLASSES
@@ -265,6 +274,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `nsrdb` | **`ECG1`, `ECG2`** — like `afdb`, and from the same Beth Israel arrhythmia laboratory as `mitdb`: the headers spell the two names and state no electrode placement, so these are channel positions too |
 | `svdb` | **`ECG1`, `ECG2`** — like `afdb` and `nsrdb`. Worth singling out because this catalogue's own entry claimed **`MLII` + `V1` at 360 Hz** before the config was written, and both halves were wrong: the recordings are **128 Hz** and all 78 headers name the channels `ECG1`/`ECG2` with no placement stated. The values came from assuming `mitdb`'s properties carry across, which is the exact failure `lead_names` exists to prevent |
 | `edb` | **`V5, MLI` in only 19 of 90 records** — the most varied layout in the catalogue: **fifteen orderings of eleven lead pairs**, and **no lead present in every record** (V5 reaches 51, MLIII 47, D3 exactly 1). `MLIII/V4` and `V4/MLIII` are both present, 15 records each. See below |
+| `chfdb` | **`ECG1`, `ECG2`** — like `afdb`, `nsrdb` and `svdb`, and from the same Beth Israel hospital as `mitdb`: no electrode placement is stated anywhere, so these are channel positions. Note that only the **current** `.hea` files name them — the 15 superseded `.hea-` copies shipped beside them (and listed in the release's own `SHA256SUMS.txt`) carry no signal descriptions at all, because the 2012 revision is what added them |
 
 **One dataset stores two different lead layouts.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of

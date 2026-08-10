@@ -7,6 +7,7 @@ from . import (  # noqa: F401
     challenge2020,
     challenge2021,
     chapman,
+    chfdb,
     code15,
     code_test,
     cpsc_2018,

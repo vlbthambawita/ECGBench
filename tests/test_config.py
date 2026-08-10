@@ -1768,3 +1768,119 @@ def test_edb_stratification_bands_are_fixed_and_cover_the_zero_case():
     assert len(ST_BURDEN_BANDS) == len(ST_BURDEN_EDGES) + 1
     assert ST_BURDEN_EDGES == (1, 3, 6)
     assert ST_BURDEN_BANDS[0] == "none"
+
+
+def test_load_chfdb_config():
+    """BIDMC CHF: two unnamed channels, ~20 h records, one NYHA severity class."""
+    config = load_config("chfdb")
+    assert config.slug == "chfdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a gain of 0 — WFDB's "uncalibrated" — so wfdb falls
+    # back to its default 200 adu/mV and reports mV. Nothing to rescale. Unlike
+    # afdb, the default is corroborated rather than merely assumed: PhysioNet
+    # states "12-bit resolution over a range of +/-10 millivolts", and 12 bits at
+    # 200 adu/mV is exactly [-2048, 2047] adu = [-10.24, 10.235] mV.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 2
+    # ECG1/ECG2 are CHANNEL POSITIONS, as in afdb, nsrdb and svdb: the release
+    # states no electrode placement, so these must not be "corrected" to MLII/V1.
+    assert config.lead_names == ["ECG1", "ECG2"]
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    assert config.signal_path_columns == {250: "signal_path"}
+    # No metadata ships beyond a "#Age: <n>  Sex: <X>  NYHA class: <c>" header
+    # comment: CHFDBSplitter generates this from the headers and the .ecg files.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # Null because the headers carry age, sex and NYHA class and nothing else —
+    # not even the trial arm the cohort is defined by. 15 recordings from 15
+    # subjects is the most that can be asserted.
+    assert config.patient_id_column is None
+    # A single layout in all 15 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "chf01".."chf15" — not all-digit, so unlike afdb ("00735")
+    # and ltafdb ("00") the CSV round-trip cannot strip the zero.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "cohort_label"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_chfdb_disables_the_truncation_check_because_length_varies():
+    """Records run 17,789,952 to 17,998,848 samples (19.767 h to 19.999 h).
+
+    The spread is only 232 s, far narrower than nsrdb's three hours, but every one
+    of the 15 is a complete recording so any single threshold would drop sound
+    records as truncated. An empty expected_samples DISABLES the check —
+    check_truncated_signal returns [] when the rate has no key — as in ptbdb,
+    afdb, ltafdb and nsrdb.
+    """
+    config = load_config("chfdb")
+    assert config.validation.expected_samples == {}
+    # The check stays in the list so a future uniform-length re-release needs one
+    # line here rather than two.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_chfdb_amplitude_range_is_the_asymmetric_twelve_bit_rail():
+    """Not symmetric, and the upper bound carries float32 slack. Both are load-bearing.
+
+    29 of the 30 channels have adc_zero 0, which at wfdb's fallback gain of 200
+    puts them in [-2048, 2047] adu = [-10.24, 10.235] mV. chf15's ECG2 is the one
+    exception: a baseline of -70 adu shifts its range to [-9.89, 10.585] mV, and
+    that channel ACTUALLY REACHES +2047 adu for 12 samples. So the bound has to be
+    the union of the two rails, or the release's own top record fails the check.
+
+    It also cannot be the exact rail. ``_load_signal`` casts to float32, and
+    float32 cannot hold 10.585 — the nearest value is 10.585000038146973, which is
+    greater than a float64 bound of 10.585. Hence 10.586. The negative bound needs
+    no such slack, because float32(-10.24) rounds toward zero.
+    """
+    import numpy as np
+
+    config = load_config("chfdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.586)
+    assert low == pytest.approx(-2048 / 200.0)
+    # The rail chf15's ECG2 attains, given its -70 adu baseline.
+    assert (2047 - (-70)) / 200.0 == pytest.approx(10.585)
+    # The whole point of the extra 0.001: the exact rail would exclude chf15.
+    assert float(np.float32(10.585)) > 10.585
+    assert float(np.float32(10.585)) < high
+    # And the lower bound is safe without slack.
+    assert float(np.float32(-10.24)) > low
+
+
+def test_chfdb_label_column_is_a_constant_and_the_config_says_so():
+    """Every subject is NYHA III-IV, so label_column cannot stratify anything.
+
+    ``cohort_label`` is ``severe_chf`` for all 15 records — PhysioNet's assertion
+    about the cohort, not something derived from the files. That is why
+    stratification is custom_function (sex, 11 M / 4 F) rather than ``direct`` on
+    label_column, which would hand StratifiedKFold a single class.
+    """
+    from ecgbench.labels.chfdb import COHORT_LABEL
+
+    config = load_config("chfdb")
+    assert config.label_column == "cohort_label"
+    assert COHORT_LABEL == "severe_chf"
+    assert config.stratification.method != "direct"
+
+
+def test_chfdb_labels_are_module_based_with_no_source_csv():
+    """The headers and .ecg files are the source, so there is no CSV to point at.
+
+    A declarative block would need ``source_csv``; this one deliberately leaves it
+    null and is dispatched through ``_custom_loaders()`` instead. The join column
+    still has to match ``record_id_column`` or the fold CSVs would not join.
+    """
+    config = load_config("chfdb")
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == config.record_id_column

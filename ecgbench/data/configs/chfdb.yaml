@@ -1,0 +1,295 @@
+# ECGBench Config: BIDMC Congestive Heart Failure Database
+# =========================================================
+# https://physionet.org/content/chfdb/1.0.0/
+#
+# 15 twenty-hour two-lead Holter recordings of subjects with SEVERE congestive
+# heart failure — NYHA class III-IV — recorded at Boston's Beth Israel Hospital
+# while on conventional therapy, before entering an oral milrinone trial. 298.9
+# hours of signal at 250 Hz, 1,622,282 detected beats. It is the severe-CHF
+# counterpart to nsrdb's normal cohort: one class, every record in it.
+#
+# FIVE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE BEAT ANNOTATIONS ARE UNAUDITED MACHINE OUTPUT. PhysioNet: "Annotation
+#    files (with the suffix .ecg) were prepared using an automated detector and
+#    have not been corrected manually." The `.ecg` extension is the tell — every
+#    audited MIT-BIH database in this catalogue uses `.atr`. So mitdb, nsrdb, svdb
+#    and edb give you a cardiologist reference standard and this does not. Every
+#    beat, ectopy and HRV figure in the labels describes what one 1980s detector
+#    reported. Do not train a beat classifier on them.
+#
+# 2. VENTRICULAR ECTOPY IS HEAVY AND WILDLY UNEVEN, and it is the real per-record
+#    signal here. 38,524 of 1,622,282 beats are ventricular — 2.37%, against
+#    NSRDB's 0.0015% — but chf02 is 20.52% and chf12 is 0.017%, three orders of
+#    magnitude apart. NOTE `r` (R-on-T PVC, an AAMI `V`) OUTNUMBERS PLAIN `V` IN
+#    NINE OF THE 15 RECORDS, so counting only `V` undercounts ventricular ectopy
+#    across most of the release. Use the `aami_*` columns. There are no fusion
+#    beats at all: `aami_F` is 0 for every record.
+#
+# 3. RHYTHM ANNOTATION EXISTS IN 4 OF 15 RECORDS, AND ITS ABSENCE IS NOT A
+#    NEGATIVE. chf06 is 80.46% atrial fibrillation over 125 episodes; chf01, chf10
+#    and chf14 hold brief runs (0.23%, 0.86%, 0.024%). The other 11 records carry no
+#    `+` marker at all, so their `af_secs` of 0.0 means "never assessed", not "no
+#    AF" — `has_rhythm_annotation` is the column that distinguishes them.
+#
+# 4. RECORDS ARE ~20 H LONG, SO BATCHING NEEDS `window=`. 17,789,952 to
+#    17,998,848 samples x 2 leads is 142-144 MB of float32 per record. Length is
+#    near-uniform (19.77-20.00 h) but not exactly uniform, so `expected_samples`
+#    is deliberately empty; see the validation block.
+#
+# 5. THERE IS NO SIGNAL-QUALITY ANNOTATION LAYER AT ALL — no `~`, no `|`, in any
+#    of the 15 files, where nsrdb, svdb and mitdb all carry per-channel quality
+#    bitmasks. The labels expose `n_quality_changes` and `n_isolated_artifacts` as
+#    0 so a re-release is visible, but deliberately no clean/noisy seconds:
+#    inventing them would assert 298.9 hours of clean time nobody assessed.
+#
+# BEAT ANNOTATION COVERS THE WHOLE RECORD, unlike nsrdb, whose beats stop one to
+# five hours early. Here the first beat is 0.05-0.60 s in and the last within
+# 0.65 s of the end, in all 15 records, so any window has annotation behind it.
+#
+# ALL 64 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt. That total
+# includes 15 `.hea-` and 2 `.ecg-` superseded backup copies, which are present in
+# this release rather than absent as in nsrdb's. The record list comes from the
+# shipped RECORDS file, so they cannot enter the partition.
+
+name: "BIDMC Congestive Heart Failure Database"
+slug: "chfdb"
+version: "1.0.0"
+url: "https://physionet.org/content/chfdb/1.0.0/"
+download_url: null  # CHFDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  15 long-term two-lead ECG recordings of subjects with severe congestive heart
+  failure, NYHA class III-IV — 11 men aged 22 to 71 and 4 women aged 54 to 63 —
+  recorded at Boston's Beth Israel Hospital (now Beth Israel Deaconess Medical
+  Center) while receiving conventional medical therapy, prior to entering a trial
+  of oral milrinone. Each record is roughly 20 hours of ambulatory Holter, 19.77 h
+  to 20.00 h, digitised at 250 Hz with 12-bit resolution over a nominal +/-10 mV
+  and band-limited to about 0.1-40 Hz; the two channels are named ECG1 and ECG2 in
+  the headers with no statement of which anatomical leads they are. The shipped
+  annotations are 1,622,282 beat labels produced by an automated detector and
+  never manually corrected, of which 38,524 are ventricular and 5,314
+  supraventricular, plus 258 rhythm markers delimiting atrial fibrillation in 4 of
+  the 15 records. There is no diagnostic label to predict: every subject is in the
+  same severity class, which is what makes this the severe-CHF cohort against
+  which a normal or mixed-arrhythmia database is compared.
+citation: >
+  Baim DS, McDowell AV, Cherniles J, Monrad ES, Parker JA, Edelson J, Braunwald E,
+  Grossman W. Survival of patients with severe congestive heart failure treated
+  with oral milrinone. J American College of Cardiology 7(3):661-670 (1986).
+  PhysioNet additionally asks for: Goldberger AL, Amaral LAN, Glass L, Hausdorff
+  JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank,
+  PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C29G60"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Hospital / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/chfdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# THE AMPLITUDE IS UNCALIBRATED BY THE HEADERS' OWN DECLARATION, exactly as in
+# afdb, ltafdb and nsrdb. Every signal line in every header declares a gain of `0`,
+# which is WFDB's code for "uncalibrated", so wfdb falls back to its default of
+# 200 adu/mV and reports the samples as mV. Nothing needs scaling, so this is 1.0.
+#
+# Unlike afdb, that default is CORROBORATED here rather than merely assumed:
+# PhysioNet states "12-bit resolution over a range of +/-10 millivolts", and 12
+# bits at 200 adu/mV is exactly [-2048, 2047] adu = [-10.24, 10.235] mV. The
+# declared gain and the described range agree.
+signal_unit_scale: 1.0
+leads: 2
+# ECG1/ECG2 in all 15 headers, and that is genuinely all the release says. Like
+# afdb and nsrdb, and unlike mitdb, CHFDB never states which anatomical leads
+# these are, so ECGDataset(leads=["ECG1"]) selects a channel position, not a known
+# lead. Do NOT map them onto MLII/V1 by analogy with mitdb: nothing supports it.
+#
+# Read from the current `.hea` files. The superseded `.hea-` copies shipped
+# alongside them have no signal descriptions at all — the 2012 revision is what
+# added the ECG1/ECG2 names — so a reader pointed at those gets two unnamed
+# channels.
+lead_names: ["ECG1", "ECG2"]
+# Nominal 20 h. Near-uniform but NOT uniform: 17,789,952 samples (71,159.8 s,
+# 19.767 h, chf06) to 17,998,848 (71,995.4 s, 19.999 h, six records). Mean
+# 71,732.6 s. The 232 s spread is small enough that one window fits every record
+# and large enough that expected_samples cannot be set.
+duration_seconds: 72000.0
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in any form. The headers carry a single comment line,
+# `#Age: <n>  Sex: <X>  NYHA class: <c>`, and the annotations are everything else.
+# CHFDBSplitter builds this CSV from the .hea and .ecg files on first run, via
+# ecgbench.labels.chfdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "chf01" ... "chf15",
+# which are not all-digit, so pandas keeps them as strings and the CSV round-trip
+# cannot destroy the zero. Contrast afdb ("00735") and ltafdb ("00"), which are
+# all-digit and both need it. export_splits verifies this.
+zero_padded_identifiers: false
+# Null because the release has no subject identifier: the header comment holds
+# age, sex and NYHA class and nothing else — no tape number, no recorder, no
+# subject code, and not even the trial arm the cohort is defined by. PhysioNet
+# describes 15 recordings from 15 subjects, which is the most that can be
+# asserted, so folds are stratified but ungrouped. This is a fact about the data,
+# not a skipped field.
+patient_id_column: null
+
+signal_path_columns:
+  250: "signal_path"  # bare record stem, e.g. "chf01" — the tree is flat
+
+# --- Labels ---
+# One value for all 15 records: PhysioNet's assertion about the cohort ("15
+# subjects with severe congestive heart failure (NYHA class 3-4)"), not something
+# derived from the files. It is here so a user combining this database with a
+# normal or mixed-arrhythmia one has a record-level class to join on. It is NOT
+# the stratification label — a constant cannot balance a fold.
+label_column: "cohort_label"
+label_format: "single"
+
+stratification:
+  # CHFDBSplitter takes stratify_class from the label loader: the subject's sex,
+  # 11 M against 4 F. There is no clinical label to use — every record is NYHA
+  # III-IV — and 15 records over 10 folds admits nothing finer. StratifiedKFold
+  # needs at least one class with n_folds members: sex (11/4) clears it, four
+  # ventricular-burden bands (quartiles, 4/4/3/4) do not, and a burden cut at 1%
+  # (7/8) does not either. See ecgbench.labels.chfdb.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # DELIBERATELY EMPTY, like afdb, nsrdb, ptbdb and challenge2021: length varies
+  # legitimately, if only by 232 s. chf06 holds 17,789,952 samples against the
+  # 17,998,848 of six other records, and both are complete recordings, so any
+  # single threshold would drop sound records as truncated. Omitting the rate
+  # disables the check rather than making it fire — `truncated_signal` stays in the
+  # list below only so a future re-release with uniform lengths needs one line
+  # here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The 12-bit rail, computed from the hardware, and NOT symmetric — which is the
+  # one thing worth reading here. adc_zero 0 at wfdb's fallback gain of 200 puts
+  # 29 of the 30 channels in [-2048, 2047] adu = [-10.24, 10.235] mV. The
+  # exception is chf15's ECG2, the only channel in the release with a non-zero
+  # baseline (-70 adu), which shifts its range to [-9.89, 10.585] mV. The upper
+  # bound is therefore 10.585 rather than 10.235: the union of the two rails, so
+  # that no record can fail this check for a baseline the header declares.
+  #
+  # It is not idle. chf15's ECG2 actually REACHES +2047 adu — for 12 samples,
+  # 0.0001% of the record — so the positive rail is attained, not merely
+  # theoretical, and a bound of 10.235 would fail that record. What the check
+  # guards is a mis-scaled copy (microvolts, or a re-release with a declared gain),
+  # which would exceed it by orders of magnitude on the first record.
+  #
+  # THE UPPER BOUND IS 10.586 AND NOT THE EXACT RAIL OF 10.585 FOR A REASON WORTH
+  # KNOWING: `_load_signal` casts the signal to float32, and float32 cannot hold
+  # 10.585 — the nearest value is 10.585000038146973. `check_amplitude_outlier`
+  # then compares that against the float64 bound and 10.585000038 > 10.585, so a
+  # bound set to the exact rail excludes chf15, the very record it was computed to
+  # admit. Any rail a record actually ATTAINS needs this slack; nsrdb's does not
+  # because nothing there comes within half its range. The negative bound needs no
+  # slack: float32(-10.24) is -10.239999771, which rounds toward zero and so cannot
+  # trip a lower bound of -10.24.
+  #
+  # Observed extremes across all 540 million samples: -10.17 mV (chf09 ECG1) to
+  # +10.585 mV (chf15 ECG2). Unlike nsrdb, this release does use nearly its whole
+  # declared span.
+  amplitude_range_mv: [-10.24, 10.586]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/chfdb.py parses the one-line header comment into
+# age, sex and NYHA class, counts the detector's beats per symbol and reduces them
+# to the AAMI EC57 five classes, measures ventricular and supraventricular ectopy
+# burden, turns the `+` markers into seconds of annotated atrial fibrillation,
+# checks the annotated span against the record length, and summarises whole-record
+# HRV from the RR intervals. There is no source CSV to point at — the headers and
+# annotation files are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "congestive heart failure"
+    - "NYHA class III-IV"
+    - "ventricular ectopy"
+    - "premature ventricular contraction"
+    - "atrial fibrillation"
+    - "heart rate variability"
+    - "beat annotations"
+    - "two-lead"
+    - "Holter"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    15 long-term ambulatory ECG recordings of subjects with severe congestive
+    heart failure, NYHA class III-IV, made at Boston's Beth Israel Hospital while
+    the subjects were receiving conventional medical therapy and before they
+    entered a trial of oral milrinone reported by Baim et al. in 1986. Two
+    channels were recorded per subject and digitised from analog Holter tape at
+    250 Hz with 12-bit resolution over a nominal +/-10 mV range, band-limited to
+    roughly 0.1-40 Hz; the headers name the channels ECG1 and ECG2 and state no
+    electrode placement. Each recording runs about 20 hours, 19.77 h to 20.00 h,
+    for 298.9 hours in total. The shipped annotations are 1,622,282 beat labels
+    produced by an automated detector and explicitly never manually corrected, of
+    which 38,524 are ventricular and 5,314 supraventricular, together with 258
+    rhythm markers delimiting atrial fibrillation in 4 of the 15 records. No
+    signal-quality annotations were released. The only subject-level
+    fields are age, sex and NYHA class, in a single header comment line; no
+    medication, dose, trial arm or outcome was released with the waveforms, even
+    though the cohort is defined by a drug trial.
+  rai_data_biases: >
+    Every subject in this database is in the same severity class, so it cannot
+    measure severity discrimination at all: there is no negative class, no milder
+    CHF arm, and no non-CHF control. The cohort is very small — 15 subjects — and
+    each contributes one twenty-hour recording, so within-subject data is abundant
+    while between-subject variation is almost absent, which makes record-level
+    splits essential and any sample-level split meaningless. It is skewed and
+    narrow demographically: 11 of the 15 subjects are men, the four women are all
+    between 54 and 63, and one subject's age was not released at all, so nothing
+    here describes heart failure in women outside that decade or in children. The
+    beat annotations are unaudited output from a single automated detector of the
+    period, so every ectopy count, ectopy rate and heart-rate-variability figure
+    derived from them carries that detector's error rate — heavy ventricular
+    ectopy and atrial fibrillation, both abundant in this cohort, are precisely
+    the conditions under which such detectors mislabel most. Ectopy burden varies
+    by three orders of magnitude between records (0.017% to 20.52% ventricular), so
+    a per-record metric is not comparable across records without controlling for
+    it. Rhythm annotation exists for only 4 of the 15 records, so the absence of
+    an atrial-fibrillation marker in the other 11 is not evidence of its absence
+    in the signal. Subjects were on conventional heart-failure therapy of the
+    early 1980s, including agents that alter rate and repolarisation, and the
+    recordings were digitised from analog tape at a bandwidth of about 0.1-40 Hz,
+    so the waveforms are not comparable in detail with modern digital ECG. All
+    come from one hospital.
+  rai_personal_sensitive_info: >
+    De-identified. Each header carries one comment line holding the subject's age,
+    sex and NYHA class and nothing else — no name, no date, no medications, no
+    clinical description, no trial arm, no outcome and no subject or tape
+    identifier. The only other per-record field is a start time of day, with no
+    date attached. The record names are the sequential labels chf01 to chf15 and
+    are the only identifiers present. One age is withheld in the source itself,
+    recorded as "?". The stated ages are 22 to 71, so no subject falls in the range
+    that would require special handling under the common 89-and-over convention.
+    The cohort is nonetheless small and clinically distinctive — 15 patients with
+    severe heart failure enrolled in a named 1980s milrinone trial at one named
+    hospital — which is worth stating plainly even though nothing in the release
+    narrows it further.

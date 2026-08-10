@@ -104,8 +104,11 @@ BEAT_NAMES = {
 #: whose bundle-branch-block beats are ``L``/``R``; only the symbols occurring in
 #: one of the MIT-BIH-family databases in this catalogue are listed, because a symbol
 #: in none of them would be a silent no-op here and is better raised as "unexpected"
-#: by the scanner. ``ecgbench.labels.edb`` imports this rather than keeping a second
-#: copy — ``n`` (supraventricular escape) occurs only there, 5 beats of 790,565.
+#: by the scanner. ``ecgbench.labels.edb`` and ``ecgbench.labels.chfdb`` import this
+#: rather than keeping a second copy — ``n`` (supraventricular escape) occurs only in
+#: edb, 5 beats of 790,565, and ``r`` (R-on-T premature ventricular contraction, an
+#: AAMI ``V``) only in chfdb, where it is 10,353 beats of 1,622,282 and outnumbers
+#: plain ``V`` in nine of the 15 records.
 AAMI_CLASSES = {
     "N": "N",
     "L": "N",
@@ -120,6 +123,7 @@ AAMI_CLASSES = {
     "n": "S",
     "V": "V",
     "E": "V",
+    "r": "V",
     "F": "F",
     "/": "Q",
     "f": "Q",

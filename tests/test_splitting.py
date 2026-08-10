@@ -4395,3 +4395,252 @@ class TestNSRDBSplitter:
         assert len(assigned) == 15
         # Both sexes reach every fold, which is what stratifying on it buys.
         assert assigned.groupby("fold")["sex"].nunique().tolist() == [2] * 5
+
+
+class TestCHFDBSplitter:
+    """15 severe-CHF subjects, one severity class, folds balanced on sex instead."""
+
+    def _header(self, rec, n_samples, age, sex):
+        """A real CHFDB header: gain 0 (uncalibrated) and one NYHA comment line."""
+        return (
+            f"{rec} 2 250 {n_samples} 10:00:00\n"
+            f"{rec}.dat 212 0 12 0 127 17579 0 ECG1\n"
+            f"{rec}.dat 212 0 12 0 -128 21162 0 ECG2\n"
+            f"#Age: {age}  Sex: {sex}  NYHA class: III-IV\n"
+        )
+
+    def _tree(self, tmp_path, records, n_samples=250_000):
+        """records: [(rec, age, sex, n_ront, af)] -> headers, .ecg each, RECORDS.
+
+        Unlike the nsrdb fixture the beats span the whole record, because chfdb's
+        annotations do. ``n_ront`` writes `r` beats — R-on-T PVCs, which are AAMI
+        ventricular and are the symbol that outnumbers plain `V` in most real
+        records. ``af`` adds a `(AF`/`(N` rhythm pair.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, age, sex, n_ront, af in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, n_samples, age, sex), encoding="utf-8"
+            )
+            # 100 beats exactly 1 s apart (250 samples at 250 Hz), the first at 250
+            # and the last at 25000 of 250000 — the fixture is short, but the point
+            # is that nothing is left unannotated at either end by construction.
+            beats = np.arange(100) * 250 + 250
+            symbols = ["N"] * 100
+            for i in range(n_ront):
+                symbols[i + 1] = "r"
+            sample = beats
+            symbol = list(symbols)
+            subtype = [0] * 100
+            aux = [""] * 100
+            if af:
+                # AF from 100 s to 110 s, then back to normal.
+                sample = np.concatenate([beats, [25_000, 27_500]])
+                symbol = symbols + ["+", "+"]
+                subtype = [0] * 102
+                aux = [""] * 100 + ["(AF", "(N"]
+            wfdb.wrann(
+                rec, "ecg",
+                sample=np.asarray(sample),
+                symbol=symbol,
+                subtype=np.array(subtype),
+                aux_note=aux,
+                fs=250,
+                write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in records) + "\n", encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="chfdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column=None,
+            signal_path_columns={250: "signal_path"}, default_sampling_rate=250,
+            label_column="cohort_label", leads=2, zero_padded_identifiers=False,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.chfdb import CHFDBSplitter
+
+        assert isinstance(get_splitter("chfdb"), CHFDBSplitter)
+
+    def test_builds_demographics_nyha_beats_and_signal_paths(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path, [("chf01", 71, "M", 3, False), ("chf02", 61, "F", 0, False)]
+        )
+
+        df = get_splitter("chfdb").load_metadata(tree, config).set_index("record_name")
+
+        # The one header comment line is the entire shipped metadata — and it
+        # carries NYHA class, which nsrdb's does not.
+        assert df.loc["chf01", "age"] == 71
+        assert df.loc["chf01", "sex"] == "M"
+        assert df.loc["chf02", "sex"] == "F"
+        assert set(df["nyha_class"]) == {"III-IV"}
+        # Beats, with `r` reduced into the AAMI ventricular class.
+        assert df.loc["chf01", "n_beats"] == 100
+        assert df.loc["chf01", "beat_r"] == 3
+        assert df.loc["chf01", "aami_V"] == 3
+        assert df.loc["chf01", "n_veb"] == 3
+        assert df.loc["chf02", "n_veb"] == 0
+        # One class for every record — asserted by the release, not derived.
+        assert set(df["cohort_label"]) == {"severe_chf"}
+        # Flat tree: the signal path is the bare stem, no extension, no directory.
+        assert sorted(df["signal_path"]) == ["chf01", "chf02"]
+        # Written to disk because validate_dataset re-reads it.
+        assert (tree / config.metadata_csv).exists()
+
+    def test_an_unknown_age_survives_the_csv_round_trip_as_nan(
+        self, sample_config, tmp_path
+    ):
+        """chf06's header records `Age: ?`, and the cache must not turn that into 0."""
+        pytest.importorskip("wfdb")
+        import numpy as np
+
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("chf06", "?", "M", 0, False)])
+
+        splitter = get_splitter("chfdb")
+        first = splitter.load_metadata(tree, config).set_index("record_name")
+        # Second call reads the CSV it just wrote, which is the path that matters.
+        cached = splitter.load_metadata(tree, config).set_index("record_name")
+
+        assert np.isnan(first.loc["chf06", "age"])
+        assert np.isnan(cached.loc["chf06", "age"])
+        assert cached.loc["chf06", "sex"] == "M"
+
+    def test_beat_annotation_covers_the_record_unlike_nsrdb(
+        self, sample_config, tmp_path
+    ):
+        """Real chfdb heads are 0.05-0.60 s and tails under 0.65 s, in all 15.
+
+        This is the opposite of nsrdb, where one to five hours of every record has
+        no beat annotation behind it. The columns are reported anyway so that a
+        re-release cannot change it quietly.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("chf01", 71, "M", 0, False)])
+
+        df = get_splitter("chfdb").load_metadata(tree, config).set_index("record_name")
+
+        # Beats run 250 -> 25000 of 250000 samples at 250 Hz.
+        assert df.loc["chf01", "annotated_secs"] == pytest.approx(99.0)
+        assert df.loc["chf01", "unannotated_head_secs"] == pytest.approx(1.0)
+
+    def test_rhythm_annotation_is_present_only_where_markers_are(
+        self, sample_config, tmp_path
+    ):
+        """11 of the 15 real records carry no `+`, and that is not "no AF".
+
+        A user filtering on ``af_secs == 0`` would otherwise pick up 11 records
+        whose rhythm was never assessed as though they were confirmed negatives.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path, [("chf06", 61, "M", 0, True), ("chf02", 61, "F", 0, False)]
+        )
+
+        df = get_splitter("chfdb").load_metadata(tree, config).set_index("record_name")
+
+        assert bool(df.loc["chf06", "has_rhythm_annotation"]) is True
+        assert df.loc["chf06", "af_secs"] == pytest.approx(10.0)
+        assert df.loc["chf06", "n_af_episodes"] == 1
+        # No markers at all: zero AF seconds, but no rhythm assertion either.
+        assert bool(df.loc["chf02", "has_rhythm_annotation"]) is False
+        assert df.loc["chf02", "af_secs"] == 0.0
+
+    def test_hrv_summaries_reject_implausible_intervals(self, sample_config, tmp_path):
+        """Beats exactly 1 s apart must give 60 bpm and zero variability."""
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(tmp_path, [("chf01", 71, "M", 0, False)])
+
+        df = get_splitter("chfdb").load_metadata(tree, config).set_index("record_name")
+
+        assert df.loc["chf01", "mean_hr_bpm"] == pytest.approx(60.0)
+        assert df.loc["chf01", "sdnn_ms"] == pytest.approx(0.0, abs=1e-6)
+        assert df.loc["chf01", "rmssd_ms"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_stratification_is_sex_because_every_record_is_the_same_severity(
+        self, sample_config, tmp_path
+    ):
+        """cohort_label and nyha_class are both constants, so neither can balance a fold.
+
+        Same arrangement as nsrdb and the opposite of ltafdb, where the label a
+        reader wants and the label the folds use are one column. Here the clinical
+        label is a constant, so the fold label has to be demographic.
+        """
+        pytest.importorskip("wfdb")
+        config = self._config(sample_config)
+        tree = self._tree(
+            tmp_path,
+            [("chf01", 71, "M", 0, False), ("chf02", 61, "F", 0, False),
+             ("chf03", 63, "M", 0, False)],
+        )
+
+        splitter = get_splitter("chfdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "sex"
+        assert labels.tolist() == ["M", "F", "M"]
+        assert df["cohort_label"].nunique() == 1
+        assert df["nyha_class"].nunique() == 1
+
+    def test_missing_stratify_column_is_an_error_not_a_silent_fallback(
+        self, sample_config
+    ):
+        import pandas as pd
+
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("chfdb").get_stratification_labels(
+                pd.DataFrame({"record_name": ["chf01"]}), config
+            )
+
+    def test_folds_are_ungrouped_because_no_subject_id_ships(
+        self, sample_config, tmp_path
+    ):
+        """The header comment holds age, sex and NYHA class — no tape or subject id.
+
+        mitdb can group on the analog tape number; this release states nothing that
+        would tie two records to one person — not even the trial arm the cohort is
+        defined by — and PhysioNet describes 15 recordings from 15 subjects, so
+        ``patient_id_column`` is null and the engine uses plain StratifiedKFold.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        config = self._config(sample_config)
+        # 10 men and 5 women: the real release is 11/4, and both clear the
+        # StratifiedKFold requirement that one class hold at least n_folds members.
+        records = [
+            (f"chf{i + 1:02d}", 50 + i, "M" if i % 3 else "F", 0, False)
+            for i in range(15)
+        ]
+        tree = self._tree(tmp_path, records)
+
+        splitter = get_splitter("chfdb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=10)
+
+        assert result.group_column is None
+        assigned = pd.concat(
+            [frame.assign(fold=number) for number, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 15
+        assert sorted(result.folds) == list(range(1, 11))

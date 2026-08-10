@@ -7548,3 +7548,319 @@ class TestEDBLabels:
 
         with pytest.raises(LabelSourceMissingError, match="European ST-T"):
             scan_records(tmp_path)
+
+
+class TestCHFDBLabels:
+    """BIDMC CHF: unaudited annotations, a constant severity class, sparse rhythm.
+
+    This is the fifth MIT-BIH-family two-lead Holter release in the catalogue and
+    its label problem is distinct from all four. nsrdb has no rhythm annotations
+    and one class; svdb has no header comments at all; here the annotations exist,
+    are rich, and are **machine output that was never corrected** — so the thing
+    the loader has to get right is saying so, keeping `r` inside the ventricular
+    class, and refusing to let a missing rhythm marker read as a negative.
+    """
+
+    HEADER = (
+        "chf01 2 250 17994491 10:00:00\n"
+        "chf01.dat 212 0 12 0 127 17579 0 ECG1\n"
+        "chf01.dat 212 0 12 0 -128 21162 0 ECG2\n"
+        "#Age: 71  Sex: M  NYHA class: III-IV\n"
+    )
+    HEADER_UNKNOWN_AGE = (
+        "chf06 2 250 17789952 14:35:00\n"
+        "chf06.dat 212 0 12 0 -60 -24084 0 ECG1\n"
+        "chf06.dat 212 0 12 0 -89 -32261 0 ECG2\n"
+        "#Age: ?  Sex: M  NYHA class: III-IV\n"
+    )
+    HEADER_NO_COMMENT = (
+        "chf01 2 250 17994491 10:00:00\n"
+        "chf01.dat 212 0 12 0 127 17579 0 ECG1\n"
+        "chf01.dat 212 0 12 0 -128 21162 0 ECG2\n"
+    )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("chfdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers and .ecg files are the source
+        assert spec.join_column == "record_name"
+
+    def test_the_annotator_is_ecg_not_atr_which_is_the_unaudited_marker(self):
+        """`.ecg`, not `.atr` — PhysioNet's convention for uncorrected detector output.
+
+        This is the single most important fact about the dataset, so both the
+        constant and the docstring are pinned. Every audited MIT-BIH database in
+        this catalogue uses `.atr`; a future edit that quietly switched this to
+        `atr` would be claiming a reference standard that does not exist.
+        """
+        from ecgbench.labels import chfdb
+
+        assert chfdb.ANNOTATOR == "ecg"
+        assert "have not been corrected" in chfdb.__doc__
+        assert "unaudited" in chfdb.__doc__.lower()
+
+    def test_the_one_comment_line_carries_age_sex_and_nyha_class(self, tmp_path):
+        """`#Age: 71  Sex: M  NYHA class: III-IV` is the entire shipped metadata.
+
+        Richer than nsrdb's `# 32 M` by one field and still far short of mitdb's
+        medications and clinical text — and notably it does not record the drug
+        trial arm that defines the cohort.
+        """
+        from ecgbench.labels.chfdb import parse_header_comments
+
+        (tmp_path / "chf01.hea").write_text(self.HEADER, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "chf01.hea")
+
+        assert fields["age"] == 71.0
+        assert fields["sex"] == "M"
+        assert fields["nyha_class"] == "III-IV"
+        assert set(fields) == {"age", "sex", "nyha_class"}
+
+    def test_an_unknown_age_becomes_nan_rather_than_zero(self, tmp_path):
+        """chf06's age is literally `?` in the shipped header.
+
+        Parsing it as 0 would put a 0-year-old in a severe-heart-failure cohort and
+        drag any mean age down; NaN excludes it from statistics instead. The sex and
+        NYHA class on the same line must still be read.
+        """
+        from ecgbench.labels.chfdb import parse_header_comments
+
+        (tmp_path / "chf06.hea").write_text(self.HEADER_UNKNOWN_AGE, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "chf06.hea")
+
+        assert np.isnan(fields["age"])
+        assert fields["sex"] == "M"
+        assert fields["nyha_class"] == "III-IV"
+
+    def test_a_header_with_no_comment_gives_up_rather_than_raising(self, tmp_path):
+        """One malformed header must not fail the scan of the other 14."""
+        from ecgbench.labels.chfdb import parse_header_comments
+
+        (tmp_path / "chf01.hea").write_text(self.HEADER_NO_COMMENT, encoding="utf-8")
+        fields = parse_header_comments(tmp_path / "chf01.hea")
+
+        assert np.isnan(fields["age"])
+        assert fields["sex"] == ""
+        assert fields["nyha_class"] == ""
+
+    def test_r_on_t_beats_are_ventricular_and_the_shared_aami_table_says_so(self):
+        """`r` is an AAMI `V`, and it outnumbers plain `V` in 9 of the 15 records.
+
+        This is the trap the aami_* columns exist for: a pipeline counting only
+        `beat_V` undercounts ventricular ectopy across most of this database. The
+        table is shared with ``svdb`` rather than copied, so this pins that the
+        shared table covers every symbol chfdb actually uses.
+        """
+        from ecgbench.labels.chfdb import BEAT_NAMES, BEAT_SYMBOLS
+        from ecgbench.labels.svdb import AAMI_CLASSES
+
+        assert set(BEAT_SYMBOLS) == set(BEAT_NAMES)
+        assert set(BEAT_SYMBOLS) <= set(AAMI_CLASSES)
+        assert AAMI_CLASSES["r"] == "V"
+        assert AAMI_CLASSES["E"] == "V"
+        # Adding `r` must not have disturbed the other databases' reductions.
+        assert AAMI_CLASSES["S"] == "S"
+        assert AAMI_CLASSES["N"] == "N"
+
+    def test_rhythm_markers_become_seconds_of_atrial_fibrillation(self):
+        """Each `+` opens an interval running to the next one, or to the record end.
+
+        Counting markers instead of time would make chf14's 17-second run and
+        chf06's 16 hours the same number.
+        """
+        from ecgbench.labels.chfdb import _rhythm_seconds
+
+        # 250 samples = 1 s. AF from 10 s to 20 s, then normal to the 40 s end.
+        out = _rhythm_seconds(
+            [(2500, "(AF"), (5000, "(N")], sig_len=10_000, fs=250.0
+        )
+
+        assert out["af_secs"] == pytest.approx(10.0)
+        assert out["n_af_episodes"] == 1
+        # Asserted from the first marker to the end of the record.
+        assert out["rhythm_asserted_secs"] == pytest.approx(30.0)
+        # The first marker is "(AF", so what preceded it was non-AF by implication.
+        assert out["rhythm_head_unasserted_secs"] == pytest.approx(0.0)
+
+    def test_a_trailing_af_episode_runs_to_the_end_of_the_record(self):
+        """chf06's last marker is `(AF`, so the final episode has no closing marker."""
+        from ecgbench.labels.chfdb import _rhythm_seconds
+
+        out = _rhythm_seconds([(2500, "(AF")], sig_len=10_000, fs=250.0)
+
+        assert out["af_secs"] == pytest.approx(30.0)
+        assert out["n_af_episodes"] == 1
+
+    def test_an_opening_normal_marker_leaves_the_head_unasserted(self):
+        """chf06 opens with `(N` 1,757 s in, which implies AF nobody marked.
+
+        Counting that span as AF would invent 29 minutes of annotation; counting it
+        as normal would assert something the annotator contradicted. It is reported
+        separately instead, the same choice ``svdb`` makes for its quality head.
+        """
+        from ecgbench.labels.chfdb import _rhythm_seconds
+
+        out = _rhythm_seconds([(2500, "(N")], sig_len=10_000, fs=250.0)
+
+        assert out["rhythm_head_unasserted_secs"] == pytest.approx(10.0)
+        assert out["af_secs"] == pytest.approx(0.0)
+
+    def test_no_rhythm_markers_is_not_evidence_of_no_atrial_fibrillation(self):
+        """11 of the 15 records carry no `+` at all, and that must not read as zero AF.
+
+        ``has_rhythm_annotation`` is the column that distinguishes "assessed, none
+        found" from "never assessed" — without it, 11 records would look like clean
+        negatives to anyone filtering on ``af_secs == 0``.
+        """
+        from ecgbench.labels.chfdb import _rhythm_seconds
+
+        out = _rhythm_seconds([], sig_len=10_000, fs=250.0)
+
+        assert out["af_secs"] == pytest.approx(0.0)
+        assert out["n_af_episodes"] == 0
+        assert out["rhythm_asserted_secs"] == pytest.approx(0.0)
+
+    def test_the_cohort_label_is_a_constant_and_the_docstring_says_why(self):
+        """One class for all 15 records, asserted by the release, not derived.
+
+        Every subject is NYHA III-IV, so nothing in the files could produce a
+        per-record severity. Exposing the constant is what lets a user combine this
+        database with nsrdb's normal cohort and still have a class to join on.
+        """
+        from ecgbench.labels import chfdb
+
+        assert chfdb.COHORT_LABEL == "severe_chf"
+        assert "severe congestive heart failure" in chfdb.__doc__
+        assert "one clinical label and it is a constant" in chfdb.__doc__
+
+    def test_stratify_class_is_sex_and_is_derived_once(self):
+        """The splitter reads this column rather than recomputing it.
+
+        Two derivations of one label is the bug this rule exists to prevent —
+        PTB-XL had exactly that and they drifted apart.
+        """
+        from ecgbench.labels.chfdb import attach_stratify_class
+
+        df = pd.DataFrame({"record_name": ["chf01", "chf02", "chf03"],
+                           "sex": ["M", "F", "M"]})
+        out = attach_stratify_class(df)
+
+        assert out["stratify_class"].tolist() == ["M", "F", "M"]
+        # A blank sex would otherwise become its own silent fold class.
+        blank = attach_stratify_class(pd.DataFrame({"sex": ["", "F"]}))
+        assert blank["stratify_class"].tolist() == ["U", "F"]
+
+    def test_ectopy_burden_cannot_be_the_fold_axis_and_the_docstring_proves_it(self):
+        """Sex is chosen because StratifiedKFold rejects every burden banding.
+
+        The real per-record signal here is ventricular ectopy burden (0.017% to
+        20.52%), and ``svdb`` does stratify on exactly that. With 15 records over 10
+        folds it is arithmetically impossible: StratifiedKFold needs one class of 10
+        or more, which quartiles (4/4/3/4) and a 1% cut (7/8) both fail. This pins
+        that the reasoning stays in the docstring, because it is the obvious
+        "improvement" for someone to make later.
+        """
+        from sklearn.model_selection import StratifiedKFold
+
+        from ecgbench.labels.chfdb import attach_stratify_class
+
+        doc = attach_stratify_class.__doc__
+        assert "4/4/3/4" in doc and "7/8" in doc
+
+        # Sex (11 M / 4 F) is admissible; a 7/8 burden cut is not.
+        sex = ["M"] * 11 + ["F"] * 4
+        kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+        assert len(list(kf.split(np.zeros(15), sex))) == 10
+        with pytest.raises(ValueError, match="cannot be greater"):
+            list(kf.split(np.zeros(15), ["hi"] * 7 + ["lo"] * 8))
+
+    def test_beats_are_counted_apart_from_rhythm_markers(self, tmp_path):
+        """`+` must never reach n_beats, and `r` must land in the ventricular class."""
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.chfdb import summarise_annotations
+
+        wfdb.wrann(
+            "chf01", "ecg",
+            sample=np.array([100, 350, 600, 850, 1100, 1350]),
+            symbol=["N", "r", "N", "V", "S", "+"],
+            subtype=np.zeros(6, dtype=int),
+            aux_note=["", "", "", "", "", "(AF"],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "chf01", sig_len=2500)
+
+        assert counts["n_beats"] == 5
+        assert counts["beat_N"] == 2
+        assert counts["beat_r"] == 1
+        assert counts["beat_V"] == 1
+        assert counts["beat_S"] == 1
+        assert counts["n_rhythm_changes"] == 1
+        assert counts["n_annotations"] == 6
+        # r and V both reduce to AAMI V, which is the whole point of the column.
+        assert counts["aami_V"] == 2
+        assert counts["n_veb"] == 2
+        assert counts["veb_fraction"] == pytest.approx(2 / 5)
+        assert counts["n_ectopic_beats"] == 3
+        assert counts["has_rhythm_annotation"] is True
+
+    def test_a_release_with_no_quality_layer_reports_zeros_not_invented_seconds(
+        self, tmp_path
+    ):
+        """No `~` and no `|` anywhere in chfdb, so there is no clean/noisy time.
+
+        The counts are exposed as 0 so a re-release adding a quality layer is
+        visible. What must NOT exist is a `clean_secs` column, which would assert
+        298.9 hours of clean signal that nobody assessed.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.chfdb import summarise_annotations
+
+        wfdb.wrann(
+            "chf01", "ecg", sample=np.array([100, 350]), symbol=["N", "N"],
+            subtype=np.zeros(2, dtype=int), fs=250, write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "chf01", sig_len=2500)
+
+        assert counts["n_quality_changes"] == 0
+        assert counts["n_isolated_artifacts"] == 0
+        assert not [key for key in counts if key.endswith("_secs") and "clean" in key]
+        assert "noisy_secs" not in counts
+
+    def test_hrv_rejects_implausible_intervals_rather_than_averaging_them_in(
+        self, tmp_path
+    ):
+        """A detector that drops beats produces gaps that would wreck every figure.
+
+        Unlike nsrdb there is no multi-hour unannotated tail here, but the
+        annotations are uncorrected machine output, so missed beats are exactly the
+        expected failure and the filter matters more, not less.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.chfdb import RR_RANGE_SECS, summarise_annotations
+
+        # Five beats 1 s apart, then a 40 s gap, then two more 1 s apart.
+        samples = np.array([250, 500, 750, 1000, 1250, 11_250, 11_500])
+        wfdb.wrann(
+            "chf01", "ecg", sample=samples, symbol=["N"] * 7,
+            subtype=np.zeros(7, dtype=int), fs=250, write_dir=str(tmp_path),
+        )
+        counts = summarise_annotations(tmp_path / "chf01", sig_len=250_000)
+
+        assert counts["n_beats"] == 7
+        # Six intervals, of which the 40 s gap is rejected.
+        assert counts["n_rr_rejected"] == 1
+        assert counts["mean_hr_bpm"] == pytest.approx(60.0)
+        assert RR_RANGE_SECS == (0.3, 2.0)
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.chfdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="Congestive Heart Failure"):
+            scan_records(tmp_path)
