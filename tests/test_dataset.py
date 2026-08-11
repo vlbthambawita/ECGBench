@@ -2026,3 +2026,51 @@ class TestZeroPaddedRecordIds:
             "signal_path": ["100", "114", "234"],
         })
         _check_zero_padded_identifiers(df, config)  # must not raise
+
+
+class TestECGIDDBChannels:
+    """ECG-ID stores ONE lead twice, and the two artefacts disagree on purpose."""
+
+    def test_both_channels_are_lead_i_raw_and_filtered(self):
+        """All 310 headers name them "ECG I" and "ECG I filtered", raw first.
+
+        This cannot go in ``TestShippedLeadNames``, which assumes the first six
+        names are I/II/III then the augmented leads. The point here is that
+        ``config.leads == 2`` is a channel count over a single electrode pair: the
+        second channel is the thesis's own preprocessing of the first, not a second
+        placement. A model given both rows is given Lead I twice.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("ecgiddb")
+        assert config.leads == 2
+        assert config.lead_names == ["ECG I", "ECG I filtered"]
+        assert len(config.lead_names) == config.leads
+        # Same lead, two processings — so the names share a prefix rather than
+        # naming different anatomy, and neither is a standard lead spelling.
+        assert config.lead_names[1].startswith(config.lead_names[0])
+        assert config.validation is not None
+        assert config.validation.expected_leads == 2
+        # No per-record variation, unlike mitdb (record_lead_layouts) or zzu_pecg
+        # (alternate_lead_names).
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+
+    def test_the_catalogue_says_one_lead_and_the_config_says_two(self):
+        """A deliberate disagreement, pinned so nobody "fixes" one to match.
+
+        ``docs/_datasets/ecg-id-database.md`` sets ``leads: 1`` because ECG-ID is a
+        one-lead database — Lead I, from limb clamps — and it sits in the
+        ``one-lead`` catalogue category. The config sets ``leads: 2`` because that
+        is the shape of the tensor ``ECGDataset`` returns. Both are true of
+        different things, and the catalogue's ``format`` string is what reconciles
+        them for a reader.
+        """
+        from ecgbench import get_dataset
+        from ecgbench.config import load_config
+
+        entry = get_dataset("ECG-ID Database")
+        assert entry.leads == 1
+        assert load_config("ecgiddb").leads == 2
+        # The format string has to carry the reconciliation, or the "1" is a lie.
+        assert "raw" in entry.format and "filtered" in entry.format

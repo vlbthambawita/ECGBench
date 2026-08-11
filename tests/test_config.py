@@ -2587,3 +2587,83 @@ def test_load_apnea_ecg_config():
     from ecgbench.labels import _custom_loaders
 
     assert "apnea_ecg" in _custom_loaders()
+
+
+def test_load_ecgiddb_config():
+    """ECG-ID: one lead stored twice, identity as the label, uniform length."""
+    config = load_config("ecgiddb")
+    assert config.slug == "ecgiddb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every one of the 620 signal lines declares gain 200 adu/mV and units mV, so
+    # wfdb reports millivolts and nothing needs rescaling.
+    assert config.signal_unit_scale == 1.0
+    # TWO CHANNELS, ONE PHYSICAL LEAD. "ECG I" is the raw Lead I and
+    # "ECG I filtered" is the thesis's own preprocessing of the same samples, so
+    # the returned tensor is (2, 10000) and both rows are Lead I. The catalogue
+    # entry says `leads: 1` because that is the number of electrode pairs; see
+    # TestShippedLeadNames for the test that pins the pair.
+    assert config.leads == 2
+    assert config.lead_names == ["ECG I", "ECG I filtered"]
+    assert len(config.lead_names) == config.leads
+    assert config.duration_seconds == 20
+    assert config.sampling_rates == [500]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    # No metadata ships at all: RECORDS, three header comment lines per record and
+    # the .atr files are the source, and ECGIDDBSplitter merges them into this.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    # NOT the bare record name. Every Person_NN/ directory numbers its records from
+    # rec_1, so "rec_1" names 90 different recordings; record_id is
+    # "Person_01_rec_1" and signal_path keeps the release's "Person_01/rec_1".
+    assert config.record_id_column == "record_id"
+    assert config.patient_id_column == "subject_id"
+    # THE LABEL IS THE PATIENT COLUMN, and that is not a mistake: this database's
+    # ground truth is which of the 90 people produced a recording. The consequence
+    # is that ECGBench's subject-grouped folds cannot serve the identification
+    # task — see ecgbench.labels.ecgiddb.load_labels.
+    assert config.label_column == config.patient_id_column == "subject_id"
+    assert config.label_format == "single"
+    # A single layout in all 310 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.license == "ODC-By-1.0"
+    assert config.publish_fold_csvs is True
+    # False, and checked rather than assumed: every identifier carries a
+    # "Person_"/"rec_" prefix, so none is all-digits and the CSV round-trip cannot
+    # strip the zeros from "Person_01".
+    assert config.zero_padded_identifiers is False
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    # FALSE, and not for lack of a split existing. The thesis divided its own 310
+    # records 195/115 into training and test sets; that assignment is stated in
+    # prose and shipped in no file, so it is unrecoverable.
+    assert config.has_predefined_splits is False
+    assert config.predefined_splits is None
+    assert config.validation is not None
+    assert config.validation.expected_leads == 2
+    # UNIFORM, unusually for PhysioNet: all 310 records hold exactly 10,000
+    # samples at 500 Hz, so 20.000 s each. Unlike apnea_ecg and nsrdb this is a
+    # real expectation rather than a deliberately empty dict, and it means any
+    # window inside (0, 10000) fits every record.
+    assert config.validation.expected_samples == {500: 10000}
+    assert 20 * 500 == config.validation.expected_samples[500]
+    # The nominal 12-bit span at gain 200 — but here the data is NOT bounded by
+    # it: the headers declare adc_res 12 while the int16 samples reach -30,831
+    # adu (-154.155 mV) on the raw channel, because the thesis deliberately left
+    # baseline drift unfiltered. So this is a physiological bound, and it excludes
+    # 3 of the 310 records. No float32 slack is needed: the closest passing record
+    # reaches 10.115 mV, nowhere near the bound.
+    assert config.validation.amplitude_range_mv == (-10.24, 10.235)
+    assert "amplitude_outlier" in config.validation.checks
+
+    assert config.labels is not None
+    assert config.labels.available
+    assert config.labels.source_csv is None  # the headers and .atr files are the source
+    assert config.labels.join_column == config.record_id_column == "record_id"
+
+    from ecgbench.labels import _custom_loaders
+
+    assert "ecgiddb" in _custom_loaders()

@@ -335,6 +335,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
 | `apnea_ecg` | **`ECG` — one channel, and the second dataset here that is not called `I`.** All 70 headers name the single overnight channel `ECG`, and the release documents no electrode placement anywhere — not on the landing page, not in `annotations.html`, not in `additional-information.txt`. The Holter montage makes a modified chest lead the likely guess, but a guess is what naming it `II` or `V2` would ship, so it stays a channel position |
 | `ltstdb` | **`ECG, ECG` in 22 of 86 records, and 11 further layouts in the other 64** — the only dataset here where the lead **count** varies as well as the names: 68 records store two signals and 18 store three. The modal layout is the 22 records whose headers say "Electrode locations were not recorded", so `leads=["ECG"]` returns signal 0 for those and **no name reaches signal 1**. No lead is in all 86 (MLIII 29, V4 27), and `V4/MLIII` and `MLIII/V4` are both present, 20 records and 6. See below |
+| `ecgiddb` | **`ECG I`, `ECG I filtered` — two channels holding ONE lead.** Identical in all 310 headers, raw first. Both are Lead I from limb clamps; channel 1 is the author's own offline preprocessing of channel 0 (level-9 `db8` wavelet baseline removal, adaptive 50 Hz bandstop, 5th-order Butterworth lowpass at 40 Hz), and it is zero-phase, so the two are sample-aligned. `config.leads` is 2 because that is the tensor shape; the catalogue says 1 electrode pair. Select `leads=["ECG I"]` or a model gets the same lead twice — the same trap as `wctecgdb`, which ships every one of its 37 channels raw *and* filtered |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -933,6 +934,25 @@ shifted 80 s, 100.000% identical over 2.8 M samples, and the demographics of `x2
 whole nights, 2,430,000–3,462,000 samples, so batching needs a `window=` sized to the
 shortest; `window=(i * 6000, 6000)` returns exactly minute *i*, the labelled unit. See
 `examples/load_apnea_ecg.py`.
+
+`ecgiddb` is the catalogue's **biometrics** dataset, and the first where the label and
+the patient column are the same thing. Its 310 twenty-second Lead I records from 90
+volunteers exist to test whether an ECG identifies the person who produced it — there is
+no diagnosis in the release at all — so `subject_id` is the ground truth *and*
+`patient_id_column`. The consequence is worth stating plainly: **ECGBench's folds cannot
+be used for this dataset's own task**, because grouping by subject puts each person
+wholly inside one fold, so no fold's model has seen the person it would be asked to
+recognise. That is right for any other use of these recordings (89 of the 90 subjects
+have more than one record) and wrong for identification, which needs a *within*-subject
+split — `session_index` and `is_multi_session` are exposed for exactly that, and 20 of
+the subjects span 2–6 sessions up to 156 days apart. Three more things. **Every record
+stores the same lead twice**, `ECG I` raw and `ECG I filtered`, so `leads=["ECG I"]`
+matters. **Length is uniform** — all 310 records hold exactly 10,000 samples, so unlike
+almost everything else here any `window=` fits every record. And the **`.atr`
+annotations stop at 25–59% of the record**: ten unaudited machine-detected R- and
+T-peaks per record and nothing after second 12, which `annotated_fraction` records. The
+thesis's own 195/115 train/test division exists only in prose and is unrecoverable. See
+`examples/load_ecgiddb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

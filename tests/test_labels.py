@@ -10373,3 +10373,308 @@ class TestApneaECGLabels:
         # 25 and 22 minutes short), so both figures are exposed side by side.
         assert df.loc["a01", "n_annotated_minutes"] == 140
         assert df.loc["a01", "published_minutes"] == 490
+
+
+class TestECGIDDBLabels:
+    """ECG-ID: identity as ground truth, and three header comment lines as metadata.
+
+    Two structural traps this class pins. The record name is **not** a key —
+    ``rec_1`` names 90 different recordings, one per subject directory — and the
+    label is the subject, which is also the grouping column, so the folds
+    ECGBench generates cannot serve the identification task the data exists for.
+    """
+
+    HEADER = (
+        "{rec} 2 500 10000\n"
+        "{rec}.dat 16 200 12 0 -17 17532 0 ECG I\n"
+        "{rec}.dat 16 200 12 0 -23 2004 0 ECG I filtered\n"
+        "\n"
+        "# Age: {age}\n"
+        "# Sex: {sex}\n"
+        "# ECG date: {date}\n"
+    )
+
+    def _write_record(self, root, subject, rec, age, sex, date, first_r=200):
+        """Write one Person_NN/rec_N record: header, .dat and a 20-annotation .atr."""
+        wfdb = pytest.importorskip("wfdb")
+
+        directory = root / subject
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{rec}.hea").write_text(
+            self.HEADER.format(rec=rec, age=age, sex=sex, date=date), encoding="utf-8"
+        )
+        # Interleaved channels, both non-constant so a correlation is defined. The
+        # two carry the same samples, which is the shape of the real release —
+        # channel 1 is channel 0 filtered — so the residual is exactly zero here.
+        samples = (np.arange(10000, dtype=np.int16) % 400) - 200
+        np.repeat(samples, 2).tofile(directory / f"{rec}.dat")
+
+        # The real shape: 10 R-peaks and 10 T-peaks, strictly alternating N t N t,
+        # with beats 400 samples (0.8 s, 75 bpm) apart and each T 100 samples
+        # (200 ms) after its R.
+        r_peaks = first_r + np.arange(10) * 400
+        samples = np.empty(20, dtype=np.int64)
+        samples[0::2] = r_peaks
+        samples[1::2] = r_peaks + 100
+        wfdb.wrann(
+            rec,
+            "atr",
+            sample=samples,
+            symbol=["N", "t"] * 10,
+            fs=500,
+            write_dir=str(directory),
+        )
+
+    def _tree(self, tmp_path, records):
+        """records: list of (subject, rec, age, sex, date) tuples."""
+        for subject, rec, age, sex, date in records:
+            self._write_record(tmp_path, subject, rec, age, sex, date)
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(f"{subject}/{rec}" for subject, rec, *_ in records) + "\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "ANNOTATORS").write_text(
+            "atr\tunaudited R- and T-wave peaks annotations from an automated detector\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def _config(self):
+        from ecgbench.config import load_config
+
+        return load_config("ecgiddb")
+
+    def test_labels_come_from_the_headers_not_a_csv(self):
+        spec = self._config().labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # RECORDS, the .hea comments and the .atr files
+        assert spec.join_column == "record_id"
+
+    def test_the_three_header_comments_parse(self, tmp_path):
+        """``# Age:`` / ``# Sex:`` / ``# ECG date:`` — the entire shipped metadata.
+
+        The date is normalised to ISO while the release's own day-first form is
+        kept, because ``07.12.2004`` is 7 December, not 12 July.
+        """
+        from ecgbench.labels.ecgiddb import parse_header_comments
+
+        root = self._tree(tmp_path, [("Person_01", "rec_1", 25, "male", "07.12.2004")])
+        parsed = parse_header_comments(root / "Person_01" / "rec_1.hea")
+
+        assert parsed["age"] == 25.0
+        assert parsed["sex"] == "male"
+        assert parsed["ecg_date"] == "2004-12-07"
+        assert parsed["ecg_date_raw"] == "07.12.2004"
+
+    def test_an_unparseable_comment_warns_rather_than_raising(self, tmp_path):
+        """One malformed header must not fail the scan of the other 309."""
+        from ecgbench.labels.ecgiddb import parse_header_comments
+
+        root = self._tree(tmp_path, [("Person_01", "rec_1", 25, "male", "07.12.2004")])
+        hea = root / "Person_01" / "rec_1.hea"
+        hea.write_text(
+            hea.read_text().replace("# Age: 25", "# Age: twenty-five"), encoding="utf-8"
+        )
+        parsed = parse_header_comments(hea)
+
+        assert np.isnan(parsed["age"])
+        # The other two still parse — a bad line loses one field, not the record.
+        assert parsed["sex"] == "male"
+        assert parsed["ecg_date"] == "2004-12-07"
+
+    def test_the_record_id_disambiguates_colliding_record_names(self, tmp_path):
+        """``rec_1`` is 90 different recordings, so the subject has to be in the key.
+
+        This is the trap: a loader keyed on the bare record name silently collapses
+        90 recordings into one, and ``load_labels`` would then raise on duplicate
+        ids rather than returning wrong ones — but only if the key is right here.
+        """
+        from ecgbench.labels.ecgiddb import load_labels
+
+        root = self._tree(
+            tmp_path,
+            [
+                ("Person_01", "rec_1", 25, "male", "07.12.2004"),
+                ("Person_02", "rec_1", 40, "female", "12.05.2005"),
+                ("Person_02", "rec_2", 40, "female", "12.05.2005"),
+            ],
+        )
+        df = load_labels(root, self._config())
+
+        assert list(df.index) == ["Person_01_rec_1", "Person_02_rec_1", "Person_02_rec_2"]
+        assert df.index.name == "record_id"
+        assert not df.index.has_duplicates
+        # record_name is kept, and is exactly the column that is NOT unique.
+        assert list(df["record_name"]) == ["rec_1", "rec_1", "rec_2"]
+        assert df["record_name"].duplicated().any()
+        # signal_path stays the release's own, because that is what wfdb is handed.
+        assert df.loc["Person_01_rec_1", "signal_path"] == "Person_01/rec_1"
+        assert df.loc["Person_01_rec_1", "subject_number"] == 1
+        assert df.loc["Person_02_rec_2", "record_number"] == 2
+
+    def test_sessions_are_derived_from_the_recording_date(self, tmp_path):
+        """The release states no session; distinct dates per subject are the sessions."""
+        from ecgbench.labels.ecgiddb import load_labels
+
+        root = self._tree(
+            tmp_path,
+            [
+                ("Person_01", "rec_1", 25, "male", "07.12.2004"),
+                ("Person_01", "rec_2", 25, "male", "07.12.2004"),
+                ("Person_01", "rec_3", 25, "male", "28.12.2004"),
+                ("Person_02", "rec_1", 40, "female", "12.05.2005"),
+            ],
+        )
+        df = load_labels(root, self._config())
+
+        # Two records on one day share a session index; the third opens session 2.
+        assert list(df.loc[df["subject_id"] == "Person_01", "session_index"]) == [1, 1, 2]
+        assert list(df.loc[df["subject_id"] == "Person_01", "days_since_first_session"]) == [
+            0,
+            0,
+            21,
+        ]
+        assert (df.loc[df["subject_id"] == "Person_01", "n_sessions_for_subject"] == 2).all()
+        assert (df.loc[df["subject_id"] == "Person_01", "session_span_days"] == 21).all()
+        assert (df.loc[df["subject_id"] == "Person_01", "is_multi_session"]).all()
+        # A single-session subject: span 0, index 1, and NOT multi-session. 70 of
+        # the release's 90 subjects look like this.
+        assert df.loc["Person_02_rec_1", "n_sessions_for_subject"] == 1
+        assert df.loc["Person_02_rec_1", "session_span_days"] == 0
+        assert not df.loc["Person_02_rec_1", "is_multi_session"]
+        assert df.loc["Person_02_rec_1", "n_records_for_subject"] == 1
+
+    def test_the_annotations_are_summarised_with_their_coverage(self, tmp_path):
+        """20 annotations covering the first half of the record, and that is stated.
+
+        ``annotated_fraction`` exists because the ten annotated beats end 25-59% of
+        the way into every real record; anything read past that is unmarked.
+        """
+        from ecgbench.labels.ecgiddb import ANNOTATION_SOURCE, load_labels
+
+        root = self._tree(tmp_path, [("Person_01", "rec_1", 25, "male", "07.12.2004")])
+        row = load_labels(root, self._config()).loc["Person_01_rec_1"]
+
+        assert row["n_annotations"] == 20
+        assert row["n_r_peaks"] == 10
+        assert row["n_t_peaks"] == 10
+        assert row["annotation_source"] == ANNOTATION_SOURCE
+        assert "unaudited" in row["annotation_source"]
+        # Beats 200, 600, ... 3800; last annotation is the T at 3900 of 10,000.
+        assert row["first_annotation_sample"] == 200
+        assert row["last_annotation_sample"] == 3900
+        assert row["annotated_secs"] == pytest.approx(7.8)
+        assert row["annotated_fraction"] == pytest.approx(0.39)
+        assert row["unannotated_tail_secs"] == pytest.approx(12.2)
+        # Nine RR intervals of 0.8 s -> 75 bpm exactly, and none rejected.
+        assert row["mean_hr_bpm"] == pytest.approx(75.0)
+        assert row["n_rr_used"] == 9
+        assert row["n_rr_rejected"] == 0
+        assert row["sdnn_ms"] == pytest.approx(0.0)
+        # R peak to T PEAK, not a QT interval: 100 samples at 500 Hz.
+        assert row["mean_rt_interval_ms"] == pytest.approx(200.0)
+        # Geometry, identical in all 310 real records.
+        assert row["n_samples"] == 10000
+        assert row["duration_secs"] == pytest.approx(20.0)
+        assert row["sampling_rate"] == 500
+        assert row["n_channels"] == 2
+        assert row["signal_descriptions"] == "ECG I|ECG I filtered"
+        assert row["adc_gain"] == 200.0
+
+    def test_stratify_class_crosses_sex_with_one_age_cut(self, tmp_path):
+        """Sex x (<=30 / >30). Finer cuts cannot fill ten folds — see the docstring."""
+        from ecgbench.labels.ecgiddb import AGE_CUT_YEARS, load_labels
+
+        assert AGE_CUT_YEARS == 30
+        root = self._tree(
+            tmp_path,
+            [
+                ("Person_01", "rec_1", 25, "male", "07.12.2004"),
+                ("Person_02", "rec_1", 30, "female", "12.05.2005"),  # the boundary is le30
+                ("Person_03", "rec_1", 31, "female", "12.05.2005"),
+                ("Person_04", "rec_1", 75, "male", "12.05.2005"),
+            ],
+        )
+        df = load_labels(root, self._config())
+
+        assert df.loc["Person_01_rec_1", "stratify_class"] == "male_le30"
+        assert df.loc["Person_02_rec_1", "stratify_class"] == "female_le30"
+        assert df.loc["Person_03_rec_1", "stratify_class"] == "female_gt30"
+        assert df.loc["Person_04_rec_1", "stratify_class"] == "male_gt30"
+
+    def test_a_missing_age_does_not_land_silently_in_the_older_cell(self, tmp_path):
+        """``NaN <= 30`` is False, so an unparsed age would look like a 31-year-old."""
+        from ecgbench.labels.ecgiddb import attach_stratify_class
+
+        df = pd.DataFrame(
+            {
+                "record_id": ["Person_01_rec_1"],
+                "subject_id": ["Person_01"],
+                "age": [np.nan],
+                "sex": ["male"],
+            }
+        )
+        assert attach_stratify_class(df).loc[0, "stratify_class"] == "male_age_unknown"
+
+    def test_the_label_is_the_subject_and_the_docstring_says_what_that_costs(self):
+        """The config's label column IS its patient column, and that is documented.
+
+        This is the one thing a user of this dataset has to be told: folds group by
+        subject, so the identification task the database exists for cannot be run
+        on them. If that sentence ever leaves the loader, the trap is silent.
+        """
+        from ecgbench.labels import ecgiddb
+
+        config = self._config()
+        assert config.label_column == config.patient_id_column == "subject_id"
+        doc = ecgiddb.load_labels.__doc__
+        assert doc is not None
+        assert "identification task" in doc
+        assert "session_index" in doc  # the within-subject alternative it points at
+        assert "no diagnosis" in doc.lower()
+
+    def test_noise_levels_are_a_separate_call_because_they_need_the_waveforms(
+        self, tmp_path
+    ):
+        """``load_labels`` reads no signal; ``scan_noise_levels`` does, on request.
+
+        Same split as ``sddb``: everything derived from headers and annotations is a
+        label, and anything needing the samples decoded is an explicit call, so
+        ``ecgbench splits`` does not read the waveforms twice.
+        """
+        import inspect
+
+        from ecgbench.labels import ecgiddb
+
+        reads_headers_only = (
+            inspect.getsource(ecgiddb.scan_records)
+            + inspect.getsource(ecgiddb.summarise_annotations)
+            + inspect.getsource(ecgiddb.parse_header_comments)
+        )
+        assert "rdrecord" not in reads_headers_only
+        assert "rdrecord" in inspect.getsource(ecgiddb.scan_noise_levels)
+        assert "scan_noise_levels" in (ecgiddb.load_labels.__doc__ or "")
+
+        root = self._tree(
+            tmp_path,
+            [
+                ("Person_01", "rec_1", 25, "male", "07.12.2004"),
+                ("Person_02", "rec_1", 40, "female", "12.05.2005"),
+            ],
+        )
+        noise = ecgiddb.scan_noise_levels(root)
+        assert list(noise.index) == ["Person_01_rec_1", "Person_02_rec_1"]
+        # The fixture writes zeros to both channels, so the residual is zero.
+        assert noise["removed_rms_mv"].eq(0.0).all()
+        assert noise["removed_ptp_mv"].eq(0.0).all()
+
+    def test_a_missing_records_file_names_the_dataset_root(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.ecgiddb import scan_records
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            scan_records(tmp_path)
+        message = str(excinfo.value)
+        assert "RECORDS" in message
+        assert "Person_NN" in message
+        assert "physionet.org/content/ecgiddb" in message

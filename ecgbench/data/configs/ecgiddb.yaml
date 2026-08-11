@@ -1,0 +1,301 @@
+# ECGBench Config: ECG-ID Database
+# ================================
+# https://physionet.org/content/ecgiddb/1.0.0/
+#
+# 310 twenty-second Lead I recordings from 90 volunteers, collected by Tatiana
+# Lugovaya for her 2005 master's thesis on using the ECG as a biometric. This is
+# an IDENTITY dataset, not a diagnosis dataset: the ground truth is which of the
+# 90 people a recording came from, and the cohort is students, colleagues and
+# friends rather than patients. Nothing in the release states any diagnosis.
+#
+# SIX THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. EVERY RECORD STORES THE SAME LEAD TWICE. The two channels are "ECG I" (raw)
+#    and "ECG I filtered" — one physical lead, Lead I from limb clamps, plus the
+#    thesis's own preprocessing of it. So the tensor is (2, 10000) and `leads: 2`
+#    below is a channel count, not two electrodes. Selecting one is
+#    ECGDataset(leads=["ECG I"]); passing both to a model trained on independent
+#    leads feeds it the same signal twice. The filtered channel is zero-phase —
+#    peak cross-correlation with the raw channel is at lag 0 in 273 of 310 records
+#    and at +/-1 sample in the rest — so the two are sample-aligned and the .atr
+#    annotation indices apply to both.
+#
+# 2. THE HEADERS DECLARE 12-BIT RESOLUTION AND THE DATA IS NOT 12-BIT BOUNDED.
+#    Every one of the 620 signal lines reads `16 200 12 0` — format 16, gain 200
+#    adu/mV, adc_res 12, adc_zero 0, no baseline — which nominally confines every
+#    sample to [-2048, 2047] adu = [-10.24, 10.235] mV. The stored int16 samples
+#    go far past that: Person_76/rec_2 reaches -30,831 adu (-154.155 mV) on the
+#    raw channel and Person_88/rec_1 -30,727 (-153.635 mV). The 12 bits describe
+#    the cardiograph's converter; the baseline drift the thesis deliberately left
+#    unfiltered rides on top of it. So amplitude_range_mv below is a physiological
+#    bound that happens to equal the nominal rail, NOT a rail the data respects.
+#
+# 3. THE .atr ANNOTATIONS COVER ONLY THE FIRST HALF OF EACH RECORD. Exactly 20
+#    annotations per record in all 310 files — 10 `N` R-peaks and 10 `t` T-peaks,
+#    strictly alternating — so the last one lands at sample 2,542 to 5,869 of
+#    10,000 (mean 4,002, i.e. 8.0 s of a 20 s record). Beats after roughly second
+#    12 are unannotated everywhere, and only 18 records have any annotation past
+#    the halfway mark. ANNOTATORS also states they are "unaudited R- and T-wave
+#    peaks annotations from an automated detector", so this is not a beat-detection
+#    reference and hr_bpm derived from it is an estimate over ten beats.
+#
+# 4. RECORD NAMES COLLIDE ACROSS SUBJECTS. Every subject directory numbers its
+#    records rec_1, rec_2, ..., so `rec_1` names 90 different recordings.
+#    record_id is therefore "Person_01_rec_1", built by ECGIDDBSplitter; the
+#    signal path keeps the release's own "Person_01/rec_1".
+#
+# 5. THE PER-SUBJECT RECORD COUNT CONTRADICTS THE RELEASE'S OWN DOCUMENTATION.
+#    Both the README and the PhysioNet abstract say "from 2 (collected during one
+#    day) to 20 (collected periodically during 6 months)". The shipped RECORDS
+#    file and the files on disk say 1 to 22: Person_74 has a single record and
+#    Person_02 has 22. Everything else in the README checks out exactly — 310
+#    records, 90 subjects, 44 men and 46 women, ages 13 to 75.
+#
+# 6. THE THESIS'S OWN 195/115 TRAIN/TEST SPLIT IS NOT IN THE FILES. The thesis
+#    states it assigned 195 records to training and 115 to test, chosen for
+#    "maximum difference between records in different sets both in monitoring time
+#    and human physical state". No file in the release records which record went
+#    where, so it cannot be reproduced and has_predefined_splits stays false.
+#
+# ALL 977 SHIPPED DATA AND DOCUMENTATION FILES VERIFY against the release's own
+# SHA256SUMS.txt. The 22 listed files absent from a normal download are website
+# assets under `.old/` (biometric.shtml and 21 PNGs), not data.
+
+name: "ECG-ID Database"
+slug: "ecgiddb"
+version: "1.0.0"
+url: "https://physionet.org/content/ecgiddb/1.0.0/"
+download_url: null  # ECGIDDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  310 single-lead ECG recordings from 90 volunteers, collected by Tatiana Lugovaya
+  at the Electrotechnical University "LETI", Saint Petersburg, for her 2005
+  master's thesis on biometric human identification from the electrocardiogram.
+  Each record is 20 seconds of Lead I — the left-hand minus right-hand potential,
+  taken with limb clamp electrodes in the sitting position — digitised at 500 Hz,
+  and each is stored as two channels: the raw signal, with every filter in the
+  cardiograph software deliberately turned off, and the thesis's own filtered
+  version of it (level-9 db8 wavelet baseline-drift removal, an adaptive 50 Hz
+  bandstop, and a 5th-order Butterworth lowpass at 40 Hz). Subjects are students,
+  colleagues and friends of the author — 44 men and 46 women aged 13 to 75 — and
+  contribute 1 to 22 records each; 20 of the 90 were recorded on more than one of
+  the ten acquisition days, Person_02 across six sessions spanning 156 days, which
+  is what makes the database usable for studying whether an ECG biometric persists
+  over time. Ten beats per record carry unaudited automatic R- and T-peak
+  annotations. Age, sex and recording date are given per record in the header
+  comments; there are no diagnoses.
+citation: >
+  Lugovaya T.S. Biometric human identification based on electrocardiogram.
+  [Master's thesis] Faculty of Computing Technologies and Informatics,
+  Electrotechnical University "LETI", Saint-Petersburg, Russian Federation; June
+  2005. See also Nemirko A.P., Lugovaya T.S. Biometric human identification based
+  on electrocardiogram. Proc. XII-th Russian Conference on Mathematical Methods of
+  Pattern Recognition, Moscow, MAKS Press, 2005, pp. 387-390. PhysioNet also asks
+  for: Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG,
+  Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank, PhysioToolkit, and
+  PhysioNet: Components of a New Research Resource for Complex Physiologic
+  Signals. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C2J01F"
+
+creators:
+  - type: Person
+    name: "Tatiana S. Lugovaya"
+    url: "https://physionet.org/content/ecgiddb/1.0.0/"
+  - type: Organization
+    name: 'Electrotechnical University "LETI", Saint Petersburg'
+    url: "https://etu.ru/en/university/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every signal line declares its own gain — `rec_1.dat 16 200 12 0 -17 17532 0
+# ECG I` — so wfdb applies 200 adu/mV itself and returns millivolts. Nothing needs
+# scaling, and the gain is identical (200.0) in all 620 signal lines of all 310
+# headers, as are the units ("mV").
+signal_unit_scale: 1.0
+# TWO CHANNELS, ONE LEAD. See point 1 in the header: this is the channel count
+# that ECGDataset returns, and both channels are Lead I. The catalogue entry says
+# `leads: 1` because that is the number of electrode pairs; both are right about
+# different things, and tests/test_dataset.py pins the pair so nobody "fixes" it.
+leads: 2
+# Spelled exactly as all 310 headers spell them, including the space. The raw
+# channel is first. There is no standard-order question here, but the names still
+# matter: leads=["ECG I"] is how you avoid handing a model the same lead twice.
+lead_names: ["ECG I", "ECG I filtered"]
+duration_seconds: 20
+sampling_rates: [500]
+default_sampling_rate: 500
+
+# --- File Structure ---
+# No metadata file ships at all. RECORDS lists the 310 record paths, the
+# demographics are three comment lines per .hea (`# Age:`, `# Sex:`, `# ECG
+# date:`), and the beat positions are in the .atr files. ECGIDDBSplitter builds
+# this CSV from all three on first run, via ecgbench.labels.ecgiddb. The
+# validation engine re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# "Person_01_rec_1" — the subject directory and the record name joined with an
+# underscore, because `rec_1` alone names 90 different recordings (point 4).
+record_id_column: "record_id"
+# False, and checked rather than assumed: record_id is "Person_01_rec_1",
+# subject_id is "Person_01" and signal_path is "Person_01/rec_1", so no
+# identifier is ever all-digits and the CSV round-trip cannot coerce one to int.
+# The subject numbers ARE zero-padded, which is exactly why they are never
+# stripped of the "Person_" prefix. export_splits verifies this.
+zero_padded_identifiers: false
+# The whole point of this dataset is that records repeat within a subject: 90
+# subjects for 310 records, 1 to 22 each, so an ungrouped split would put the same
+# person's Lead I in train and test. engine.py uses StratifiedGroupKFold.
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  500: "signal_path"  # the release's own path, e.g. "Person_01/rec_1"
+
+# --- Labels ---
+# THE LABEL OF THIS DATASET IS THE PERSON, and it is the same column as
+# patient_id_column above. That is not a mistake — the thesis's task is 90-class
+# identification, and no other ground truth exists in the release.
+#
+# It is therefore NOT the stratification label, and it cannot be: every group is
+# exactly one class under patient grouping, so no fold can contain a subject that
+# another fold trains on. See the stratification block and the dataset page.
+label_column: "subject_id"
+label_format: "single"
+
+stratification:
+  # ECGIDDBSplitter takes stratify_class from the label loader: sex crossed with a
+  # single age cut at 30 years, giving female_le30 (36 subjects, 124 records),
+  # male_le30 (27/99), male_gt30 (17/55) and female_gt30 (10/32).
+  #
+  # WHY THIS AND NOT SOMETHING FINER. Both demographic axes need balancing and
+  # neither survives alone. Age is the skewed one — 45 of the 90 subjects are
+  # 21-30 and only 11 are over 45 — but stratifying on age bands alone leaves one
+  # fold at 9 female / 19 male records, because the group sizes are so uneven that
+  # a single subject (Person_02, 22 records) can swing a fold. Stratifying on sex
+  # alone leaves four folds with no subject over 45 at all. The cross is the
+  # finest cut that still puts every class in every fold: the cut at 30 keeps the
+  # smallest cell at 10 subjects, and 10 is the floor for a class to appear in all
+  # 10 folds. A four-band cross would put 5-subject cells in 10 folds.
+  #
+  # Rejected: heart rate from the .atr annotations. It is not constant within a
+  # subject (the thesis did not restrict physical or emotional state, and RR SD
+  # runs to 393 ms), so it cannot balance a grouped split, and it comes from an
+  # unaudited detector over ten beats.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# FALSE, and not for lack of a split existing. The thesis divided its own 310
+# records 195/115 into training and test sets, deliberately maximising the
+# difference in monitoring time and physical state across the boundary. That
+# assignment is stated in prose and shipped in no file — not in RECORDS, not in a
+# header comment, not in a separate list — so it is unrecoverable. See point 6.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 2
+  # UNIFORM, unusually for a PhysioNet database: all 310 records hold exactly
+  # 10,000 samples at 500 Hz, so 20.000 s each, with no exceptions. That also
+  # means window= is safe up to the full record — window=(0, 10000) fits every
+  # one, and nothing here can raise WindowOutOfRangeError for a window inside it.
+  expected_samples:
+    500: 10000
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The nominal 12-bit span at gain 200 with adc_zero 0 and no baseline:
+  # [-2048, 2047] adu = [-10.24, 10.235] mV. UNLIKE apnea_ecg, which uses the same
+  # numbers as a hardware rail the data sits inside, here the data is not bounded
+  # by it at all (point 2) — this is a physiological bound, and it excludes 3 of
+  # the 310 records:
+  #   Person_76/rec_2  raw -154.155 mV, filtered -163.800 to 151.375 mV
+  #   Person_88/rec_1  raw -153.635 mV, filtered  -48.945 to  16.245 mV
+  #   Person_47/rec_2  raw   10.885 mV (a genuine excursion, not gross drift)
+  # No float32 slack is needed and that was checked rather than assumed: the
+  # closest passing record reaches 10.115 mV and -3.060 mV, so the bound is
+  # nowhere near an attained value and CLAUDE.md's rail-rounding gotcha does not
+  # bite here. Widening it would only readmit two records whose baseline drift is
+  # fifteen times the physiological range.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ecgiddb.py parses the three header comment lines
+# per record, summarises the 20 .atr annotations, and derives the session grouping
+# from the recording dates. There is no source CSV to point at — RECORDS, the
+# headers and the .atr files are the source.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "biometrics"
+    - "biometric identification"
+    - "person identification"
+    - "single-lead"
+    - "Lead I"
+    - "noise"
+    - "baseline drift"
+    - "raw and filtered"
+    - "PhysioNet"
+  rai_data_collection: >
+    310 recordings collected from 90 volunteers by Tatiana Lugovaya at the
+    Electrotechnical University "LETI", Saint Petersburg, between December 2004 and
+    May 2005, for a master's thesis on biometric identification from the ECG.
+    Subjects were students, colleagues and friends of the author, recorded seated
+    with limb clamp electrodes on a single lead — Lead I, chosen because it is easy
+    to acquire and insensitive to small electrode displacements. Heart rate and
+    physical and emotional state were deliberately not restricted, so the intended
+    variability of the recordings is part of the design. Every filter in the
+    cardiograph software was switched off, on the grounds that filtering might
+    suppress features useful for identification, so the raw channel carries
+    baseline drift, power-line interference and high-frequency noise; a second
+    channel holds the author's own offline filtering of the same samples. Each
+    record is 20 s at 500 Hz with 12-bit conversion. Ten beats per record carry R-
+    and T-peak positions from an automated detector, which the release states were
+    never hand-audited. Age, sex and recording date are recorded per record; no
+    clinical assessment, diagnosis or medication history was collected.
+  rai_data_biases: >
+    A convenience sample of 90 people from one university department, not a
+    clinical or population cohort — students, colleagues and friends of one
+    researcher in one Russian city in 2004-2005. It skews young and narrow: the
+    median age is 23, half the subjects are between 21 and 30, and only two are
+    over 60, so nothing here describes the ECG of children or the elderly. Sex is
+    close to balanced (44 men, 46 women) but the per-record balance is not, because
+    the number of records per subject runs from 1 to 22 and the largest
+    contributors dominate: Person_02 alone supplies 22 of the 310 records, and the
+    top three supply 53. Recording sessions are equally lopsided — there are only
+    ten acquisition days in the whole release and 134 of the 310 records were taken
+    on 12 May 2005 — so any equipment, electrode or environmental peculiarity of
+    that day is present in 43% of the data. 70 of the 90 subjects were recorded on
+    a single day, which means longitudinal ECG persistence, the question the
+    database was built to study, rests on the other 20. No diagnosis, medication or
+    clinical state is recorded for anyone, so the cohort cannot be assumed healthy
+    and cannot be assumed unhealthy. The raw channel is deliberately unfiltered and
+    3 of the 310 records carry baseline drift more than fifteen times the
+    physiological amplitude range; a model trained on the raw channel is partly
+    learning acquisition conditions, and one trained on the filtered channel is
+    learning through one specific 2005 filter chain. Because identity is the label
+    and every subject's records are in one fold, ECGBench's folds cannot be used
+    for the identification task the data was collected for — see the dataset page.
+  rai_personal_sensitive_info: >
+    De-identified in the sense that subjects are numbered Person_01 to Person_90
+    and no name, initials, contact detail or medical record number ships with the
+    data. Age, sex and the exact date of recording are given per record, and the
+    recording site and period are public (one university department, December 2004
+    to May 2005) — a combination that is weak but not empty as a re-identification
+    surface for a cohort this small and this specific. The deeper point is
+    structural rather than a matter of fields: this database exists to demonstrate
+    that a 20-second Lead I recording identifies the person who produced it, and
+    the thesis reports 96% correct identification over these 90 individuals. The
+    waveforms are therefore themselves the biometric, whatever the metadata says,
+    and 20 of the subjects can be tracked across sessions up to 156 days apart.
+    Ages run 13 to 75, so the cohort includes minors — the youngest subject is 13 —
+    and no consent documentation ships with the release. Nothing in the data
+    constitutes a diagnosis.

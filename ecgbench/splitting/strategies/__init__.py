@@ -15,6 +15,7 @@ from . import (  # noqa: F401
     ecg_arrhythmia,
     ecgcipa,
     ecgdmmld,
+    ecgiddb,
     ecgrdvq,
     echonext,
     edb,

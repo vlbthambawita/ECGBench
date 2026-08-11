@@ -5792,3 +5792,186 @@ class TestApneaECGSplitter:
         a02_fold = assigned.loc[assigned["record_name"] == "a02", "fold"].iloc[0]
         x01_fold = assigned.loc[assigned["record_name"] == "x01", "fold"].iloc[0]
         assert a02_fold == x01_fold
+
+
+class TestECGIDDBSplitter:
+    """310 records, 90 subjects, and a label that is also the grouping column.
+
+    ECG-ID is the one dataset here whose ground truth is identity, so the split
+    that protects against leakage is exactly the split that makes its own task
+    impossible. That is a documented consequence, not a bug, and these tests pin
+    both halves: subjects do not span folds, and the reason it matters is stated.
+    """
+
+    #: (subject, rec, age, sex, date). 12 records from 5 subjects: Person_01 has
+    #: four across two dates, Person_02 three on one date, and the rest one each —
+    #: the release's own shape in miniature.
+    RECORDS = (
+        ("Person_01", "rec_1", 25, "male", "07.12.2004"),
+        ("Person_01", "rec_2", 25, "male", "07.12.2004"),
+        ("Person_01", "rec_3", 25, "male", "28.12.2004"),
+        ("Person_01", "rec_4", 25, "male", "28.12.2004"),
+        ("Person_02", "rec_1", 22, "female", "12.05.2005"),
+        ("Person_02", "rec_2", 22, "female", "12.05.2005"),
+        ("Person_02", "rec_3", 22, "female", "12.05.2005"),
+        ("Person_03", "rec_1", 45, "female", "12.05.2005"),
+        ("Person_03", "rec_2", 45, "female", "12.05.2005"),
+        ("Person_04", "rec_1", 58, "male", "12.05.2005"),
+        ("Person_05", "rec_1", 19, "male", "12.05.2005"),
+        ("Person_05", "rec_2", 19, "male", "12.05.2005"),
+    )
+
+    HEADER = (
+        "{rec} 2 500 10000\n"
+        "{rec}.dat 16 200 12 0 -17 17532 0 ECG I\n"
+        "{rec}.dat 16 200 12 0 -23 2004 0 ECG I filtered\n"
+        "\n"
+        "# Age: {age}\n"
+        "# Sex: {sex}\n"
+        "# ECG date: {date}\n"
+    )
+
+    def _tree(self, tmp_path):
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for subject, rec, age, sex, date in self.RECORDS:
+            directory = tmp_path / subject
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"{rec}.hea").write_text(
+                self.HEADER.format(rec=rec, age=age, sex=sex, date=date), encoding="utf-8"
+            )
+            np.zeros(10000 * 2, dtype=np.int16).tofile(directory / f"{rec}.dat")
+            r_peaks = 200 + np.arange(10) * 400
+            sample = np.empty(20, dtype=np.int64)
+            sample[0::2] = r_peaks
+            sample[1::2] = r_peaks + 100
+            wfdb.wrann(
+                rec, "atr",
+                sample=sample,
+                symbol=["N", "t"] * 10,
+                fs=500,
+                write_dir=str(directory),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(f"{subject}/{rec}" for subject, rec, *_ in self.RECORDS) + "\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ecgiddb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_id", patient_id_column="subject_id",
+            signal_path_columns={500: "signal_path"}, default_sampling_rate=500,
+            label_column="subject_id", leads=2, zero_padded_identifiers=False,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.ecgiddb import ECGIDDBSplitter
+
+        assert isinstance(get_splitter("ecgiddb"), ECGIDDBSplitter)
+
+    def test_builds_metadata_with_disambiguated_ids_and_release_paths(
+        self, sample_config, tmp_path
+    ):
+        """``rec_1`` names five recordings here and 90 in the release."""
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+
+        df = get_splitter("ecgiddb").load_metadata(tree, config)
+
+        assert len(df) == 12
+        assert df["record_id"].is_unique
+        assert df["subject_id"].nunique() == 5
+        # The bare record name is NOT a key — five records are called rec_1.
+        assert (df["record_name"] == "rec_1").sum() == 5
+        row = df.set_index("record_id").loc["Person_01_rec_1"]
+        assert row["subject_id"] == "Person_01"
+        # The path wfdb is handed keeps the release's own subdirectory form.
+        assert row["signal_path"] == "Person_01/rec_1"
+        assert row["stratify_class"] == "male_le30"
+        assert row["n_records_for_subject"] == 4
+        assert row["n_sessions_for_subject"] == 2
+
+    def test_metadata_csv_is_written_to_disk_because_validation_re_reads_it(
+        self, sample_config, tmp_path
+    ):
+        """validate_dataset reads the CSV itself; an in-memory frame is invisible.
+
+        And the round trip has to preserve the identifiers: ``Person_01`` is
+        zero-padded, so it survives only because the prefix keeps it from being an
+        all-digits column.
+        """
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgiddb")
+
+        first = splitter.load_metadata(tree, config)
+        written = tree / "ecgbench_metadata.csv"
+        assert written.exists()
+
+        # Second call reads the cache rather than rescanning 310 headers.
+        cached = splitter.load_metadata(tree, config)
+        assert list(cached["record_id"]) == list(first["record_id"])
+        assert list(cached["subject_id"]) == list(first["subject_id"])
+        assert cached["subject_id"].iloc[0] == "Person_01"  # not 1, and not "1"
+        assert cached["signal_path"].iloc[0] == "Person_01/rec_1"
+
+    def test_stratification_labels_come_from_the_loader(self, sample_config, tmp_path):
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgiddb")
+
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "sex_x_age"
+        assert list(labels) == list(df["stratify_class"])
+        assert set(labels) == {"male_le30", "female_le30", "female_gt30", "male_gt30"}
+
+    def test_stratification_refuses_a_frame_it_did_not_build(self, sample_config):
+        """``stratify_class`` comes from the label loader, never from a re-derivation."""
+        config = self._config(sample_config)
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("ecgiddb").get_stratification_labels(
+                pd.DataFrame({"record_id": ["Person_01_rec_1"], "age": [25]}), config
+            )
+
+    def test_no_subject_spans_a_fold(self, sample_config, tmp_path):
+        """The whole point of the grouping — and the reason the folds cannot be
+
+        used for identification. A model trained on Person_01's other three records
+        and tested on the fourth would be measuring nothing; a model that never sees
+        Person_01 cannot recognise them. Both statements are true here, which is why
+        the label loader points at a within-subject session split instead.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+        splitter = get_splitter("ecgiddb")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        # 5 subjects, so 5 folds is the most that can be filled at all.
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assigned = pd.concat(
+            [frame.assign(fold=fold) for fold, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 12
+        folds_per_subject = assigned.groupby("subject_id")["fold"].nunique()
+        assert (folds_per_subject == 1).all()
+        # Concretely: all four of Person_01's records land together.
+        person_01 = assigned.loc[assigned["subject_id"] == "Person_01", "fold"]
+        assert len(person_01) == 4
+        assert person_01.nunique() == 1
+        assert result.group_column == "subject_id"
