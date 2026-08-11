@@ -14,12 +14,16 @@ def run_splits(
     data_path: Path | str | None = None,
     output_dir: Path | str | None = None,
     sampling_rate: int | None = None,
-    n_folds: int = 10,
+    n_folds: int | None = None,
     max_workers: int = 4,
     skip_validation: bool = False,
     skip_croissant: bool = False,
 ) -> dict:
     """Run the full pipeline: validate + split + export + Croissant.
+
+    ``n_folds`` defaults to the dataset's own ``config.n_folds``, which is 10 for
+    every dataset but ``szdb`` — see that field for why a small release cannot
+    take ten. Passing an explicit value overrides it.
 
     Returns the stats dict produced by ``export_splits`` plus ``output_dir``,
     ``dataset`` and ``dataset_name`` keys for convenience.
@@ -30,6 +34,8 @@ def run_splits(
 
     logger.info("Loading config for '%s'", dataset)
     config = load_config(dataset)
+    if n_folds is None:
+        n_folds = config.n_folds
 
     resolved_data_path = resolve_data_path(Path(data_path) if data_path else None, config)
     logger.info("Data path: %s", resolved_data_path)
@@ -213,8 +219,12 @@ def add_subparser(subparsers) -> argparse.ArgumentParser:
     p.add_argument(
         "--n-folds",
         type=int,
-        default=10,
-        help="Number of folds (default: 10)",
+        default=None,
+        help=(
+            "Number of folds. Defaults to the dataset's configured n_folds, "
+            "which is 10 everywhere except szdb (5 — it has 7 records from 5 "
+            "subjects, and ten folds is arithmetically impossible there)."
+        ),
     )
     p.add_argument(
         "--max-workers",

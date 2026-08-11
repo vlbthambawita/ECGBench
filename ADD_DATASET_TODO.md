@@ -92,7 +92,7 @@ pick both up front and keep them straight.
 - [ ] Record the **lead names in file order** into `lead_names:`, spelled as the source spells them. Read a header or CSV column row — never assume the standard order. `ECGDataset(leads=...)` cannot work without it, and two of the four implemented datasets deviate: MIMIC-IV-ECG stores aVF before aVL, PTB-XL spells them AVR/AVL/AVF.
 - [ ] Download a small subset locally and inspect the **metadata CSV**:
   - record ID column name
-  - patient ID column (or confirm one-record-per-patient, set `null`)
+  - patient ID column (or confirm one-record-per-patient, set `null`) — **and do not read "there is no column" as "one record per patient"**. Compare the record count against the patient count the paper or landing page states; if they differ, the grouping exists and is merely unshipped, and `null` is a leak. Recover it from per-record demographics if any ship (`apnea_ecg`), or from the waveforms themselves (`szdb`: median-beat correlation against each record's own split-half self-control, validated against *two* counts the paper states)
   - signal-path column(s) per sampling rate — note any **prefix** that must be prepended (cf. Chapman's `ECGData/`)
   - label column name and **format** (`single` / `comma_separated` / `dict_string` / `json`)
 - [ ] Decide stratification: `direct`, `superclass_mapping` (needs a mapping CSV), or `custom_function` (needs a custom splitter — see Phase 3).
@@ -255,6 +255,7 @@ Decide which path applies and do **one**:
       {train,val,test}/fold_<N>.csv   # N is 1-indexed
   ```
 - [ ] Confirm `folds.csv` exists in both versions and that fold CSVs sit under `train/`, `val/`, `test/` — not loose in the version directory. With the default folds 1–8 → train, 9 → val, 10 → test, expect 8 CSVs in `train/` and one each in `val/` and `test/`.
+- [ ] **If the release has fewer records or fewer patients than 10, set `n_folds` in the config rather than passing `--n-folds`.** `StratifiedKFold` and `StratifiedGroupKFold` both raise once `n_splits` exceeds the record count, and `StratifiedGroupKFold` produces *silently empty* folds once it merely exceeds the number of patient groups — so a 5-patient release generates two empty folds at `n_folds=7` and says nothing. `szdb` is the worked case (`n_folds: 5`, one subject per fold). It has to live in the config because `manifest.json` hashes the partition into `fold_digest`, so a user who forgot the flag would get a different digest with no explanation.
 - [ ] Confirm the exported columns match the version, per `_minimal_columns()` in `export.py`:
   - `clean/` — record ID, patient ID (if configured), signal paths, `fold`, `default_split`. Nothing else.
   - `original/` — the same **plus `is_valid` and `quality_issues`**. These two are intentional here; do not "fix" the exporter for them.

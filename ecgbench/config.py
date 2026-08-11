@@ -176,6 +176,23 @@ class DatasetConfig:
     # Splits
     has_predefined_splits: bool = False
     predefined_splits: PredefinedSplitConfig | None = None
+    #: How many folds ``ecgbench splits`` generates for this dataset when the
+    #: ``--n-folds`` flag is not given. Ten everywhere but ``szdb``, and that is
+    #: the point of the field: ten folds is not a free choice on a small release.
+    #: Both ``StratifiedKFold`` and ``StratifiedGroupKFold`` raise outright once
+    #: ``n_splits`` exceeds the record count, and ``StratifiedGroupKFold``
+    #: silently emits *empty* folds once it exceeds the number of patient groups.
+    #: szdb has 7 records from 5 subjects, so its canonical partition is 5 folds
+    #: — one subject each — and a default of 10 would make the plain
+    #: ``ecgbench splits --dataset szdb`` fail with a scikit-learn message naming
+    #: neither the dataset nor the cause.
+    #:
+    #: It lives in the config rather than in a documented flag because the
+    #: partition has to be reproducible from the shipped files alone: the fold
+    #: count is recorded in ``manifest.json`` and feeds the ``fold_digest``, so a
+    #: user who ran the command without the flag would compute a different digest
+    #: and have no way to see why.
+    n_folds: int = 10
 
     # Validation
     validation: ValidationConfig | None = None
@@ -367,6 +384,7 @@ def load_config(dataset_slug: str) -> DatasetConfig:
         stratification=_parse_stratification(raw.get("stratification")),
         has_predefined_splits=raw.get("has_predefined_splits", False),
         predefined_splits=_parse_predefined_splits(raw.get("predefined_splits")),
+        n_folds=int(raw.get("n_folds", 10)),
         validation=_parse_validation(raw.get("validation")),
         labels=_parse_labels(raw.get("labels")),
         publish_fold_csvs=bool(raw.get("publish_fold_csvs", True)),

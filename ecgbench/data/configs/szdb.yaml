@@ -1,0 +1,329 @@
+# ECGBench Config: Post-Ictal Heart Rate Oscillations in Partial Epilepsy
+# ========================================================================
+# https://physionet.org/content/szdb/1.0.0/
+#
+# 7 single-lead ECG recordings — 16.77 hours at 200 Hz — made during continuous
+# EEG/ECG/video epilepsy monitoring of five women with partial epilepsy at Boston's
+# Beth Israel Deaconess Medical Center. The database exists to show one finding:
+# transient 0.01-0.10 Hz heart-rate oscillations, two to six minutes long and up to
+# 41 bpm peak-to-trough, appearing immediately AFTER a seizure. The seizure onset
+# and offset times are what make that analysable, and they ship in a 10-line text
+# file rather than in any annotation.
+#
+# ALL 39 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt, so
+# everything below is an upstream property rather than download damage.
+#
+# SIX THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THERE ARE 7 RECORDS BUT ONLY 5 PATIENTS, AND THE RELEASE SHIPS NO SUBJECT
+#    IDENTIFIER. Not in the headers, not in RECORDS, not in the annotations. The
+#    paper describes "11 partial seizures recorded in five women patients". sz02,
+#    sz03 and sz04 are three recordings of the SAME woman: their median beats
+#    correlate at 0.98-0.999 — sz03 to sz04 at 0.9989, ABOVE either record's own
+#    first-half-to-second-half self-control — where the best cross-subject pair
+#    manages 0.85 and four pairs correlate negatively. That grouping gives exactly
+#    the five subjects the paper states AND exactly the two multi-seizure subjects
+#    it states, and no other five-subject grouping does both. So patient_id_column
+#    is set, folds are grouped, and taking the absent column at face value would
+#    have put one woman in train and in test. See ecgbench/labels/szdb.py
+#    SUBJECT_IDS for the full derivation and verify_subject_grouping() to recheck it.
+#
+# 2. FIVE FOLDS, NOT TEN — see n_folds below. Seven records over five subjects
+#    cannot make ten, and this is the only dataset in ECGBench that says so in its
+#    config rather than needing a flag.
+#
+# 3. THE SEIZURE TIMES ARE NOT ANNOTATIONS. They live in `times.seize`, one
+#    `<record> <hh:mm:ss> <hh:mm:ss>` line per seizure, read from simultaneous EEG
+#    by an electroencephalographer blinded to the heart-rate analysis. The EEG was
+#    never released, so they cannot be checked against their source. THE FILE HOLDS
+#    10 SEIZURES; THE PAPER DESCRIBES 11 — the shortest listed is 25 s and the paper
+#    says the shortest was 15 s, so one seizure has no released interval and nothing
+#    in the release explains the omission. ecgbench.labels.szdb exposes them as
+#    n_seizures / seizure_starts_secs / seizure_ends_secs.
+#
+# 4. THE SAMPLES ARE 8-BIT, WHATEVER THE HEADERS SAY. Every header declares an ADC
+#    resolution of 12, but the values span exactly 256 levels, [-100, +155] adu, and
+#    four of the seven records (sz03, sz04, sz06, sz07) sit at BOTH rails for
+#    hundreds of samples. The rail in millivolts depends on the record: gain is 25
+#    adu/mV in five records and 10 in sz05 and sz06, so it is [-4.0, +6.2] mV for the
+#    former and [-10.0, +15.5] mV for the latter. See amplitude_range_mv.
+#
+# 5. THE BEAT ANNOTATIONS ARE UNAUDITED MACHINE OUTPUT AND OPEN WITH A WARM-UP.
+#    ANNOTATORS says "unaudited beat annotations from an automated detector", and
+#    the `.ari` extension names it (ARISTOTLE) — every audited MIT-BIH database in
+#    this catalogue uses `.atr` instead. EVERY RECORD BEGINS WITH EXACTLY 50 `?`
+#    (WFDB "Learning") ANNOTATIONS, 350 in all, always annotations 0-49, covering the
+#    first 42-51 s: QRS detections the detector had not yet classified, not beats it
+#    found unclassifiable. Do not train a beat classifier on any of it.
+#
+# 6. `s` IS ST CHANGE, NOT A BEAT. 74 `s` annotations delimit 37 ST episodes through
+#    their aux_note — (ST0+ / (ST0- and their closes. Counting them as beats would
+#    inflate every beat total and put a non-beat into the AAMI reduction. Burden is
+#    very uneven: sz02 holds 24 depression episodes over 335.6 s, sz06 a single one
+#    lasting 826.4 s, sz04 none. Separately, sz02 carries the release's ONLY rhythm
+#    annotation — 17.4 s of atrial fibrillation ending 25 s before its second seizure.
+#
+# ONE UNEXPLAINED ANOMALY, RECORDED SO NOBODY REDISCOVERS IT: sz07 alone carries a
+# non-zero `num` field on 8,768 of its 8,892 annotations, spanning the full signed
+# byte range. It correlates with neither ST deviation at J+60 to J+120 ms
+# (|r| <= 0.18) nor the preceding RR interval (r = -0.05), nothing in the release
+# documents it, and the other six records leave `num` at 0 throughout. The label
+# loader ignores it.
+
+name: "Post-Ictal Heart Rate Oscillations in Partial Epilepsy"
+slug: "szdb"
+version: "1.0.0"
+url: "https://physionet.org/content/szdb/1.0.0/"
+download_url: null  # SZDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  Seven single-lead ECG recordings, 1.50 h to 3.77 h each and 16.77 h in total,
+  digitised at 200 Hz from continuous EEG/ECG/video epilepsy monitoring of five
+  women aged 31 to 48 with partial seizures of frontal or temporal origin and no
+  clinical evidence of cardiac disease, recorded at Beth Israel Deaconess Medical
+  Center under a protocol approved by its Committee on Clinical Investigations.
+  The accompanying paper reports transient low-frequency heart-rate oscillations
+  (0.01-0.10 Hz, two to six minutes long, 15 to 41 bpm peak-to-trough) appearing
+  immediately after five of 11 recorded seizures, one in each of the five
+  patients, and absent from the pre-ictal period of those same seizures. The
+  shipped `times.seize` file gives onset and offset for 10 of those seizures, read
+  from simultaneous EEG by an electroencephalographer blinded to the heart-rate
+  analysis; the EEG itself was not released. Each record also carries an
+  uncorrected automated beat annotation file — 73,843 detections, of which 350 are
+  the detector's learning phase, 183 ventricular and 196 supraventricular — plus
+  37 ST-change episodes and, in one record, 17.4 s of annotated atrial
+  fibrillation. The release ships no subject identifier and no per-record
+  demographics; the five-subject grouping ECGBench splits on is reconstructed from
+  beat morphology and validated against the two counts the paper states.
+citation: >
+  Al-Aweel IC, Krishnamurthy KB, Hausdorff JM, Mietus JE, Ives JR, Blum AS,
+  Schomer DL, Goldberger AL. Post-Ictal Heart Rate Oscillations in Partial
+  Epilepsy. Neurology 53(7):1590-1592 (1999 October 22).
+  PhysioNet additionally asks for: Goldberger AL, Amaral LAN, Glass L, Hausdorff
+  JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank,
+  PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C2QC72"
+
+creators:
+  - type: Organization
+    name: "Beth Israel Deaconess Medical Center / Harvard Medical School"
+    url: "https://physionet.org/content/szdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every header declares a real gain — 25 adu/mV in five records, 10 in sz05 and
+# sz06 — and units of mV, so wfdb returns millivolts and nothing needs scaling.
+# This is NOT the afdb/chfdb case of a `0` gain falling back to wfdb's default.
+signal_unit_scale: 1.0
+leads: 1
+# "ECG" in all 7 current headers, and that is all the release says: no electrode
+# placement is stated anywhere, so ECGDataset(leads=["ECG"]) selects the one
+# channel there is rather than a known anatomical lead. The paper says only
+# "continuous single-lead ECG signals".
+#
+# Read from the current `.hea` files. The 7 superseded `.hea-` copies shipped
+# beside them describe the channel as "column 1", so a reader pointed at those
+# gets an unnamed channel — which is why scan_records() drives off RECORDS.
+lead_names: ["ECG"]
+# Nominal: the MEDIAN length. Records are NOT uniform — 1,079,998 samples (1.500 h,
+# sz01 and sz04) to 2,711,998 (3.767 h, sz03). The other lengths are 1,080,006
+# (sz05), 1,439,998 (sz07), 2,159,998 (sz06) and 2,519,998 (sz02).
+duration_seconds: 7199.99
+sampling_rates: [200]
+default_sampling_rate: 200
+
+# --- Folds ---
+# FIVE, AND THIS IS THE ONLY DATASET IN ECGBENCH THAT CHANGES IT. Seven records
+# from five subjects cannot make ten folds. StratifiedGroupKFold raises outright
+# once n_splits exceeds the record count ("Cannot have number of splits n_splits=10
+# greater than the number of samples: n_samples=7") and, worse, emits silently
+# EMPTY folds once n_splits merely exceeds the number of groups — n_folds=7 here
+# produces two empty folds without a word. Five folds puts exactly one subject in
+# each, which is the leave-one-subject-out structure this database wants anyway.
+#
+# With the default mapping derived from n_folds, that is train = folds 1-3, val =
+# fold 4, test = fold 5: five records to train on, one to validate on, one to test
+# on. It lives here rather than in a documented `--n-folds 5` because manifest.json
+# records the fold count and hashes the partition into fold_digest, so a user who
+# ran the plain command would get a different digest and no explanation.
+n_folds: 5
+
+# --- File Structure ---
+# No metadata file ships in any form. The headers, the .ari annotations and the
+# 10-line times.seize file are the whole of it. SZDBSplitter builds this CSV on
+# first run via ecgbench.labels.szdb. The validation engine re-reads it from disk,
+# so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "sz01" ... "sz07", which
+# are not all-digit, so pandas keeps them as strings and the CSV round trip cannot
+# destroy the zero. export_splits verifies this.
+zero_padded_identifiers: false
+# SET, AND RECONSTRUCTED — the single most consequential line in this file. There
+# is no subject column anywhere in the release, but there are 7 records from 5
+# patients, so `null` would have been the natural reading and a leak: sz02, sz03
+# and sz04 are one woman, and ungrouped folds would put her on both sides of the
+# split. The values are "szdb_subj_1" .. "szdb_subj_5", named so they cannot be
+# mistaken for PhysioNet's own. Derivation and re-check:
+# ecgbench.labels.szdb.SUBJECT_IDS and verify_subject_grouping().
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  200: "signal_path"  # bare record stem, e.g. "sz01" — the tree is flat
+
+# --- Labels ---
+# One value for all 7 records: the cohort the release describes, not something
+# derived from the files. It is here so a user combining this database with a
+# non-epilepsy cohort has a record-level class to join on. It is ALSO the
+# stratification label, which is unusual and is explained in the block below.
+label_column: "cohort_label"
+label_format: "single"
+
+stratification:
+  # Custom, and the label is a CONSTANT. Every fold is one subject, so there is
+  # nothing left to balance, and every candidate axis fails arithmetically over 7
+  # records and 5 folds — StratifiedGroupKFold raises when every class is smaller
+  # than n_folds. Measured: seizure count (1 vs >1) gives 3 subjects against 2,
+  # raises; atrial fibrillation annotated gives 1 against 4, raises, and would be a
+  # class of one record; ST burden gives per-subject counts of 4, 25, 5, 1, 2, so no
+  # cut reaches 5; record length (1.5 h vs longer) gives 3 against 4 and does not
+  # raise, but it is not constant WITHIN subject 2 (1.5 h, 3.5 h, 3.8 h), and an
+  # axis that varies inside a group cannot balance a grouped split.
+  #
+  # A constant is legitimate only because the split is grouped: it reduces
+  # StratifiedGroupKFold to a plain partition of the five subjects. Do not read the
+  # fold layout as balanced on anything. See
+  # ecgbench.labels.szdb.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # DELIBERATELY EMPTY, like afdb, chfdb, nsrdb, ptbdb and challenge2021: length
+  # varies legitimately and by a lot — 1.500 h to 3.767 h, a factor of 2.5 — so any
+  # single threshold would drop sound records as truncated. Omitting the rate
+  # disables the check rather than making it fire; `truncated_signal` stays in the
+  # list below only so a future re-release with uniform lengths needs one line here.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # THE UNION OF TWO DIFFERENT RAILS, because the gain is not the same in every
+  # record. The samples are 8-bit — 256 levels, [-100, +155] adu, whatever the
+  # headers' declared resolution of 12 says — with adc_zero and baseline both 0. At
+  # the gain of 25 adu/mV that five records use, that rail is [-4.0, +6.2] mV; at
+  # the 10 adu/mV of sz05 and sz06 it is [-10.0, +15.5] mV. The bound is the wider
+  # of the two, so no record can fail for a rail its own header declares.
+  #
+  # IT IS NOT THEORETICAL: four records ACTUALLY SIT AT BOTH RAILS — sz06 at -100
+  # adu for 194 samples and +155 for 17, sz07 for 66 and 134, sz04 for 23 and 26,
+  # sz03 for 16 and 6 — so sz06 attains exactly -10.0 and +15.5 mV. What the check
+  # still guards is a mis-scaled copy, which would exceed this by orders of
+  # magnitude on the first record.
+  #
+  # NO FLOAT32 SLACK IS NEEDED HERE, and that is worth stating because chfdb needed
+  # it. `_load_signal` casts to float32 and compares against the float64 bound, so
+  # an attained rail that float32 rounds AWAY from zero excludes the very record it
+  # was computed from. Both of these are exact in binary — float32(15.5) == 15.5 and
+  # float32(-10.0) == -10.0 — so neither can drift. (The 25-gain rail would have
+  # needed thought: float32(6.2) is 6.19999980926513671875, which rounds toward zero
+  # and is harmless, but it is not the bound anyway.)
+  amplitude_range_mv: [-10.0, 15.5]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/szdb.py parses times.seize into per-record seizure
+# onsets, offsets and durations, counts the detector's beats per symbol and reduces
+# them to the AAMI EC57 five classes (folding the 50-per-record `?` learning phase
+# into Q), pairs the `s` markers into ST elevation and depression episodes, turns
+# the two `+` markers into seconds of annotated atrial fibrillation, checks the
+# annotated span against the record length, summarises whole-record HRV, and
+# attaches the reconstructed subject_id. There is no source CSV to point at — the
+# headers, the annotation files and times.seize are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "epilepsy"
+    - "partial seizure"
+    - "post-ictal"
+    - "heart rate oscillations"
+    - "heart rate variability"
+    - "neuroautonomic instability"
+    - "beat annotations"
+    - "ST change"
+    - "single-lead"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    Seven single-lead ECG recordings made during continuous EEG/ECG/video epilepsy
+    monitoring of five women aged 31 to 48 with partial seizures of frontal or
+    temporal origin, with or without secondary generalisation, and without clinical
+    evidence of cardiac disease, at Beth Israel Deaconess Medical Center in Boston
+    under a protocol approved by its Committee on Clinical Investigations. The ECG
+    was sampled at 200 Hz and stored at 8-bit resolution spanning 256 levels; the
+    declared amplifier gain is 25 adu/mV in five records and 10 adu/mV in two.
+    Records run 1.50 h to 3.77 h, 16.77 h in total. Seizure onset and offset were
+    identified visually to the nearest 0.1 s from the simultaneous EEG by an
+    experienced electroencephalographer blinded to the heart-rate variability
+    analysis, and ship as 10 intervals in a plain text file; the paper describes 11
+    seizures, so one has no released interval, and the EEG and video recordings
+    themselves were not released. Beat annotations were produced by a version of the
+    authors' commercial arrhythmia analysis software and were never manually
+    corrected: 73,843 detections in all, of which the first 50 of every record are
+    the detector's learning phase. The release additionally carries 74 ST-change
+    markers delimiting 37 episodes and, in one record only, two rhythm markers
+    bounding 17.4 s of atrial fibrillation. No subject identifier, age, sex or
+    clinical variable ships per record.
+  rai_data_biases: >
+    This is five patients. Nothing derived from it generalises, and it is far too
+    small to train on: the entire release is 7 recordings, and three of those 7 are
+    the same woman, so a naive record-level split trains and tests on one person.
+    The cohort is homogeneous by design and narrow in every direction — all female,
+    all aged 31 to 48, all with partial epilepsy from frontal or temporal foci, all
+    monitored at one hospital, all without clinical cardiac disease — so there is no
+    negative class, no control cohort, and no evidence here about men, children,
+    generalised epilepsy or patients with cardiac comorbidity. The phenomenon the
+    database was published for is itself a minority event: post-ictal oscillations
+    followed 5 of the 11 seizures, one per patient, and the paper is explicit that
+    it is a preliminary report on a heterogeneous group. Every beat, ectopy and
+    heart-rate-variability figure comes from an automated detector whose output was
+    never audited, and the 50-detection learning phase at the start of each record
+    is unclassified by construction. Seizure times rest on a single reader's visual
+    EEG interpretation with no released source to check them against, and one of the
+    11 seizures has no interval at all. The signals are 8-bit and four of the seven
+    records clip at both rails, so amplitude-derived features are distorted at the
+    extremes; three records are, in addition, recorded at a different amplifier gain
+    from the other four. The recordings date from 1998, are single-lead with no
+    stated electrode placement, and were made on patients undergoing inpatient
+    monitoring — typically with antiepileptic medication being withdrawn to provoke
+    seizures, a state that itself alters autonomic tone and is not documented per
+    record.
+  rai_personal_sensitive_info: >
+    De-identified, and unusually bare: the headers carry no comment lines at all, so
+    there is no age, no sex, no clinical description and no start date or time — the
+    only per-record fields are the record name, the sampling rate, the gain and the
+    signal length. The record names are the sequential labels sz01 to sz07. No
+    subject identifier ships, which is why ECGBench reconstructs the five-subject
+    grouping from beat morphology; the resulting `szdb_subj_1` to `szdb_subj_5`
+    values are ECGBench's own and correspond to no published identifier. The paper
+    states the cohort is five women aged 31 to 48 and gives an age for three of them
+    in its figure legends (37, 48 and 46) without saying which recording each
+    belongs to, so no age is attached to any record here. The cohort is nonetheless
+    small and clinically distinctive — five women with drug-resistant partial
+    epilepsy undergoing inpatient video-EEG monitoring at one named hospital in the
+    late 1990s — which is worth stating plainly even though nothing in the release
+    narrows it further. Seizure onset times are clinical events, but they are
+    offsets into an undated recording and cannot be tied to a calendar.

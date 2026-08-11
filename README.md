@@ -335,6 +335,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
 | `apnea_ecg` | **`ECG` — one channel, and the second dataset here that is not called `I`.** All 70 headers name the single overnight channel `ECG`, and the release documents no electrode placement anywhere — not on the landing page, not in `annotations.html`, not in `additional-information.txt`. The Holter montage makes a modified chest lead the likely guess, but a guess is what naming it `II` or `V2` would ship, so it stays a channel position |
 | `ltstdb` | **`ECG, ECG` in 22 of 86 records, and 11 further layouts in the other 64** — the only dataset here where the lead **count** varies as well as the names: 68 records store two signals and 18 store three. The modal layout is the 22 records whose headers say "Electrode locations were not recorded", so `leads=["ECG"]` returns signal 0 for those and **no name reaches signal 1**. No lead is in all 86 (MLIII 29, V4 27), and `V4/MLIII` and `MLIII/V4` are both present, 20 records and 6. See below |
+| `szdb` | **`ECG` — one channel, and the third here that is not called `I`.** All 7 headers name the single channel `ECG`, and the paper says only "continuous single-lead ECG signals" — no electrode placement anywhere, so it is a channel position. Two quirks specific to this release: the 7 superseded `.hea-` copies describe it as `column 1` instead, so `lead_names` had to come from the current headers; and the **ADC gain differs between records** — 25 adu/mV in five, 10 in `sz05` and `sz06` — which moves the 8-bit rail from [−4.0, +6.2] mV to [−10.0, +15.5] mV |
 | `ecgiddb` | **`ECG I`, `ECG I filtered` — two channels holding ONE lead.** Identical in all 310 headers, raw first. Both are Lead I from limb clamps; channel 1 is the author's own offline preprocessing of channel 0 (level-9 `db8` wavelet baseline removal, adaptive 50 Hz bandstop, 5th-order Butterworth lowpass at 40 Hz), and it is zero-phase, so the two are sample-aligned. `config.leads` is 2 because that is the tensor shape; the catalogue says 1 electrode pair. Select `leads=["ECG I"]` or a model gets the same lead twice — the same trap as `wctecgdb`, which ships every one of its 37 channels raw *and* filtered |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
@@ -953,6 +954,27 @@ annotations stop at 25–59% of the record**: ten unaudited machine-detected R- 
 T-peaks per record and nothing after second 12, which `annotated_fraction` records. The
 thesis's own 195/115 train/test division exists only in prose and is unrecoverable. See
 `examples/load_ecgiddb.py`.
+
+`szdb` is the **smallest dataset in the catalogue** and the second whose patient
+grouping had to be reconstructed. Seven single-lead recordings, 1.50–3.77 h at 200 Hz,
+made during inpatient EEG/ECG/video monitoring of five women with partial epilepsy; the
+database exists to show transient 0.01–0.10 Hz heart-rate oscillations in the two to six
+minutes *after* a seizure. Four things to know. **Its clinical events are not
+annotations** — seizure onset and offset ship in a 10-line `times.seize` text file, read
+from the simultaneous EEG (never released) by a reader blinded to the heart-rate
+analysis, and `n_seizures`/`seizure_starts_secs`/`seizure_ends_secs` are the only
+machine-readable form of them. **The file holds 10 seizures where the paper describes
+11**, so any per-seizure figure here is a figure over 10. **Seven records come from five
+patients and no subject identifier ships**: `sz02`, `sz03` and `sz04` are one woman, and
+`subject_id` is reconstructed from beat morphology — their median beats correlate at up
+to 0.9989, *above* each record's own first-half-to-second-half self-control, where the
+best cross-subject pair reaches 0.85 and four pairs correlate negatively. The grouping
+reproduces both counts the paper states (five patients, exactly two of them with
+multiple seizures), which is what makes it evidence rather than a guess;
+`verify_subject_grouping()` recomputes it. And it is the **only dataset with
+`n_folds: 5`** rather than 10 — seven records over five subjects cannot make ten folds,
+and at seven folds `StratifiedGroupKFold` would emit two empty ones without a word. See
+`examples/load_szdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

@@ -93,6 +93,7 @@ Jekyll site (`docs/_config.yml`, `baseurl: /ECGBench`) with `index.html` renderi
 Three behaviours of `split_dataset()` that aren't obvious from its signature:
 
 - **The default split mapping is derived from `n_folds`, not fixed.** `_split_grouped`/`_split_simple` compute `train=range(1, n_folds-1)`, `val=[n_folds-1]`, `test=[n_folds]`. The documented 8/1/1 layout is just what `n_folds=10` produces; `--n-folds 5` yields train=[1,2,3], val=[4], test=[5].
+- **`n_folds` is a config field, and one dataset uses it.** `run_splits` takes the fold count from `DatasetConfig.n_folds` (default 10) whenever `--n-folds` is not passed. `szdb` sets `5`: it has 7 records from 5 subjects, and both splitters raise once `n_splits` exceeds the record count while `StratifiedGroupKFold` emits *silently empty* folds once it merely exceeds the group count. It lives in the config rather than a documented flag because `manifest.json` records the fold count and hashes the partition into `fold_digest`, so a forgotten flag would produce a different digest with no explanation.
 - **`--n-folds` is silently ignored for predefined splits.** `_split_predefined` takes folds from the dataset's own column and the mapping from YAML, so the flag has no effect on PTB-XL.
 - **Nothing verifies patient grouping or fold balance.** `_split_predefined` partitions only on the fold column yet returns `group_column=config.patient_id_column` in `SplitResult`, so provenance asserts patient-awareness that was never checked. There is no leakage assertion and no stratification-balance measure anywhere in the pipeline. Separately, `random_state` is a default arg (`42`) that `run_splits` never passes, so the seed is neither CLI-configurable nor recorded in any output artefact.
 
@@ -129,7 +130,7 @@ output/<config-slug>/                 # local, from `ecgbench splits`
     croissant.json
 ```
 
-Default split assignment is folds 1–8 → `train`, 9 → `val`, 10 → `test`, so `train/` holds 8 fold CSVs and `val/`, `test/` one each. Fold membership is identical between `original/` and `clean/`; `clean/` is a row subset.
+Default split assignment is folds 1–8 → `train`, 9 → `val`, 10 → `test`, so `train/` holds 8 fold CSVs and `val/`, `test/` one each. That describes `n_folds=10`, which is every dataset but `szdb` — it has 5 folds, so 3 CSVs in `train/` and one each in `val/` and `test/`. Fold membership is identical between `original/` and `clean/`; `clean/` is a row subset.
 
 HuggingFace dataset repo `vlbthambawita/ECGBench` mirrors that tree with the dataset slug as top-level prefix: `<slug>/<version>/<split>/fold_<N>.csv` and `<slug>/<version>/folds.csv`. This is what `ECGDataset(metadata_source="hf")` fetches with `hf_hub_download`.
 

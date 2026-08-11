@@ -98,6 +98,14 @@ stratification:
   mapping_source: null            # CSV file with code->superclass mapping (for superclass_mapping)
   superclass_column: null         # Column in mapping_source that has the superclass
 
+# --- Folds ---
+# How many folds `ecgbench splits` generates when --n-folds is not passed. Leave
+# at 10 unless the release is too small to carry ten: StratifiedKFold and
+# StratifiedGroupKFold both raise once n_splits exceeds the record count, and
+# StratifiedGroupKFold silently produces EMPTY folds once it exceeds the number of
+# patients. Only szdb sets it (5 folds, one per subject, from 7 records).
+n_folds: 10
+
 # --- Predefined Splits ---
 has_predefined_splits: false
 predefined_splits:

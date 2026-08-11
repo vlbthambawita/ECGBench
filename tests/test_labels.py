@@ -10678,3 +10678,384 @@ class TestECGIDDBLabels:
         assert "RECORDS" in message
         assert "Person_NN" in message
         assert "physionet.org/content/ecgiddb" in message
+
+
+class TestSZDBLabels:
+    """Post-Ictal Heart Rate Oscillations: a reconstructed subject id, and seizures.
+
+    Two things distinguish this release from every other MIT-BIH-family database
+    in the catalogue, and both are what these tests pin. Its clinical events —
+    seizure onsets and offsets — are **not annotations**; they ship in a plain
+    text file. And it has no subject identifier at all despite holding three
+    recordings of the same woman, so the grouping ECGBench splits on is a
+    reconstruction that has to be stated as one.
+    """
+
+    HEADER = "{rec} 1 200 {n}\n{rec}.dat 16 {gain} 12 0 26 -30691 0 ECG\n"
+
+    def _tree(self, tmp_path, records, seizures=None):
+        """Write headers, .ari annotations, RECORDS and times.seize.
+
+        The annotation layout mirrors the release: 50 `?` learning detections,
+        then normal beats, then the non-beat markers — `s` carrying the ST
+        episode notes and `+` carrying the rhythm ones.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        for rec, n_samples, gain, extra in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self.HEADER.format(rec=rec, n=n_samples, gain=gain), encoding="utf-8"
+            )
+            learn = np.arange(50) * 100 + 100
+            beats = np.arange(100) * 200 + 10_000
+            samples = list(learn) + list(beats)
+            symbols = ["?"] * 50 + ["N"] * 100
+            notes = [""] * 150
+            for sample, symbol, note in extra:
+                samples.append(sample)
+                symbols.append(symbol)
+                notes.append(note)
+            order = np.argsort(np.asarray(samples), kind="stable")
+            wfdb.wrann(
+                rec, "ari",
+                sample=np.asarray(samples)[order],
+                symbol=[symbols[i] for i in order],
+                subtype=np.zeros(len(samples), dtype=int),
+                aux_note=[notes[i] for i in order],
+                fs=200, write_dir=str(tmp_path),
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in records) + "\n", encoding="utf-8"
+        )
+        (tmp_path / "times.seize").write_text(
+            "".join(f"{r} {a} {b}\n" for r, a, b in (seizures or [])), encoding="utf-8"
+        )
+        return tmp_path
+
+    def test_labels_come_from_headers_annotations_and_times_seize(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("szdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # there is no table to point at
+        assert spec.join_column == "record_name"
+
+    def test_the_annotator_is_ari_which_is_the_unaudited_marker(self):
+        """`.ari`, not `.atr` — and the shipped ANNOTATORS file says so in words.
+
+        Every audited MIT-BIH database in this catalogue uses `.atr`; a future
+        edit that quietly switched this would be claiming a cardiologist reference
+        standard that does not exist. The extension additionally names the
+        detector (ARISTOTLE).
+        """
+        from ecgbench.labels import szdb
+
+        assert szdb.ANNOTATOR == "ari"
+        assert "unaudited" in szdb.__doc__.lower()
+
+    def test_the_subject_grouping_is_reconstructed_and_puts_three_records_together(self):
+        """sz02, sz03 and sz04 are one woman; the release says nothing about it.
+
+        This is the single most consequential fact in the module. Seven records,
+        no subject column anywhere, and a paper describing five patients — so the
+        natural reading of "no column" as "one record per patient" would put the
+        same woman on both sides of the split. The map must therefore hold exactly
+        five subjects over seven records, and every value must be visibly
+        ECGBench's own rather than something a reader could mistake for
+        PhysioNet's.
+        """
+        from ecgbench.labels.szdb import SUBJECT_IDS
+
+        assert len(SUBJECT_IDS) == 7
+        assert len(set(SUBJECT_IDS.values())) == 5
+        assert SUBJECT_IDS["sz02"] == SUBJECT_IDS["sz03"] == SUBJECT_IDS["sz04"]
+        for record in ("sz01", "sz05", "sz06", "sz07"):
+            assert [r for r, s in SUBJECT_IDS.items() if s == SUBJECT_IDS[record]] == [record]
+        # Named so nobody reads them as a shipped identifier.
+        assert all(value.startswith("szdb_subj_") for value in SUBJECT_IDS.values())
+
+    def test_the_grouping_reproduces_both_counts_the_paper_states(self):
+        """Five subjects, and exactly two of them with more than one seizure.
+
+        The second count is what makes the grouping evidence rather than a guess:
+        of the groupings that give five subjects, only one other also gives two
+        multi-seizure subjects ({sz05, sz06} + {sz02, sz03}), and beat morphology
+        rejects that one outright. Every other five-subject grouping implies three
+        or four multi-seizure subjects and contradicts the paper.
+        """
+        import collections
+
+        from ecgbench.labels.szdb import SUBJECT_IDS
+
+        # From the shipped times.seize — 10 intervals over the 7 records.
+        seizures_per_record = {
+            "sz01": 1, "sz02": 2, "sz03": 2, "sz04": 1, "sz05": 1, "sz06": 2, "sz07": 1,
+        }
+        per_subject = collections.Counter()
+        for record, count in seizures_per_record.items():
+            per_subject[SUBJECT_IDS[record]] += count
+
+        assert len(per_subject) == 5
+        assert sum(per_subject.values()) == 10  # the paper describes 11 — see below
+        assert sorted(k for k, v in per_subject.items() if v > 1) == [
+            SUBJECT_IDS["sz02"], SUBJECT_IDS["sz06"]
+        ]
+
+    def test_the_module_records_that_one_of_the_eleven_seizures_is_missing(self):
+        """`times.seize` holds 10 intervals; the paper describes 11 seizures.
+
+        The shortest listed is 25 s and the paper says the shortest was 15 s, so
+        one seizure has no released interval. Pinned in the docstring because any
+        per-seizure figure computed from this database is a figure over 10, and
+        nothing in the release explains the gap.
+        """
+        from ecgbench.labels import szdb
+
+        assert "10 seizures; the paper describes 11" in szdb.__doc__
+
+    def test_a_record_missing_from_the_map_raises_rather_than_becoming_its_own_subject(
+        self, tmp_path
+    ):
+        """A silent default here would be a silent leak.
+
+        A new or renamed record that fell through to "its own group" would look
+        exactly like a correctly grouped one in the fold CSVs, so this is an error.
+        """
+        from ecgbench.labels.szdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [("sz99", 100_000, 25, [])],
+            seizures=[("sz99", "00:01:00", "00:02:00")],
+        )
+        with pytest.raises(KeyError) as excinfo:
+            scan_records(root)
+        assert "SUBJECT_IDS" in str(excinfo.value)
+        assert "verify_subject_grouping" in str(excinfo.value)
+
+    def test_seizure_times_parse_into_offsets_and_survive_as_pipe_joined_lists(
+        self, tmp_path
+    ):
+        """A two-seizure record must stay one row, so the lists are pipe-joined."""
+        from ecgbench.labels.szdb import load_seizure_times, scan_records
+
+        root = self._tree(
+            tmp_path,
+            [("sz02", 200_000, 25, []), ("sz01", 200_000, 25, [])],
+            seizures=[
+                ("sz02", "01:02:43", "01:03:43"),
+                ("sz02", "02:55:51", "02:56:16"),
+                ("sz01", "00:14:36", "00:16:12"),
+            ],
+        )
+        times = load_seizure_times(root)
+        assert times["sz02"] == [(3763.0, 3823.0), (10551.0, 10576.0)]
+        assert times["sz01"] == [(876.0, 972.0)]
+
+        df = scan_records(root).set_index("record_name")
+        assert df.loc["sz02", "n_seizures"] == 2
+        assert df.loc["sz02", "seizure_starts_secs"] == "3763|10551"
+        assert df.loc["sz02", "seizure_durations_secs"] == "60|25"
+        assert df.loc["sz02", "seizure_secs"] == 85.0
+        assert df.loc["sz01", "longest_seizure_secs"] == 96.0
+
+    def test_a_missing_times_seize_names_the_file_and_says_why_it_matters(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.szdb import load_seizure_times
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            load_seizure_times(tmp_path)
+        message = str(excinfo.value)
+        assert "times.seize" in message
+        assert "not in the WFDB annotations" in message
+        assert "physionet.org/content/szdb" in message
+
+    def test_the_fifty_learning_detections_are_counted_but_kept_out_of_beat_columns(
+        self, tmp_path
+    ):
+        """`?` is WFDB "Learning" — a detected QRS, not an unclassifiable beat.
+
+        It has to count towards ``n_beats`` and the RR series, because those are
+        real detections and dropping them would put a 45-second hole at the start
+        of every record's RR series. But it gets its own column, and folding it
+        into AAMI ``Q`` means ``aami_Q`` starts at 50 per record before any
+        genuinely unclassifiable beat — which a reader has to be able to undo.
+        """
+        from ecgbench.labels.szdb import SZDB_AAMI_CLASSES, scan_records
+
+        root = self._tree(
+            tmp_path,
+            [("sz01", 200_000, 25, [(50_000, "Q", "")])],
+            seizures=[("sz01", "00:01:00", "00:02:00")],
+        )
+        row = scan_records(root).set_index("record_name").loc["sz01"]
+
+        assert row["n_learning_beats"] == 50
+        assert row["beat_N"] == 100
+        assert row["beat_Q"] == 1
+        assert row["n_beats"] == 151
+        # 50 learning + 1 genuinely unclassifiable, and the columns let you split
+        # them again.
+        assert row["aami_Q"] == 51
+        assert row["aami_Q"] - row["n_learning_beats"] == row["beat_Q"]
+        assert SZDB_AAMI_CLASSES["?"] == "Q"
+        assert "beat_?" not in row.index
+
+    def test_s_is_st_change_and_never_counts_as_a_beat(self, tmp_path):
+        """Counting `s` as a beat would inflate every beat total.
+
+        It is WFDB symbol 18, ST change, and here it is the only episode layer:
+        pairs of `(ST0+`/`ST0+)` and `(ST0-`/`ST0-)` notes on channel 0.
+        """
+        from ecgbench.labels.szdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [(
+                "sz01", 200_000, 25,
+                [
+                    (20_000, "s", "(ST0-"), (24_000, "s", "ST0-)"),
+                    (30_000, "s", "(ST0+"), (31_000, "s", "ST0+)"),
+                ],
+            )],
+            seizures=[("sz01", "00:01:00", "00:02:00")],
+        )
+        row = scan_records(root).set_index("record_name").loc["sz01"]
+
+        assert row["n_beats"] == 150  # 50 learning + 100 N, and no `s`
+        assert row["n_st_markers"] == 4
+        assert row["n_st_episodes"] == 2
+        assert row["n_st_depression_episodes"] == 1
+        assert row["n_st_elevation_episodes"] == 1
+        assert row["st_depression_secs"] == pytest.approx(20.0)  # 4,000 samples / 200
+        assert row["st_elevation_secs"] == pytest.approx(5.0)
+        assert row["longest_st_episode_secs"] == pytest.approx(20.0)
+        assert row["n_st_unclosed"] == 0
+
+    def test_an_unclosed_st_episode_is_reported_rather_than_silently_paired(
+        self, tmp_path
+    ):
+        """All 37 shipped episodes are well formed, so a count here means a re-release."""
+        from ecgbench.labels.szdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [("sz01", 200_000, 25, [(20_000, "s", "(ST0-")])],
+            seizures=[("sz01", "00:01:00", "00:02:00")],
+        )
+        row = scan_records(root).set_index("record_name").loc["sz01"]
+        assert row["n_st_episodes"] == 0
+        assert row["n_st_unclosed"] == 1
+
+    def test_no_rhythm_annotation_is_not_evidence_of_no_atrial_fibrillation(
+        self, tmp_path
+    ):
+        """Only one of the seven records carries any `+` marker at all.
+
+        For the other six, ``af_secs`` of 0.0 means "never assessed". The column
+        that distinguishes them is ``has_rhythm_annotation``, and the spelling is
+        `(AFIB` here where chfdb uses `(AF` — the same rhythm, a different
+        annotator, which is why it is a per-dataset constant.
+        """
+        from ecgbench.labels.szdb import AF_RHYTHM, scan_records
+
+        assert AF_RHYTHM == "(AFIB"
+        root = self._tree(
+            tmp_path,
+            [
+                ("sz02", 200_000, 25, [(20_000, "+", "(AFIB"), (24_000, "+", "(N")]),
+                ("sz01", 200_000, 25, []),
+            ],
+            seizures=[("sz02", "00:01:00", "00:02:00"), ("sz01", "00:01:00", "00:02:00")],
+        )
+        df = scan_records(root).set_index("record_name")
+
+        assert bool(df.loc["sz02", "has_rhythm_annotation"]) is True
+        assert df.loc["sz02", "n_af_episodes"] == 1
+        assert df.loc["sz02", "af_secs"] == pytest.approx(20.0)
+        # Never assessed, not assessed-and-negative.
+        assert bool(df.loc["sz01", "has_rhythm_annotation"]) is False
+        assert df.loc["sz01", "af_secs"] == 0.0
+
+    def test_the_stratification_label_is_a_constant_and_says_why(self):
+        """Every fold is one subject, so there is nothing left to balance.
+
+        A constant is legitimate only because the split is grouped — it reduces
+        StratifiedGroupKFold to a plain partition of the five subjects. The
+        docstring has to carry the rejected axes and their arithmetic, because
+        that is where the next person looks before "improving" this.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.szdb import COHORT_LABEL, attach_stratify_class
+
+        df = pd.DataFrame({"cohort_label": [COHORT_LABEL] * 7})
+        out = attach_stratify_class(df)
+        assert out["stratify_class"].nunique() == 1
+        assert out["stratify_class"].iloc[0] == "partial_epilepsy"
+
+        doc = attach_stratify_class.__doc__ or ""
+        assert "seizure count" in doc
+        assert "atrial fibrillation" in doc
+        assert "record length" in doc
+
+    def test_no_age_or_sex_column_is_invented_from_the_figure_legends(self):
+        """The paper gives three ages; the release ties none of them to a record.
+
+        The headers here carry no comment lines whatsoever — not even the `# 32 M`
+        that nsrdb manages — so attaching an age from the paper's figure legends
+        would attach a real person's age to the wrong recording.
+        """
+        from ecgbench.labels import szdb
+
+        assert "no demographics at all" in szdb.__doc__
+        assert "age" not in szdb.BEAT_NAMES
+
+    def test_records_come_from_the_shipped_records_file_not_a_glob(self, tmp_path):
+        """The 7 superseded `.hea-` copies must not enter the partition.
+
+        They are not cosmetic: they describe the channel as "column 1" where the
+        current headers name it "ECG", so a reader pointed at them loses
+        ``ECGDataset(leads=["ECG"])`` entirely.
+        """
+        from ecgbench.labels.szdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [("sz01", 200_000, 25, [])],
+            seizures=[("sz01", "00:01:00", "00:02:00")],
+        )
+        (root / "sz01.hea-").write_text(
+            "sz01 1 200 200000\nsz01.dat 16 25 12 0 26 -30691 0 column 1\n", encoding="utf-8"
+        )
+        df = scan_records(root)
+        assert list(df["record_name"]) == ["sz01"]
+        assert df.loc[0, "lead_names"] == "ECG"
+
+    def test_a_missing_records_file_names_the_dataset_root(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.szdb import scan_records
+
+        (tmp_path / "times.seize").write_text("", encoding="utf-8")
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            scan_records(tmp_path)
+        message = str(excinfo.value)
+        assert "RECORDS" in message
+        assert "times.seize" in message
+        assert "physionet.org/content/szdb" in message
+
+    def test_the_verifier_exists_and_is_not_called_at_load_time(self):
+        """The grouping must be re-checkable, but not by re-reading 16.8 h per load."""
+        import inspect
+
+        from ecgbench.labels import szdb
+
+        assert "rdrecord" in inspect.getsource(szdb.verify_subject_grouping)
+        loads = inspect.getsource(szdb.scan_records) + inspect.getsource(
+            szdb.summarise_annotations
+        )
+        assert "rdrecord" not in loads
+        # The `#:` block above SUBJECT_IDS is a Sphinx comment, not a runtime
+        # __doc__, so the pointer to the verifier is checked in the source.
+        assert "verify_subject_grouping" in inspect.getsource(szdb)

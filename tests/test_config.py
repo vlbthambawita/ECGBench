@@ -2667,3 +2667,111 @@ def test_load_ecgiddb_config():
     from ecgbench.labels import _custom_loaders
 
     assert "ecgiddb" in _custom_loaders()
+
+
+def test_load_szdb_config():
+    """Post-Ictal Heart Rate Oscillations: 7 records, 5 reconstructed subjects, 5 folds."""
+    config = load_config("szdb")
+    assert config.slug == "szdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a REAL gain — 25 adu/mV in five records, 10 in sz05 and
+    # sz06 — and units of mV, so wfdb returns millivolts and nothing needs
+    # rescaling. This is NOT the afdb/chfdb case of a `0` gain falling back to
+    # wfdb's 200 adu/mV default.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 1
+    # A single channel described only as "ECG" in all 7 current headers. The
+    # release states no electrode placement anywhere, so this is a channel
+    # position, not a named anatomical lead. The 7 superseded `.hea-` copies call
+    # it "column 1" instead, which is why lead_names was read from the `.hea`.
+    assert config.lead_names == ["ECG"]
+    assert config.sampling_rates == [200]
+    assert config.default_sampling_rate == 200
+    assert config.signal_path_columns == {200: "signal_path"}
+    # No metadata ships in any form: SZDBSplitter generates this from the headers,
+    # the .ari annotations and times.seize.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # SET, AND RECONSTRUCTED — the release ships no subject column, but the 7
+    # records come from 5 patients and sz02/sz03/sz04 are the same woman. `null`
+    # here would put her in train and in test. See test_labels.py::TestSZDBLabels.
+    assert config.patient_id_column == "subject_id"
+    # One layout in all 7 headers, so neither per-record lead mechanism applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "sz01".."sz07" — not all-digit, so unlike afdb ("00735")
+    # the CSV round-trip cannot strip the zero.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "cohort_label"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_szdb_is_the_only_dataset_that_does_not_take_ten_folds():
+    """7 records from 5 subjects cannot make 10 folds, and the config says so.
+
+    Both splitters raise once ``n_splits`` exceeds the record count, and
+    ``StratifiedGroupKFold`` emits silently EMPTY folds once it merely exceeds the
+    number of groups. Five folds puts exactly one subject in each. This is pinned
+    because the failure mode of getting it wrong is a scikit-learn message naming
+    neither the dataset nor the cause — or, worse, no message at all.
+    """
+    from ecgbench.config import list_available_configs
+
+    assert load_config("szdb").n_folds == 5
+    others = {s: load_config(s).n_folds for s in list_available_configs() if s != "szdb"}
+    assert set(others.values()) == {10}, f"unexpected n_folds: {others}"
+
+
+def test_n_folds_defaults_to_ten_when_a_config_omits_it():
+    """Every config but szdb omits the key, so the dataclass default is the value.
+
+    Asserted on the field rather than through a YAML round trip because it is the
+    default that keeps the other 44 datasets on ten folds — the test above checks
+    that they actually arrive there.
+    """
+    from ecgbench.config import DatasetConfig
+
+    assert DatasetConfig.__dataclass_fields__["n_folds"].default == 10
+
+
+def test_szdb_disables_the_truncation_check_because_length_varies():
+    """Records run 1,079,998 to 2,711,998 samples (1.500 h to 3.767 h).
+
+    A factor of 2.5, so any single ``expected_samples`` threshold would drop sound
+    records as truncated. Omitting the rate disables the check rather than making
+    it fire — the same escape hatch afdb, chfdb, nsrdb, ptbdb and challenge2021
+    use — and ``truncated_signal`` stays in the check list so a re-release with
+    uniform lengths needs one line here rather than two.
+    """
+    config = load_config("szdb")
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_szdb_amplitude_bound_is_the_union_of_two_different_rails():
+    """The samples are 8-bit and the gain is not the same in every record.
+
+    Values span exactly 256 levels, [-100, +155] adu, whatever the headers'
+    declared resolution of 12 says. At the 25 adu/mV of five records that rail is
+    [-4.0, +6.2] mV; at the 10 adu/mV of sz05 and sz06 it is [-10.0, +15.5] mV.
+    The bound is the wider, so no record can fail for a rail its own header
+    declares — and sz06 ATTAINS both ends, so this is not theoretical.
+
+    Unlike chfdb's, neither bound needs float32 slack: 15.5 and -10.0 are both
+    exact in binary, so the float32 cast in ``_load_signal`` cannot push an
+    attained rail past a float64 bound.
+    """
+    import numpy as np
+
+    config = load_config("szdb")
+    assert config.validation is not None
+    assert config.validation.amplitude_range_mv == (-10.0, 15.5)
+    assert float(np.float32(15.5)) == 15.5
+    assert float(np.float32(-10.0)) == -10.0

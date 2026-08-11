@@ -5975,3 +5975,196 @@ class TestECGIDDBSplitter:
         assert len(person_01) == 4
         assert person_01.nunique() == 1
         assert result.group_column == "subject_id"
+
+
+class TestSZDBSplitter:
+    """7 records, 5 reconstructed subjects, 5 folds — one subject per fold."""
+
+    HEADER = "{rec} 1 200 {n}\n{rec}.dat 16 {gain} 12 0 26 -30691 0 ECG\n"
+
+    def _tree(self, tmp_path, records, n_samples=200_000):
+        """records: [(rec, gain, n_seizures)] -> headers, .ari each, RECORDS, times.seize."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        lines = []
+        for rec, gain, n_seizures in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self.HEADER.format(rec=rec, n=n_samples, gain=gain), encoding="utf-8"
+            )
+            # The release's own shape: 50 `?` learning detections, then beats.
+            learn = np.arange(50) * 100 + 100
+            beats = np.arange(100) * 200 + 10_000
+            wfdb.wrann(
+                rec, "ari",
+                sample=np.concatenate([learn, beats]),
+                symbol=["?"] * 50 + ["N"] * 100,
+                subtype=np.zeros(150, dtype=int),
+                aux_note=[""] * 150,
+                fs=200, write_dir=str(tmp_path),
+            )
+            for i in range(n_seizures):
+                lines.append(f"{rec} 00:{10 + i * 5:02d}:00 00:{11 + i * 5:02d}:30\n")
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in records) + "\n", encoding="utf-8"
+        )
+        (tmp_path / "times.seize").write_text("".join(lines), encoding="utf-8")
+        return tmp_path
+
+    def _records(self):
+        """The real seven, with their real gains and seizure counts."""
+        return [
+            ("sz01", 25, 1), ("sz02", 25, 2), ("sz03", 25, 2), ("sz04", 25, 1),
+            ("sz05", 10, 1), ("sz06", 10, 2), ("sz07", 25, 1),
+        ]
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="szdb", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="subject_id",
+            signal_path_columns={200: "signal_path"}, default_sampling_rate=200,
+            label_column="cohort_label", leads=1, zero_padded_identifiers=False,
+            n_folds=5,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        assert isinstance(get_splitter("szdb"), SZDBSplitter)
+
+    def test_load_metadata_generates_and_then_reuses_the_csv(self, tmp_path, sample_config):
+        """validate_dataset re-reads this file from disk, so it must be written."""
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = self._config(sample_config)
+        df = SZDBSplitter().load_metadata(root, config)
+
+        assert len(df) == 7
+        assert (root / "ecgbench_metadata.csv").exists()
+        assert df["subject_id"].nunique() == 5
+
+        # Second call reads the cache, and record ids and the pipe-joined seizure
+        # lists must survive the round trip as strings.
+        again = SZDBSplitter().load_metadata(root, config)
+        assert list(again["record_name"]) == list(df["record_name"])
+        assert again["record_name"].map(type).eq(str).all()
+        assert again["seizure_starts_secs"].map(type).eq(str).all()
+
+    def test_subjects_never_span_folds(self, tmp_path, sample_config):
+        """The whole point of reconstructing the subject id.
+
+        sz02, sz03 and sz04 are one woman. Ungrouped, they would land in different
+        folds and put her on both sides of the split — and nothing downstream
+        checks for it.
+        """
+        from ecgbench.splitting import split_dataset
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = self._config(sample_config)
+        splitter = SZDBSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+        assert result.n_folds == 5
+        assert result.default_train_folds == [1, 2, 3]
+        assert result.default_val_folds == [4]
+        assert result.default_test_folds == [5]
+
+        fold_of = {}
+        for fold, frame in result.folds.items():
+            assert len(frame) > 0, f"fold {fold} is empty"
+            for subject in frame["subject_id"]:
+                assert fold_of.setdefault(subject, fold) == fold
+        # Five subjects over five folds: exactly one subject each.
+        assert len(fold_of) == 5
+        assert sorted(fold_of.values()) == [1, 2, 3, 4, 5]
+        assert sum(len(f) for f in result.folds.values()) == 7
+
+    def test_ten_folds_is_impossible_and_the_config_is_what_prevents_it(
+        self, tmp_path, sample_config
+    ):
+        """Seven records cannot make ten folds, and the failure is scikit-learn's.
+
+        Pinned because the message names neither the dataset nor the cause, and
+        because ``n_folds: 5`` in szdb.yaml is the only thing standing between a
+        user and it.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.splitting import split_dataset
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = self._config(sample_config)
+        splitter = SZDBSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        with pytest.raises(ValueError, match="n_splits"):
+            split_dataset(df, labels, config, n_folds=10)
+
+        assert load_config("szdb").n_folds == 5
+
+    def test_seven_folds_would_come_out_empty_without_raising(
+        self, tmp_path, sample_config
+    ):
+        """The silent half of the problem, and the reason for the warning.
+
+        ``n_splits`` of 7 clears the record count, so nothing raises — but
+        ``StratifiedGroupKFold`` keeps groups intact, and there are only 5 groups,
+        so two folds are empty. An empty fold exports an empty CSV and nobody
+        notices.
+        """
+        from dataclasses import replace
+
+        from ecgbench.splitting import split_dataset
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = replace(self._config(sample_config), n_folds=7)
+        splitter = SZDBSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=7)
+        assert sum(1 for frame in result.folds.values() if len(frame) == 0) == 2
+
+    def test_the_splitter_warns_when_folds_outnumber_subjects(
+        self, tmp_path, sample_config, caplog
+    ):
+        from dataclasses import replace
+
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = replace(self._config(sample_config), n_folds=7)
+        splitter = SZDBSplitter()
+        df = splitter.load_metadata(root, config)
+        with caplog.at_level("WARNING"):
+            splitter.get_stratification_labels(df, config)
+        assert "EMPTY" in caplog.text
+
+    def test_the_stratification_label_is_constant(self, tmp_path, sample_config):
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        root = self._tree(tmp_path, self._records())
+        config = self._config(sample_config)
+        splitter = SZDBSplitter()
+        labels = splitter.get_stratification_labels(splitter.load_metadata(root, config), config)
+        assert labels.nunique() == 1
+        assert labels.iloc[0] == "partial_epilepsy"
+
+    def test_stratification_needs_load_metadata_first(self, sample_config):
+        import pandas as pd
+
+        from ecgbench.splitting.strategies.szdb import SZDBSplitter
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            SZDBSplitter().get_stratification_labels(
+                pd.DataFrame({"record_name": ["sz01"]}), self._config(sample_config)
+            )

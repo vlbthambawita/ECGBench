@@ -1600,6 +1600,31 @@ class TestPerRecordLeadLayouts:
         assert config.alternate_lead_names is None
         assert not {"MLII", "V1", "V5", "II"} & set(config.lead_names)
 
+    def test_szdb_is_the_only_single_channel_holter_and_its_channel_is_a_position(self):
+        """One channel, described only as "ECG", with no electrode placement stated.
+
+        The paper says "continuous single-lead ECG signals" and nothing more, so
+        ``ECGDataset(leads=["ECG"])`` selects the one channel there is rather than
+        a known anatomical lead — the afdb/nsrdb/svdb/chfdb situation, at half the
+        channel count. Stacking it with mitdb by index crosses leads just as those
+        do.
+
+        The wrinkle here matches chfdb's exactly and is why ``lead_names`` was read
+        from the current ``.hea`` files: the 7 superseded ``.hea-`` copies that
+        ship beside them — and are listed in the release's own SHA256SUMS.txt —
+        describe the channel as ``column 1``, so a reader pointed at those loses
+        name-based selection entirely.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("szdb")
+        assert config.lead_names == ["ECG"]
+        assert config.leads == 1
+        assert config.sampling_rates == [200]
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "V5", "II", "ECG1"} & set(config.lead_names)
+
     def test_chfdb_channels_are_positions_and_only_the_current_headers_name_them(self):
         """CHFDB's headers spell ECG1/ECG2 and, like afdb and nsrdb, name no anatomy.
 
