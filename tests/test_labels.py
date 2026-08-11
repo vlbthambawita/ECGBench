@@ -7550,6 +7550,454 @@ class TestEDBLabels:
             scan_records(tmp_path)
 
 
+class TestLTSTDBLabels:
+    """Long-Term ST: three annotators, extremum counting, and a header tree.
+
+    The sibling of ``edb`` a decade later and an order of magnitude longer, with
+    three problems ``edb`` does not have. Its episodes are annotated under **three**
+    detection criteria that disagree by a factor of two, so no count means anything
+    without its criterion. Its episodes are counted at the **extremum** rather than
+    the onset, because 22 of them were already running when the tape started. And
+    its clinical metadata is a two-space-indented tree of 28 fields rather than four
+    free-text lines, whose answers are free text even where they look boolean.
+    """
+
+    HEADER = (
+        "s20021 2 250 18975000 11:00:00 28/02/1984\n"
+        "s20021.dat 212 200/mV 12 0 6 -10121 0 MLIII\n"
+        "s20021.dat 212 200/mV 12 0 -2 -17799 0 V4\n"
+        "#Age: 55  Sex: M\n"
+        "#Comments:\n"
+        "#  An excerpt of this recording is included in the European\n"
+        "#  ST-T Database (record e0113).\n"
+        "#Symptoms during Holter recording: No data\n"
+        "#Diagnoses: \n"
+        "#  Prinzmetal's angina\n"
+        "#Treatment:\n"
+        "#  Medications: \n"
+        "#    Nitrates\n"
+        "#    Verapamil\n"
+        "#  Balloon Angioplasty: No data\n"
+        "#  Coronary Artery bypass Grafting: No\n"
+        "#History: \n"
+        "#  Smoker, hypertriglyceridemia\n"
+        "#  Hypertension: No\n"
+        "#  Left ventricular hypertrophy: Septum 13 mm\n"
+        "#  Previous Myocardial Infarction: Yes, unknown date\n"
+        "#  Intraventricular conduction block: Right bundle branch block\n"
+        "#  Previous tests:\n"
+        "#    ECG stress test: Yes \n"
+        "#      Date: No Data\n"
+        "#      Findings: ST depression V4-6\n"
+        "#    Coronary Arteriography: \n"
+        "#      Left anterior descending coronary artery 75% stenosis\n"
+        "#Holter Recording:\n"
+        "#  Date: 28/02/1984\n"
+        "#  Recorder: Oxford Medilog\n"
+    )
+    HEADER_UNNAMED_LEADS = (
+        "s20391 2 250 18727000 18:01:00 21/03/1992\n"
+        "s20391.dat 212 200/mV 12 0 -10 26176 0 ECG\n"
+        "s20391.dat 212 200/mV 12 0 6 25939 0 ECG\n"
+        "#Age: No data  Sex: No data\n"
+        "#Comments: \n"
+        "#  This record shows numerous shifts in QRS axis.\n"
+        "#  Electrode locations were not recorded.\n"
+        "#Symptoms during Holter recording: None reported\n"
+        "#Diagnoses: \n"
+        "#  Coronary artery disease\n"
+        "#Treatment:\n"
+        "#  Medications: None\n"
+        "#  Balloon Angioplasty: No\n"
+        "#History: \n"
+        "#  Hypertension: Yes\n"
+        "#Holter Recording:\n"
+        "#  Date: 21/03/1992\n"
+        "#  Recorder: No data\n"
+    )
+
+    @staticmethod
+    def _write_st(tmp_path, name, sample, aux, chan, fs=250):
+        """Write the same episode annotations as all three ST annotators.
+
+        The real release differs between them — that is the point of shipping three
+        — but ``summarise_episodes`` reads all three unconditionally, so a fixture
+        exercising the parser has to provide all three.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        for ext in ("sta", "stb", "stc"):
+            wfdb.wrann(
+                name,
+                ext,
+                sample=np.asarray(sample),
+                symbol=["s"] * len(sample),
+                subtype=np.zeros(len(sample), dtype=int),
+                chan=np.asarray(chan),
+                aux_note=list(aux),
+                fs=fs,
+                write_dir=str(tmp_path),
+            )
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("ltstdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # the headers and annotation files are the source
+        assert spec.join_column == "record_name"
+
+    def test_the_documented_grammar_covers_every_annotation_form(self):
+        """Nine forms, transcribed from the release's own ``tables/acodes.png``.
+
+        All 109,670 ST annotations in the 258 shipped files match one of them, and
+        the lead digit inside the text always agrees with the annotation's ``chan``.
+        """
+        from ecgbench.labels.ltstdb import classify_st_aux
+
+        cases = {
+            "GRST1": "global_ref",
+            "LRST0+22": "local_ref",
+            "LRST0-1": "local_ref",
+            "sst1": "shift",
+            "sccst0": "shift",
+            "(st0-120": "episode_start",
+            "(rtst1+90": "episode_start",
+            "ast0-160": "episode_extremum",
+            "artst1+90": "episode_extremum",
+            "st0-90)": "episode_end",
+            "rtst1+80)": "episode_end",
+            "noi0-30": "noise",
+            "(urd2": "unreadable_start",
+            "urd2)": "unreadable_end",
+        }
+        for text, kind in cases.items():
+            assert classify_st_aux(text)[0] == kind, text
+        # `cc` distinguishes a conduction-change shift from an axis shift, and `rt`
+        # a rate-related episode from an ischaemic one. Both are the whole finding.
+        assert classify_st_aux("sccst0")[1].group("cc") == "cc"
+        assert classify_st_aux("sst0")[1].group("cc") is None
+        assert classify_st_aux("(rtst1+90")[1].group("rt") == "rt"
+        assert classify_st_aux("(st1+90")[1].group("rt") is None
+        # Anything else is unrecognised rather than silently bucketed.
+        assert classify_st_aux("(ST0+")[0] is None
+        assert classify_st_aux("")[0] is None
+
+    def test_an_episode_already_running_at_sample_zero_is_still_counted(self, tmp_path):
+        """Counting onsets loses 22 episodes; counting extrema reproduces the .cnt files.
+
+        An episode is an onset, an extremum and an end, and the obvious thing to
+        count is the onset. But 22 episodes across the release were already in
+        progress when the tape started, so they have an extremum and an end and no
+        onset at all. Counting extrema is what the shipped ``.cnt`` summaries do,
+        and matching them in all 258 blocks is the check that these counts are the
+        release's own.
+
+        The duration of such an episode is measured from sample 0, not dropped.
+        """
+        from ecgbench.labels.ltstdb import summarise_episodes
+
+        self._write_st(
+            tmp_path,
+            "s20561",
+            sample=[100, 500, 1000, 1500, 2000],
+            aux=["ast0-300", "st0-90)", "(st0-120", "ast0-260", "st0-80)"],
+            chan=[0, 0, 0, 0, 0],
+        )
+        out = summarise_episodes(tmp_path / "s20561", n_sig=2, sig_len=5000, fs=250)
+
+        # Two extrema -> two episodes, though only one has an onset.
+        assert out["n_ischemic_episodes"] == 2
+        assert out["n_episodes_open_at_start"] == 1
+        assert out["n_unterminated_episodes"] == 0
+        # 0-500 for the head-open one plus 1000-2000 for the complete one.
+        assert out["ischemic_secs"] == pytest.approx((500 + 1000) / 250)
+        assert out["peak_st_deviation_uv"] == 300
+
+    def test_an_episode_still_running_at_the_last_sample_is_closed_there(self, tmp_path):
+        from ecgbench.labels.ltstdb import summarise_episodes
+
+        self._write_st(
+            tmp_path,
+            "s20011",
+            sample=[1000, 2000],
+            aux=["(st1-120", "ast1-400"],
+            chan=[1, 1],
+        )
+        out = summarise_episodes(tmp_path / "s20011", n_sig=2, sig_len=10000, fs=250)
+
+        assert out["n_ischemic_episodes"] == 1
+        assert out["n_unterminated_episodes"] == 1
+        assert out["ischemic_secs"] == pytest.approx((10000 - 1000) / 250)
+        # Signal 1, not signal 0 — the per-lead split follows the lead digit.
+        assert out["n_ischemic_episodes_lead0"] == 0
+        assert out["n_ischemic_episodes_lead1"] == 1
+
+    def test_rate_related_episodes_are_not_ischaemic_ones(self, tmp_path):
+        """``rt`` is the whole difference, and it is the point of the database.
+
+        s20011 holds 20 criterion-A episodes and every one is rate-related; its
+        header says so in as many words. Summing the two into "ST episodes" erases
+        the distinction the annotators met three times a year to agree.
+        """
+        from ecgbench.labels.ltstdb import summarise_episodes
+
+        self._write_st(
+            tmp_path,
+            "s20011",
+            sample=[100, 200, 300, 400, 500, 600],
+            aux=["(rtst0-90", "artst0-150", "rtst0-60)",
+                 "(st1+100", "ast1+300", "st1+70)"],
+            chan=[0, 0, 0, 1, 1, 1],
+        )
+        out = summarise_episodes(tmp_path / "s20011", n_sig=2, sig_len=5000, fs=250)
+
+        assert out["n_rate_related_episodes"] == 1
+        assert out["n_ischemic_episodes"] == 1
+        # Only the ischaemic one reaches the per-lead columns.
+        assert out["n_ischemic_episodes_lead0"] == 0
+        assert out["n_ischemic_episodes_lead1"] == 1
+        # Direction comes from the sign on the extremum, over both kinds.
+        assert out["n_st_elevation_episodes"] == 1
+        assert out["n_st_depression_episodes"] == 1
+        assert out["ischemic_secs"] == pytest.approx((600 - 400) / 250)
+        assert out["rate_related_secs"] == pytest.approx((300 - 100) / 250)
+
+    def test_shifts_noise_and_unreadable_spans_are_the_same_in_all_three_files(
+        self, tmp_path
+    ):
+        """They are marks, not threshold crossings, so they carry no ``_b``/``_c``.
+
+        Across the release the four totals are identical in ``.sta``, ``.stb`` and
+        ``.stc`` — 1,493 axis shifts, 895 conduction-change shifts, 31 noise events
+        and 60 unreadable intervals — which is why they are reported once. Axis and
+        conduction-change shifts are artefact that mimics ischaemia; they are
+        findings about the recording, not about the heart.
+        """
+        from ecgbench.labels.ltstdb import summarise_episodes
+
+        self._write_st(
+            tmp_path,
+            "s20541",
+            sample=[100, 200, 300, 400, 900],
+            aux=["sst0", "sccst1", "noi0-40", "(urd1", "urd1)"],
+            chan=[0, 1, 0, 1, 1],
+        )
+        out = summarise_episodes(tmp_path / "s20541", n_sig=2, sig_len=5000, fs=250)
+
+        assert out["n_axis_shifts"] == 1
+        assert out["n_conduction_change_shifts"] == 1
+        assert out["n_noise_events"] == 1
+        assert out["n_unreadable_intervals"] == 1
+        assert out["unreadable_secs"] == pytest.approx((900 - 400) / 250)
+        # No suffixed variants of these four exist.
+        assert not [k for k in out if k.startswith("n_axis_shifts_")]
+        # The episode counts DO get suffixes, one per annotator.
+        assert {"n_ischemic_episodes", "n_ischemic_episodes_b",
+                "n_ischemic_episodes_c"} <= set(out)
+
+    def test_concurrent_episodes_in_two_leads_are_two_episodes_but_one_span(
+        self, tmp_path
+    ):
+        """``ischemic_secs`` sums the leads and can exceed the record; the union cannot.
+
+        The leads are annotated independently, so the same ischaemia seen in both is
+        two episodes. Anything expressed as a fraction of the recording has to use
+        the union, or a record can be 140% ischaemic.
+        """
+        from ecgbench.labels.ltstdb import summarise_episodes
+
+        # Annotations are stored in sample order, so the two leads interleave.
+        self._write_st(
+            tmp_path,
+            "s30661",
+            sample=[100, 100, 200, 200, 500, 500],
+            aux=["(st0-120", "(st1-120", "ast0-200", "ast1-200",
+                 "st0-60)", "st1-60)"],
+            chan=[0, 1, 0, 1, 0, 1],
+        )
+        out = summarise_episodes(tmp_path / "s30661", n_sig=3, sig_len=1000, fs=250)
+
+        assert out["n_ischemic_episodes"] == 2
+        assert out["ischemic_secs"] == pytest.approx(2 * 400 / 250)
+        assert out["ischemic_secs_any_lead"] == pytest.approx(400 / 250)
+        # A three-signal record gets a lead2 column; a two-signal one gets NaN.
+        assert out["n_ischemic_episodes_lead2"] == 0
+        two = summarise_episodes(tmp_path / "s30661", n_sig=2, sig_len=1000, fs=250)
+        assert np.isnan(two["n_ischemic_episodes_lead2"])
+
+    def test_subject_identity_is_read_off_the_record_name(self):
+        """sXYYYZ: X signals, subject YYY, record Z. 80 subjects over 86 records.
+
+        Unlike edb, this is published rather than reconstructed — the landing page
+        states the rule and four headers restate it in words. It is also why
+        ``patient_id`` is zero-padded: "027" is a substring of "s20271".
+        """
+        from ecgbench.labels.ltstdb import parse_record_name
+
+        assert parse_record_name("s20271") == {
+            "patient_id": "027", "subject_number": 27,
+            "record_number": 1, "name_lead_count": 2,
+        }
+        # The four records of subject 027 differ only in the last digit.
+        assert {parse_record_name(f"s2027{z}")["patient_id"] for z in "1234"} == {"027"}
+        assert parse_record_name("s30801")["name_lead_count"] == 3
+        assert parse_record_name("s30732")["record_number"] == 2
+
+    def test_an_unrecognised_record_name_refuses_rather_than_guessing(self):
+        """A name that does not parse is a patient grouping that cannot be trusted."""
+        from ecgbench.labels.ltstdb import parse_record_name
+
+        for bad in ("s2027", "e0103", "s40271", "s202710"):
+            with pytest.raises(ValueError, match="sXYYYZ"):
+                parse_record_name(bad)
+
+    def test_the_header_tree_is_parsed_into_fields_and_free_text(self, tmp_path):
+        from ecgbench.labels.ltstdb import parse_header_comments
+
+        (tmp_path / "s20021.hea").write_text(self.HEADER)
+        out = parse_header_comments(tmp_path / "s20021.hea")
+
+        assert out["age"] == 55.0
+        assert out["sex"] == "M"
+        assert out["diagnoses"] == "Prinzmetal's angina"
+        # Nested list children are joined, not lost.
+        assert out["medications"] == "Nitrates | Verapamil"
+        assert out["n_medications"] == 2
+        assert out["recorder"] == "Oxford Medilog"
+        # Three levels deep, under History > Previous tests.
+        assert out["coronary_arteriography"].startswith("Left anterior descending")
+        assert out["ecg_stress_test"].startswith("Yes")
+        # Free text directly under a field keeps its place.
+        assert out["history"].startswith("Smoker")
+
+    def test_a_yes_no_field_keeps_its_text_because_the_answers_are_not_boolean(
+        self, tmp_path
+    ):
+        """"Septum 13 mm" and "Right bundle branch block" are both True and neither is "Yes".
+
+        The eleven structured history fields look boolean and are free text. Reducing
+        them is useful; reducing them *only* would throw away the finding. NA means
+        the header said "No data", which is 11 to 45 records depending on the field.
+        """
+        from ecgbench.labels.ltstdb import _yes_no, parse_header_comments
+
+        (tmp_path / "s20021.hea").write_text(self.HEADER)
+        out = parse_header_comments(tmp_path / "s20021.hea")
+
+        assert out["hypertension"] is False
+        assert out["hypertension_text"] == "No"
+        assert out["lv_hypertrophy"] is True
+        assert out["lv_hypertrophy_text"] == "Septum 13 mm"
+        assert out["previous_mi"] is True
+        assert out["previous_mi_text"] == "Yes, unknown date"
+        assert out["intraventricular_conduction_block"] is True
+        assert out["balloon_angioplasty"] is None
+        assert out["balloon_angioplasty_text"] == "No data"
+        assert out["bypass_grafting"] is False
+
+        assert _yes_no("no") is False
+        assert _yes_no("No data") is None
+        assert _yes_no("") is None
+        assert _yes_no("Borderline") is True
+        assert _yes_no("Yes, 1986") is True
+
+    def test_the_european_st_t_cross_reference_survives_the_line_wrap(self, tmp_path):
+        """The sentence exists only after the header's line joins are undone.
+
+        Ten records name the European ST-T record cut from the same tape, and the
+        name is split across two comment lines. Flattened, that reads "European |
+        ST-T Database (record e0113)", which no regex written for the prose matches
+        — so the search runs on a squashed copy. Getting this wrong loses all ten
+        overlap warnings silently.
+        """
+        from ecgbench.labels.ltstdb import parse_header_comments
+
+        (tmp_path / "s20021.hea").write_text(self.HEADER)
+        out = parse_header_comments(tmp_path / "s20021.hea")
+
+        assert out["edb_record"] == "e0113"
+        assert "European | ST-T" in out["comments"]  # the wrap is really there
+        assert out["leads_named"] is True
+
+    def test_unnamed_leads_are_flagged_and_demographics_may_be_absent(self, tmp_path):
+        """22 records say "Electrode locations were not recorded" and mean it."""
+        from ecgbench.labels.ltstdb import parse_header_comments
+
+        (tmp_path / "s20391.hea").write_text(self.HEADER_UNNAMED_LEADS)
+        out = parse_header_comments(tmp_path / "s20391.hea")
+
+        assert out["leads_named"] is False
+        assert np.isnan(out["age"])
+        assert out["sex"] == ""
+        assert out["edb_record"] == ""
+        # "Medications: None" is not a medication.
+        assert out["n_medications"] == 0
+        assert out["hypertension"] is True
+
+    def test_beat_symbols_all_have_an_aami_class(self):
+        """The AAMI table is shared with ``svdb``, so pin that it covers this release.
+
+        ``B`` — bundle branch block, unspecified — is the one to watch: 88,720 of the
+        8,897,780 beats here, and it reduces to N.
+        """
+        from ecgbench.labels.ltstdb import AAMI_CLASSES, BEAT_NAMES, BEAT_SYMBOLS
+
+        assert set(BEAT_NAMES) <= set(BEAT_SYMBOLS)
+        assert set(BEAT_SYMBOLS) <= set(AAMI_CLASSES)
+        assert AAMI_CLASSES["B"] == "N"
+        assert AAMI_CLASSES["a"] == "S"
+
+    def test_a_non_beat_annotation_in_atr_is_reported_not_absorbed(self, tmp_path):
+        """The 86 ``.atr`` files hold beats and nothing else — no ``+``, no ``~``.
+
+        That is unusual for a MIT-BIH-family release and worth noticing if it ever
+        changes, so anything that is not a beat is counted separately rather than
+        quietly excluded from ``n_beats``.
+        """
+        wfdb = pytest.importorskip("wfdb")
+
+        from ecgbench.labels.ltstdb import summarise_beats
+
+        wfdb.wrann(
+            "s20011",
+            "atr",
+            sample=np.array([100, 350, 600, 850]),
+            symbol=["N", "V", "+", "N"],
+            subtype=np.zeros(4, dtype=int),
+            aux_note=["", "", "(N", ""],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+        out = summarise_beats(tmp_path / "s20011", sig_len=1000, fs=250)
+
+        assert out["n_beats"] == 3
+        assert out["n_non_beat_annotations"] == 1
+        assert out["beat_N"] == 2 and out["beat_V"] == 1
+        assert out["aami_N"] == 2 and out["aami_V"] == 1
+        assert out["n_ectopic_beats"] == 1
+        assert out["annotated_fraction"] == pytest.approx((850 - 100) / 1000)
+        # Three beats over 750 samples at 250 Hz -> two RR of 1.5 s -> 40 bpm.
+        assert out["mean_hr_bpm"] == pytest.approx(40.0)
+
+    def test_burden_bands_are_fixed_and_the_zero_case_is_its_own(self):
+        from ecgbench.labels.ltstdb import ISCHEMIC_BURDEN_EDGES, attach_stratify_class
+
+        df = pd.DataFrame({"n_ischemic_episodes": [0, 1, 5, 6, 20, 21, 143]})
+        out = attach_stratify_class(df)
+        assert list(out["ischemic_burden_band"]) == [
+            "none", "1-5", "1-5", "6-20", "6-20", "21+", "21+"
+        ]
+        assert list(out["stratify_class"]) == list(out["ischemic_burden_band"])
+        assert ISCHEMIC_BURDEN_EDGES == (1, 6, 21)
+
+    def test_a_missing_records_file_names_the_dataset_and_where_to_get_it(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.ltstdb import scan_records
+
+        with pytest.raises(LabelSourceMissingError, match="Long-Term ST"):
+            scan_records(tmp_path)
+
+
 class TestCHFDBLabels:
     """BIDMC CHF: unaudited annotations, a constant severity class, sparse rhythm.
 

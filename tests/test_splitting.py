@@ -5210,6 +5210,221 @@ class TestSHDBAFSplitter:
         assert fold_of["066"] == fold_of["118"]
 
 
+class TestLTSTDBSplitter:
+    """86 day-long ST recordings: subject identity in the name, zero-padded.
+
+    The splitting problem here is the opposite of ``stdb``'s. There the release
+    identifies its subjects in no way at all; here it identifies them inside the
+    record name, so the grouping is published rather than inferred — and the
+    identifier it publishes is three zero-padded digits, which a CSV round trip
+    turns into an integer unless the config says otherwise.
+    """
+
+    #: The real multi-record subjects: 027 has four records, 073/074/075 two each.
+    MULTI = {"027": 4, "073": 2, "074": 2, "075": 2}
+
+    def _header(self, rec, n_sig, n_samples, episodes):
+        leads = ["ECG", "ECG"] if n_sig == 2 else ["E-S", "A-S", "A-I"]
+        lines = [f"{rec} {n_sig} 250 {n_samples} 11:00:00 28/02/1984"]
+        for i in range(n_sig):
+            lines.append(f"{rec}.dat 212 200/mV 12 0 6 -101 0 {leads[i]}")
+        lines += [
+            "#Age: 55  Sex: M",
+            "#Comments:",
+            f"#  {episodes} ischaemic episodes.",
+            "#Symptoms during Holter recording: No data",
+            "#Diagnoses: ",
+            "#  Coronary artery disease",
+            "#Treatment:",
+            "#  Medications: None",
+            "#  Balloon Angioplasty: No",
+            "#History: ",
+            "#  Hypertension: No",
+            "#Holter Recording:",
+            "#  Date: 28/02/1984",
+            "#  Recorder: Zymed",
+        ]
+        return "\n".join(lines) + "\n"
+
+    def _tree(self, tmp_path, records):
+        """records: [(name, n_sig, n_episodes)] -> headers, .atr, .sta/.stb/.stc, RECORDS."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        n_samples = 5_000_000
+        for rec, n_sig, episodes in records:
+            (tmp_path / f"{rec}.hea").write_text(
+                self._header(rec, n_sig, n_samples, episodes), encoding="utf-8"
+            )
+            beats = np.arange(500) * 250 + 1000
+            wfdb.wrann(
+                rec, "atr",
+                sample=beats, symbol=["N"] * 500,
+                subtype=np.zeros(500, dtype=int), aux_note=[""] * 500,
+                fs=250, write_dir=str(tmp_path),
+            )
+            sample, aux = [], []
+            for i in range(episodes):
+                base = 10_000 + i * 3_000
+                sample += [base, base + 500, base + 1000]
+                aux += [f"(st0-{120 + i}", f"ast0-{200 + i}", f"st0-{60 + i})"]
+            if not sample:                       # a record with no ST event at all
+                sample, aux = [5_000], ["GRST0"]
+            for ext in ("sta", "stb", "stc"):
+                wfdb.wrann(
+                    rec, ext,
+                    sample=np.asarray(sample), symbol=["s"] * len(sample),
+                    subtype=np.zeros(len(sample), dtype=int),
+                    chan=np.zeros(len(sample), dtype=int),
+                    aux_note=aux, fs=250, write_dir=str(tmp_path),
+                )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(r for r, _, _ in records) + "\n", encoding="utf-8"
+        )
+
+    def _records(self):
+        """The real 86 names, with a burden spread reproducing the 18/14/25/29 bands."""
+        names = [f"s20{n:02d}1" for n in range(1, 27)]                 # s20011..s20261
+        names += ["s20271", "s20272", "s20273", "s20274"]              # one subject
+        names += [f"s20{n:02d}1" for n in range(28, 66)]               # s20281..s20651
+        names += [f"s30{n:02d}1" for n in range(66, 73)]               # s30661..s30721
+        names += ["s30731", "s30732", "s30741", "s30742", "s30751", "s30752"]
+        names += [f"s30{n:02d}1" for n in range(76, 81)]               # s30761..s30801
+        assert len(names) == 86
+        # 18 records with none, 14 with 1-5, 25 with 6-20, 29 with 21+.
+        burden = [0] * 18 + [3] * 14 + [10] * 25 + [30] * 29
+        return [
+            (name, 3 if name.startswith("s3") else 2, b)
+            for name, b in zip(names, burden)
+        ]
+
+    def test_load_metadata_builds_the_csv_the_validator_will_reread(self, tmp_path):
+        """Nothing ships to read, so the splitter writes what validate_dataset needs."""
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("ltstdb")
+        df = LTSTDBSplitter().load_metadata(tmp_path, config)
+
+        assert len(df) == 86
+        assert (tmp_path / config.metadata_csv).exists()
+        for column in ("record_name", "signal_path", "patient_id", "stratify_class",
+                       "n_leads", "n_ischemic_episodes", "n_ischemic_episodes_b"):
+            assert column in df.columns
+        assert df["record_name"].iloc[0] == "s20011"
+        assert df["signal_path"].iloc[0] == "s20011"
+        assert df["patient_id"].iloc[0] == "001"
+
+    def test_the_cached_csv_keeps_the_zero_padding_on_patient_id(self, tmp_path):
+        """"027" must not come back as 27, or the grouping key stops matching.
+
+        The record name survives a round trip on its own because it starts with a
+        letter. The subject number does not, and it is the column folds are grouped
+        on — so the reread goes through ``config.identifier_dtypes()``, which is
+        non-empty only because the config sets ``zero_padded_identifiers``.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("ltstdb")
+        splitter = LTSTDBSplitter()
+        splitter.load_metadata(tmp_path, config)
+        again = splitter.load_metadata(tmp_path, config)
+
+        assert all(isinstance(v, str) for v in again["patient_id"])
+        assert all(isinstance(v, str) for v in again["record_name"])
+        assert list(again["patient_id"])[:3] == ["001", "002", "003"]
+        assert "027" in set(again["patient_id"])
+
+    def test_the_four_records_of_subject_027_share_a_patient_id(self, tmp_path):
+        """s20271-s20274 differ only in the last digit, and the release says so."""
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        self._tree(tmp_path, self._records())
+        df = LTSTDBSplitter().load_metadata(tmp_path, load_config("ltstdb"))
+
+        assert df["patient_id"].nunique() == 80
+        counts = df["patient_id"].value_counts()
+        assert counts[counts > 1].to_dict() == self.MULTI
+
+    def test_stratification_is_the_ischaemic_burden_band(self, tmp_path):
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        self._tree(tmp_path, self._records())
+        config = load_config("ltstdb")
+        splitter = LTSTDBSplitter()
+        df = splitter.load_metadata(tmp_path, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.value_counts().to_dict() == {
+            "21+": 29, "6-20": 25, "none": 18, "1-5": 14,
+        }
+        # Unlike edb, every band clears the 10 folds, so none has to skip any.
+        assert labels.value_counts().min() >= 10
+
+    def test_missing_stratify_column_raises_rather_than_silently_restratifying(self):
+        import pandas as pd
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        df = pd.DataFrame({"record_name": ["s20011"], "signal_path": ["s20011"]})
+        with pytest.raises(ValueError, match="stratify_class"):
+            LTSTDBSplitter().get_stratification_labels(df, load_config("ltstdb"))
+
+    def test_the_registry_resolves_ltstdb_to_its_own_splitter(self):
+        """A slug mismatch would silently fall back to GenericSplitter."""
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        assert isinstance(get_splitter("ltstdb"), LTSTDBSplitter)
+
+    def test_no_subject_spans_two_folds(self, tmp_path):
+        """Subject 027's four records hold a quarter of the release's ischaemia.
+
+        Ungrouped they would land in several folds, and any of them appearing in
+        both train and test is the same day of the same heart on both sides of the
+        split.
+        """
+        pytest.importorskip("wfdb")
+
+        from ecgbench.config import load_config
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.ltstdb import LTSTDBSplitter
+
+        config = load_config("ltstdb")
+        self._tree(tmp_path, self._records())
+        splitter = LTSTDBSplitter()
+        df = splitter.load_metadata(tmp_path, config)
+        labels = splitter.get_stratification_labels(df, config)
+        result = split_dataset(df, labels, config, n_folds=10)
+
+        assert result.group_column == "patient_id"
+        fold_of = {
+            record: fold
+            for fold, frame in result.folds.items()
+            for record in frame["record_name"]
+        }
+        assert len(fold_of) == 86
+        per_subject = {}
+        for record, fold in fold_of.items():
+            per_subject.setdefault(record[2:5], set()).add(fold)
+        spanning = {s: sorted(f) for s, f in per_subject.items() if len(f) > 1}
+        assert spanning == {}
+
+
 class TestSTDBSplitter:
     """28 ST-change recordings: no metadata at all, and two channel layouts."""
 

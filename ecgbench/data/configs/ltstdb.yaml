@@ -1,0 +1,304 @@
+# ECGBench Config: Long-Term ST Database
+# ======================================
+# https://physionet.org/content/ltstdb/1.0.0/
+#
+# The reference benchmark for ischaemia detection over a WHOLE DAY rather than a
+# two-hour excerpt: 86 ambulatory records from 80 subjects, 1,992 hours of ECG,
+# annotated beat by beat and episode by episode by three expert groups working
+# independently and meeting to agree a consensus. It is the largest annotated
+# recording in this catalogue by both measures — 8,897,780 reference beats and
+# 2,311 ST episodes under the release's primary criterion.
+#
+# Six things set it apart, all verified against the files:
+#
+#   - THERE ARE THREE SETS OF ST EPISODE ANNOTATIONS, not one, and they disagree
+#     by a factor of two. `.sta` (75 uV, 30 s) marks 1,795 ischaemic and 516
+#     rate-related episodes, `.stb` (100 uV, 30 s) 1,130 and 234, `.stc`
+#     (100 uV, 60 s) 857 and 116. None is more correct; the right criterion
+#     depends on the application. Every figure from this database must name its
+#     criterion. ecgbench.labels.ltstdb exposes all three.
+#   - RECORDS HOLD TWO **OR THREE** SIGNALS — 68 and 18 — in TWELVE layouts, and
+#     22 of the 86 do not name their leads at all: their headers describe both
+#     signals as "ECG" and say "Electrode locations were not recorded." No lead
+#     is common to all 86 records, and the widest available (MLIII) reaches 29.
+#     See the lead block below; this is the one dataset here where no single
+#     `leads=` selection can batch the whole release.
+#   - the records are VERY LONG and NOT uniform: 16.9 h to 47.8 h, median 23.4 h,
+#     4.2 to 10.8 million samples. Batching needs `window=`, and `window=` must
+#     fit the SHORTEST record.
+#   - ISCHAEMIC AND RATE-RELATED ST CHANGE ARE ANNOTATED SEPARATELY, which is why
+#     this database exists. So are axis shifts (1,493) and conduction-change
+#     shifts (895), which mimic ischaemia and are artefacts of body position, not
+#     findings about the heart.
+#   - SUBJECT IDENTITY IS IN THE RECORD NAME. sXYYYZ: X is the signal count, YYY
+#     the subject, Z that subject's record number. 80 subjects, 86 records, four
+#     of them (s20271-s20274) from one person.
+#   - TEN RECORDS ARE THE SAME TAPES AS TEN EUROPEAN ST-T DATABASE RECORDS and
+#     their headers name the partner. Do not train on one and evaluate on the
+#     other. See the `related:` block of the catalogue entry.
+#
+# All 774 signal and annotation files verify against the release's own
+# SHA256SUMS.txt.
+
+name: "Long-Term ST Database"
+slug: "ltstdb"
+version: "1.0.0"
+url: "https://physionet.org/content/ltstdb/1.0.0/"
+download_url: null  # LTSTDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution v1.0, from the PhysioNet landing page
+description: >
+  86 continuous ambulatory ECG recordings from 80 subjects, each 17 to 48 hours
+  long (median 23.4 h, 1,992 hours in total), assembled between 1995 and 2002 by
+  an inter-institutional collaboration coordinated by the University of Ljubljana
+  with the CNR Institute of Clinical Physiology in Pisa and MIT. The recordings
+  were chosen to exhibit a variety of ST segment events — ischaemic episodes,
+  axis-related non-ischaemic episodes, episodes of slow ST level drift and
+  mixtures of these — so that a detector can be scored on telling them apart
+  rather than merely on finding deviation. Each record holds two or three signals
+  at 250 Hz with 12-bit resolution over a nominal 20 mV range. Expert annotators
+  at all three sites reviewed every record independently with the SEMIA tool,
+  marking the isoelectric level and J point on 16-second averaged cardiac cycles,
+  placing the local references that define a piecewise-linear baseline ST level
+  function, and then annotating each ST episode against the resulting deviation
+  function; consensus reference annotations were agreed at meetings held several
+  times a year. The release ships 8,897,780 manually corrected beat annotations,
+  three sets of ST episode annotations under different detection criteria, ST
+  level measurements at eight points of every beat, and Karhunen-Loeve and
+  Legendre coefficient time series derived from the ST segments.
+citation: >
+  Jager, F., Taddei, A., Moody, G.B., Emdin, M., Antolic, G., Dorn, R., Smrdel, A.,
+  Marchesi, C., Mark, R.G. Long-term ST database: a reference for the development
+  and evaluation of automated ischaemia detectors and for the study of the dynamics
+  of myocardial ischaemia. Medical & Biological Engineering & Computing
+  41(2):172-183 (2003).
+doi: "10.13026/C2G01T"
+
+creators:
+  - type: Organization
+    name: "University of Ljubljana / CNR Institute of Clinical Physiology, Pisa / MIT"
+    url: "https://physionet.org/content/ltstdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 12-bit format 212 at a gain of 200 adu/mV with adc_zero 0 and baseline 0,
+# identical in all 190 signals of all 86 records, and every header declares units
+# of mV (one writes "mv"). wfdb divides by the header gain, so p_signal is already
+# millivolts. Verified by reading all 86 records end to end.
+signal_unit_scale: 1.0
+# The MODAL count — 68 of 86 records store two signals and the other 18 store
+# three. `leads` is a count, and here it is not even a constant one; see
+# record_lead_layouts.
+leads: 2
+# The MODAL layout, and it names nothing. 22 of the 86 records describe both
+# signals only as "ECG" because, in their own headers, "Electrode locations were
+# not recorded." That is the single largest layout in the release, which is the
+# fact this default is here to make visible. Do not index leads positionally
+# against it.
+lead_names: ["ECG", "ECG"]
+# Every layout in the release, counted from the 86 headers:
+#   ECG/ECG        22   (electrode locations not recorded)
+#   V4/MLIII       20      MLIII/V3     1      V4/V3/II      1
+#   ML2/MV2        16      V5/MLIII     1      V6/V5/aVF     1
+#   E-S/A-S/A-I    15      V5/V2        1      V6/II/V5      1
+#   MLIII/V4        6      V2/MLIII     1
+# Note MLIII/V4 and V4/MLIII are both present, 6 and 20 records: the same pair
+# stored in either order, so signal[0] is a limb lead in one group and a chest
+# lead in the other with nothing outside the header to warn you. Declaring these
+# makes ECGDataset(leads=...) read each record's own header, resolve the requested
+# NAMES against it, and raise for a record whose layout lacks a requested lead
+# rather than returning whichever signal sits at that index.
+#
+# TWO CONSEQUENCES, both unavoidable and neither hidden:
+#
+#   1. NO LEAD IS IN ALL 86 RECORDS, so every name-based selection raises for
+#      some of them. The widest are MLIII (29 records), V4 (27) and "ECG" (22).
+#      Combined with the 2-vs-3 signal counts, this dataset cannot be batched
+#      whole: ecg_collate_fn stacks with torch's default_collate, which raises on
+#      a batch mixing 2- and 3-channel records. Filter first — n_leads and
+#      lead_names are columns of ecgbench.labels.ltstdb — or use batch_size=1.
+#   2. For the 22 ECG/ECG records, leads=["ECG"] returns SIGNAL 0 and there is no
+#      name that addresses signal 1. That is a property of the release, not of
+#      ECGBench: the electrode positions were never recorded, so the two signals
+#      are genuinely indistinguishable by name. Use leads=None and index them if
+#      you need both.
+record_lead_layouts:
+  - ["ECG", "ECG"]
+  - ["V4", "MLIII"]
+  - ["ML2", "MV2"]
+  - ["E-S", "A-S", "A-I"]
+  - ["MLIII", "V4"]
+  - ["MLIII", "V3"]
+  - ["V5", "MLIII"]
+  - ["V5", "V2"]
+  - ["V2", "MLIII"]
+  - ["V4", "V3", "II"]
+  - ["V6", "V5", "aVF"]
+  - ["V6", "II", "V5"]
+# Nominal: the MEDIAN length. Records are NOT uniform — 15,200,000 samples
+# (16.9 h, s30771) to 43,050,000 (47.8 h, s20611), and the landing page's "between
+# 21 and 24 hours" holds for only 70 of the 86.
+duration_seconds: 84288.5
+sampling_rates: [250]
+default_sampling_rate: 250
+
+# --- File Structure ---
+# No metadata file ships in a machine-readable form. LTSTDBSplitter builds one
+# from the header comments and the .atr/.sta/.stb/.stc annotations on first run,
+# via ecgbench.labels.ltstdb. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# 80 subjects over 86 records, read off the record name (sXYYYZ, YYY = subject) —
+# a rule the release documents on its landing page and four headers restate in
+# words ("Records s20271, s20272, s20273 and s20274 are from the same patient.").
+# Unlike edb, this is published, not reconstructed. Ungrouped, subject 027's four
+# records — which between them hold 416 of the release's 1,795 ischaemic episodes
+# — would straddle train and test.
+patient_id_column: "patient_id"
+
+signal_path_columns:
+  250: "signal_path"  # bare record stem, e.g. "s20011" — the tree is flat
+
+# patient_id is the zero-padded three-digit subject number ("027"), exactly as it
+# appears inside the record name. Without this flag pandas reads the column as
+# int64 on every metadata and fold-CSV round trip, "027" becomes 27, and the
+# grouping key stops matching the record names it was derived from. export_splits
+# refuses to write it, which is how this gets caught rather than remembered.
+zero_padded_identifiers: true
+
+# --- Labels ---
+# Which kinds of ST event a record holds under criterion A: ischemic (55),
+# rate_related_only (16), ischemic_and_rate_related (13), shift_only (2). A
+# genuine record-level summary of the released ground truth. Not the fold label —
+# one of its classes holds 2 records.
+label_column: "st_class"
+label_format: "single"
+
+stratification:
+  # LTSTDBSplitter takes stratify_class from the label loader: the criterion-A
+  # ischaemic episode count banded at 1, 6 and 21 episodes, giving 18 / 14 / 25 /
+  # 29 records. Ischaemic ST change is what this database exists to evaluate and
+  # the burden is enormously uneven — s20274 holds 143 episodes and 18 records
+  # hold none — so a fold drawn without regard to it can be all quiet or all busy.
+  # Every band is larger than the 10 folds, so unlike edb none is forced to skip.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # Declared for the record, though nothing in CHECK_REGISTRY reads it. It could
+  # not be enforced here anyway: 68 records store 2 signals and 18 store 3.
+  expected_leads: 2
+  # Deliberately EMPTY. Records genuinely differ in length (15,200,000 to
+  # 43,050,000 samples), and check_truncated_signal returns [] when the rate has
+  # no entry — the intended way to disable a check that cannot apply. A 250 key
+  # here would fail every record shorter than whatever value it held.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # Set at the ADC rail, and here that is the only defensible value. Format 212 is
+  # 12-bit two's complement, so with adc_zero 0, baseline 0 and a gain of 200 the
+  # full scale is exactly -10.240 to +10.235 mV and no sample can lie outside it.
+  # A tighter physiologic window would be wrong for a Holter collection this long:
+  # 1,992 hours of ambulatory recording contains motion artefact that is real
+  # signal, not corruption, and excluding a 23-hour record for a few artefact
+  # samples would discard the ischaemia in the other 22 hours.
+  # Measured over all 3,955,776,364 samples: the range attained is -10.235 to
+  # +9.945 mV, so no record saturates the upper rail and one channel (s20231
+  # signal 1) sits on the lower one. -10.235 is the deepest value format 212 can
+  # carry, because -2048 is reserved as the invalid-sample marker; it needs no
+  # float32 slack, since float32(-10.235) is -10.234999771, which rounds toward
+  # zero and cannot trip a bound of -10.24. There are no invalid samples in the
+  # release, hence no NaN, and no flat or all-zero channel.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ltstdb.py parses the header comment tree and
+# summarises the .atr beats and all three sets of ST episode annotations. There is
+# no source CSV to point at — the headers and annotations are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "myocardial ischemia"
+    - "ST segment"
+    - "ST episode"
+    - "transient ischemia detection"
+    - "episode annotations"
+    - "beat annotations"
+    - "long-term"
+    - "ambulatory"
+    - "Holter"
+    - "PhysioNet"
+  rai_data_collection: >
+    Collected between 1995 and 2002 by an inter-institutional, international
+    project coordinated by Prof. Franc Jager at the Faculty of Computer and
+    Information Science, University of Ljubljana, with the University Medical
+    Center Ljubljana, the CNR Institute of Clinical Physiology in Pisa, the
+    University of Firenze, MIT and the Beth Israel Deaconess Medical Center, and
+    supported by Medtronic and Zymed. Recordings came from three sources: eleven
+    from a 1995-98 US-Slovenian pilot collection, ten redigitised from the analog
+    tapes the Pisa group had gathered for the European ST-T Database, and the
+    eighteen three-signal recordings from Zymed. Subjects were selected to exhibit
+    a variety of ST segment events rather than to sample any population. Each
+    tape was digitised at 250 Hz with 12-bit resolution over a nominal 20 mV range
+    and rescaled to a uniform 200 ADC units per millivolt. Annotation used SEMIA, a
+    purpose-built semi-automated tool: experts first marked the PQ junction and J
+    point on 16-second averaged cardiac cycles taken at frequent intervals, an
+    algorithm then measured ST levels for every beat, and the experts placed local
+    reference points defining a piecewise-linear baseline ST level function that
+    absorbs body-position and other non-ischaemic drift. Episodes were annotated on
+    the resulting deviation function under three published criteria: an episode
+    begins when the deviation first exceeds 50 uV, must reach Vmin for at least
+    Tmin, and ends when it falls below 50 uV without exceeding it again within 30 s.
+    Every recording was reviewed independently at all three sites and consensus
+    reference annotations were agreed at meetings held several times a year.
+  rai_data_biases: >
+    Not a population sample and not intended as one. Records were chosen to show a
+    spread of ST events, so the prevalence of ischaemia here reflects the selection
+    criteria rather than any clinical population, and 18 of the 86 records contain
+    no ischaemic episode at all while s20274 contains 143. The cohort is 51 men to
+    30 women with age unrecorded for five subjects, and ages run 23 to 87 with a
+    mean of 61.5. 80 subjects contribute 86 records, one of them four, so
+    subject-grouped folds are necessary rather than optional. Episode counts depend
+    strongly on the detection criterion — 2,311 episodes under 75 uV / 30 s against
+    973 under 100 uV / 60 s — so any comparison across studies must fix the
+    criterion first. The recordings predate modern equipment, five Holter models
+    were used and the model is unrecorded for 36 of the 86 records, so
+    recorder-specific artefact is a confounder that cannot be controlled for.
+    Electrode positions were not recorded for 22 records, and across the rest the
+    two or three signals appear in eleven further layouts with no lead common to
+    all, so a model trained on this data without resolving leads by name is trained
+    on a mixture of physical leads. 1,493 axis shifts and 895 conduction-change
+    shifts are annotated precisely because they mimic ischaemia; a detector scored
+    without them is not being scored on the task the database was built for. Ten
+    records are redigitisations of tapes that also produced European ST-T Database
+    records, so the two databases are not independent test sets.
+  rai_personal_sensitive_info: >
+    De-identified. The WFDB header comments retain an unusually complete clinical
+    record for each subject: age, sex, free-text annotator commentary on the
+    recording, symptoms reported during monitoring, a diagnosis list, current
+    medications, whether the subject had undergone angioplasty or bypass grafting,
+    a cardiac history with eleven structured yes/no fields, and the findings of
+    previous ECG stress tests, thallium or stress echocardiography, left
+    ventricular function studies, echocardiography, coronary arteriography and
+    baseline ECG. Some free-text fields carry dates and quantitative findings
+    ("Yes, 1986", "June, 1997 - 99% left main coronary artery", "serum creatinine =
+    2.2"), and each header states the recording's start time and calendar date,
+    with dates running from 1984 to 2000. Two records give symptom onset times to
+    the minute against a calendar date. No name, institution or geographic
+    identifier is attached to any record, and the subject identifier is a sequence
+    number carried in the record name.

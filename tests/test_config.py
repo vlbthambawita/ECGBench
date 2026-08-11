@@ -1191,22 +1191,25 @@ def test_mitdb_declares_every_lead_layout_in_the_release():
     assert config.alternate_lead_names is None
 
 
-def test_only_mitdb_edb_and_qtdb_declare_per_record_lead_layouts():
+def test_only_four_st_and_arrhythmia_releases_declare_per_record_lead_layouts():
     """Each one needs the same evidence: layouts counted from the headers.
 
     This is not a style rule. Declaring the field switches ``ECGDataset`` from
     resolving leads once to reading every record's header, so it should appear
-    only where the layout genuinely varies. Three releases in the catalogue
+    only where the layout genuinely varies. Four releases in the catalogue
     qualify, and ``qtdb`` is the most extreme: 20 layouts over 105 records,
-    against ``edb``'s 15 over 90 and ``mitdb``'s 6 over 48. None of the three has
-    a lead present in every record — ``qtdb`` least of all, where the modal layout
-    is the placeholder pair ECG1/ECG2 and covers 57 records.
+    against ``edb``'s 15 over 90, ``ltstdb``'s 12 over 86 and ``mitdb``'s 6 over
+    48. None of the four has a lead present in every record — ``qtdb`` least of
+    all, where the modal layout is the placeholder pair ECG1/ECG2 and covers 57
+    records. ``ltstdb`` is the only one whose lead *count* varies too (68 records
+    of 2 and 18 of 3), which is why it needs this field rather than the
+    count-keyed ``alternate_lead_names``.
     """
     declaring = [
         slug for slug in list_available_configs()
         if load_config(slug).record_lead_layouts
     ]
-    assert declaring == ["edb", "mitdb", "qtdb"]
+    assert declaring == ["edb", "ltstdb", "mitdb", "qtdb"]
 
 
 def test_load_afdb_config():
@@ -1368,15 +1371,17 @@ class TestIdentifierDtypes:
         genuinely numeric ids whose values are quoted as ints on their dataset
         pages. Making identifiers uniformly strings is defensible but is a separate
         change, so the coercion guard is opt-in and only the datasets that need it
-        opt in: afdb (00735, 03665, 04015), ltafdb (00, 01, 03, 05, 06, 07, 08) and
-        shdb_af, whose de-identification assigned every recording a three-digit id
-        in 000-143 "padded with zeros to maintain consistent length".
+        opt in: afdb (00735, 03665, 04015), ltafdb (00, 01, 03, 05, 06, 07, 08),
+        ltstdb, whose PATIENT id rather than its record id is zero-padded ("027",
+        the subject field of the record name s20271), and shdb_af, whose
+        de-identification assigned every recording a three-digit id in 000-143
+        "padded with zeros to maintain consistent length".
         """
         opting_in = sorted(
             slug for slug in list_available_configs()
             if load_config(slug).zero_padded_identifiers
         )
-        assert opting_in == ["afdb", "ltafdb", "shdb_af"]
+        assert opting_in == ["afdb", "ltafdb", "ltstdb", "shdb_af"]
         # And a dataset that has not opted in is left exactly as it was.
         assert load_config("mitdb").identifier_dtypes() == {}
 
@@ -1772,6 +1777,134 @@ def test_edb_stratification_bands_are_fixed_and_cover_the_zero_case():
     assert len(ST_BURDEN_BANDS) == len(ST_BURDEN_EDGES) + 1
     assert ST_BURDEN_EDGES == (1, 3, 6)
     assert ST_BURDEN_BANDS[0] == "none"
+
+
+def test_load_ltstdb_config():
+    """Long-Term ST: 2 OR 3 signals, twelve layouts, 17-48 h records."""
+    config = load_config("ltstdb")
+    assert isinstance(config, DatasetConfig)
+    assert config.name == "Long-Term ST Database"
+    assert config.slug == "ltstdb"
+    assert config.version == "1.0.0"
+    assert config.sampling_rates == [250]
+    assert config.default_sampling_rate == 250
+    # Format 212 at a gain of 200 adu/mV with mV in every header, so wfdb's
+    # p_signal is already millivolts and nothing rescales it.
+    assert config.signal_format == "wfdb"
+    assert config.signal_unit_scale == 1.0
+    # The MODAL count and the MODAL layout, and neither is the whole truth: 68 of
+    # 86 records store two signals and 18 store three, and the largest single
+    # layout is the 22 records whose headers say "Electrode locations were not
+    # recorded" and describe both signals as "ECG".
+    assert config.leads == 2
+    assert config.lead_names == ["ECG", "ECG"]
+    assert config.record_lead_layouts is not None
+    assert len(config.record_lead_layouts) == 12
+    # record_lead_layouts, not alternate_lead_names: the count varies AND the
+    # names vary at a fixed count, and a count-keyed map cannot express the second.
+    assert config.alternate_lead_names is None
+    # The median length, not a uniform one — see the variable-length test below.
+    assert config.duration_seconds == 84288.5
+    # LTSTDBSplitter generates this from the headers and annotations on first run,
+    # so download_url must stay null.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.download_url is None
+    assert config.record_id_column == "record_name"
+    # 80 subjects over 86 records, read off the record name — published by the
+    # release, unlike edb's, which has to be reconstructed.
+    assert config.patient_id_column == "patient_id"
+    assert config.signal_path_columns == {250: "signal_path"}
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.license == "ODC-By-1.0"
+    assert config.publish_fold_csvs is True
+    assert config.label_column == "st_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+
+
+def test_ltstdb_needs_zero_padded_identifiers_for_its_patient_id():
+    """``patient_id`` is "027", and pandas would read the column as int64.
+
+    Record names begin with a letter so they survive the CSV round trip on their
+    own, but the subject number does not: it is the zero-padded three-digit field
+    of the record name, so "027" becomes 27, and the grouping key stops matching
+    the names it was derived from. Four subjects contributed more than one record,
+    so a broken key is a broken patient grouping, not a cosmetic difference.
+    """
+    config = load_config("ltstdb")
+    assert config.zero_padded_identifiers is True
+    dtypes = config.identifier_dtypes()
+    assert dtypes == {
+        "record_name": "str",
+        "patient_id": "str",
+        "signal_path": "str",
+    }
+
+
+def test_ltstdb_disables_the_truncation_check_because_length_varies():
+    """17 h to 48 h, so there is no expected sample count to check against.
+
+    ``check_truncated_signal`` returns [] when the rate has no entry, which is the
+    intended way to switch off a check that cannot apply — the same escape hatch
+    ptbdb and challenge2021 use. A 250 key here would fail every record shorter
+    than whatever value it held, which is most of them for any plausible value.
+
+    The declared ``duration_seconds`` is the MEDIAN (23.4 h), not a uniform length,
+    and the landing page's "between 21 and 24 hours" holds for 70 of the 86: the
+    shortest is s30771 at 16.9 h and the longest s20611 at 47.8 h.
+    """
+    config = load_config("ltstdb")
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    # The median record, 21,072,125 samples at 250 Hz.
+    assert config.duration_seconds == pytest.approx(21072125 / 250)
+    # Well outside the published 21-24 h range in both directions.
+    assert 15200000 / 250 < config.duration_seconds < 43050000 / 250
+
+
+def test_ltstdb_amplitude_range_is_the_adc_rail():
+    """Format 212 at adc_zero 0 and 200 adu/mV: full scale is exactly the bound.
+
+    Nothing tighter is defensible for 1,992 hours of ambulatory Holter recording,
+    where motion artefact is real signal rather than corruption and excluding a
+    23-hour record over a few artefact samples would discard the ischaemia in the
+    other 22 hours.
+
+    Measured over all 3,955,776,364 samples the range attained is -10.235 to
+    +9.945 mV, so nothing saturates the upper rail and s20231's signal 1 sits on
+    the lower one. It needs no float32 slack, unlike chfdb's chf15: -10.235 is
+    -2047/200, because -2048 is format 212's invalid-sample marker, and
+    float32(-10.235) rounds *toward* zero.
+    """
+    import numpy as np
+
+    config = load_config("ltstdb")
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (-10.24, 10.235)
+    assert low == pytest.approx(-2048 / 200.0)
+    assert high == pytest.approx(2047 / 200.0)
+    # The deepest value the format can carry is -2047, not -2048.
+    assert float(np.float32(-2047 / 200.0)) > low
+    assert high > 9.945
+
+
+def test_ltstdb_stratification_bands_are_fixed_and_all_exceed_the_fold_count():
+    """Ischaemic burden banded at 1, 6 and 21 episodes: 18 / 14 / 25 / 29 records.
+
+    Fixed edges, like edb's, so a re-release with one extra episode cannot silently
+    relabel records that did not change. Unlike edb's, every band here is larger
+    than the 10 folds ECGBench generates, so none is forced to skip folds.
+    """
+    from ecgbench.labels.ltstdb import ISCHEMIC_BURDEN_EDGES, ISCHEMIC_BURDEN_NAMES
+
+    config = load_config("ltstdb")
+    assert config.stratification.method == "custom_function"
+    # One more band than there are edges, or np.digitize indexes out of range.
+    assert len(ISCHEMIC_BURDEN_NAMES) == len(ISCHEMIC_BURDEN_EDGES) + 1
+    assert ISCHEMIC_BURDEN_EDGES == (1, 6, 21)
+    assert ISCHEMIC_BURDEN_NAMES[0] == "none"
 
 
 def test_load_chfdb_config():

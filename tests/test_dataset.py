@@ -1755,6 +1755,52 @@ class TestPerRecordLeadLayouts:
         # No lead is in every layout, so there is no universally selectable lead.
         assert not {n for n in names if all(n in layout for layout in layouts)}
 
+    def test_ltstdb_varies_the_lead_count_as_well_as_the_names(self):
+        """The only release here where both the count and the names vary.
+
+        68 of the 86 Long-Term ST records store two signals and 18 store three, in
+        twelve layouts. ``alternate_lead_names`` is keyed by lead count and so
+        cannot express "V4/MLIII and MLIII/V4 are both two-lead layouts";
+        ``record_lead_layouts`` says "read it from the record" and covers both
+        kinds of variation at once, which is why this config declares that one and
+        not the other.
+
+        Two consequences, both documented in the config rather than hidden:
+
+        - **The modal layout names nothing.** 22 records describe both signals as
+          ``ECG`` because their headers state "Electrode locations were not
+          recorded", making it the single largest layout at 26% of the release. So
+          ``leads=["ECG"]`` resolves to signal 0 for those 22 and there is no name
+          that reaches signal 1.
+        - **No lead is in all 86 records** — MLIII reaches 29, V4 27, ECG 22 — and
+          a batch mixing 2- and 3-channel records raises in ``default_collate``
+          anyway. This dataset cannot be batched whole by any ``leads=`` value.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("ltstdb")
+        assert config.lead_names == ["ECG", "ECG"]
+        assert config.leads == 2
+        layouts = config.record_lead_layouts
+        assert len(layouts) == 12
+        assert config.lead_names in layouts
+        assert config.alternate_lead_names is None
+        # BOTH lead counts appear, which is what rules alternate_lead_names out.
+        assert {len(layout) for layout in layouts} == {2, 3}
+        # The same pair in both orders, which is what breaks positional indexing
+        # even within the two-lead half.
+        assert ["V4", "MLIII"] in layouts
+        assert ["MLIII", "V4"] in layouts
+        # The modal layout names neither signal, and names them the SAME.
+        assert ["ECG", "ECG"] in layouts
+        names = {name for layout in layouts for name in layout}
+        assert names == {
+            "ECG", "V4", "MLIII", "ML2", "MV2", "E-S", "A-S", "A-I",
+            "V3", "V5", "V2", "V6", "II", "aVF",
+        }
+        # No lead is in every layout, so there is no universally selectable lead.
+        assert not {n for n in names if all(n in layout for layout in layouts)}
+
     def test_qtdb_declares_twenty_layouts_and_its_modal_one_is_a_placeholder(self):
         """The most varied layout in the catalogue, and the only placeholder modal pair.
 

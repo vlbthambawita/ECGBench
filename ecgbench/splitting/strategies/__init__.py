@@ -22,6 +22,7 @@ from . import (  # noqa: F401
     incartdb,
     leipzig_heart_center_ecg,
     ltafdb,
+    ltstdb,
     ludb,
     medalcare_xl,
     mhd_effect_ecg_mri,

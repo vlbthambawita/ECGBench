@@ -215,6 +215,20 @@ cannot reproduce them; and `st_episode_secs` can legitimately exceed the 7,200 s
 recording, because concurrent change in both channels counts twice. See
 `examples/load_edb.py`.
 
+**And one annotates them three times over.** The Long-Term ST Database (`ltstdb`)
+applies **three different detection criteria** to the same 86 day-long recordings and
+ships all three: `.sta` at 75 µV / 30 s finds 1,795 ischaemic and 516 rate-related
+episodes, `.stb` at 100 µV / 30 s finds 1,130 and 234, and `.stc` at 100 µV / 60 s
+finds 857 and 116. None is more correct than the others, so **no episode count from
+this database means anything without its criterion** — the loader makes `.sta` the
+unsuffixed default and exposes the rest under `_b` and `_c`. Two more things separate
+it from `edb`: ischaemic and rate-related episodes are annotated **apart from each
+other**, along with 1,493 axis shifts and 895 conduction-change shifts that mimic
+ischaemia, and episodes are counted at their **extremum** rather than their onset,
+because 10 of them were already running when the tape started. Counting extrema
+reproduces the release's own shipped `.cnt` summaries in all 258 blocks; counting
+onsets does not. See `examples/load_ltstdb.py`.
+
 **And one dataset named for ST change annotates none of it.** The MIT-BIH **ST
 Change** Database (`stdb`) is 28 recordings *selected* for transient ST change —
 mostly exercise stress tests — but its annotation files hold beat labels and
@@ -319,6 +333,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `qtdb` | **`ECG1`, `ECG2` in 57 of 105 records, and 19 further layouts in the other 48** — the most varied in the catalogue, and the only one whose *modal* layout is a placeholder. Those 57 (every excerpt from `svdb`, `nsrdb`, `stdb`, MIT-BIH Long-Term and the sudden-death Holters) state no electrode placement at all. The 15 MIT-BIH Arrhythmia excerpts match `mitdb`'s names exactly; the 33 European ST-T ones use the ESC's **original electrode nomenclature** (`D3`, `CM5`, `CC5`, `ML5`, `CM2`, `mod.V1`, `V2-V3`) and agree with `edb`'s names for the same bit-identical channels in only **2 of 33**. `D3, V4` and `V4, D3` are both present. See below |
 | `stdb` | **`ECG1`, `ECG2` — but only 18 of the 28 records have both.** The `ltafdb`/`sddb` case for naming (every header describes every channel as the bare word `ECG`, so these are positions ECGBench assigns), plus a second problem those two do not have: **records 313-317 and 319-323 store a single channel**, which nothing in the release mentions. The config declares `alternate_lead_names: {1: ["ECG1"]}`, so `leads=["ECG2"]` raises for those ten rather than returning ECG1. Not MLII/V1 — and the temptation is strongest here, because this release shares `mitdb`'s 360 Hz rate and three-digit record numbering. Its **ADC gain varies by record and by channel**, over 31 values from 161 to 500 adu/mV |
 | `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
+| `ltstdb` | **`ECG, ECG` in 22 of 86 records, and 11 further layouts in the other 64** — the only dataset here where the lead **count** varies as well as the names: 68 records store two signals and 18 store three. The modal layout is the 22 records whose headers say "Electrode locations were not recorded", so `leads=["ECG"]` returns signal 0 for those and **no name reaches signal 1**. No lead is in all 86 (MLIII 29, V4 27), and `V4/MLIII` and `MLIII/V4` are both present, 20 records and 6. See below |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -412,6 +427,28 @@ Nothing returns the wrong lead — no name maps to a different physical channel 
 two releases — but any code selecting by name silently covers a different set of
 records. `leads=["MLII"]` resolves for 11 of the 85 records in `qtdb`'s train split and
 refuses the other 74.
+
+`ltstdb` is the fourth, and it is the only one that varies the lead **count** as
+well — which is why it needs `record_lead_layouts` rather than the count-keyed
+`alternate_lead_names` that would otherwise cover a 2-vs-3 split. 68 of its 86
+records store two signals and 18 store three, in twelve layouts, and the largest
+single layout is the **22 records that name nothing**: their headers describe both
+channels as `ECG` and state "Electrode locations were not recorded". So for those 22
+`leads=["ECG"]` returns signal 0 and *no name reaches signal 1* — not a limitation of
+this mechanism but of the release, which never recorded where the electrodes were.
+
+```python
+# 29 of 86 records hold MLIII -- the widest any lead reaches here.
+ds = ECGDataset("ltstdb", split="train", data_path="...",
+                window=(0, 2500), leads=["MLIII"])
+ds[i]   # ValueError: Record 's20011' stores ['ML2', 'MV2'], and this dataset uses
+        # more than one lead layout. Lead 'MLIII' is not in 'ltstdb'.
+```
+
+This dataset therefore **cannot be batched whole by any `leads=` value**: no lead is
+universal, and a batch mixing 2- and 3-signal records raises in `default_collate`
+regardless. Filter on `n_leads`/`lead_names` from `ecgbench.labels.ltstdb` first, or
+use `batch_size=1`. See `examples/load_ltstdb.py`.
 
 `record_lead_layouts` is wfdb-only, because no other format names its leads per
 record. Datasets that do not declare it are unaffected.
