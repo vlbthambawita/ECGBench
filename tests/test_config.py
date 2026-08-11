@@ -2775,3 +2775,87 @@ def test_szdb_amplitude_bound_is_the_union_of_two_different_rails():
     assert config.validation.amplitude_range_mv == (-10.0, 15.5)
     assert float(np.float32(15.5)) == 15.5
     assert float(np.float32(-10.0)) == -10.0
+
+
+def test_load_tollet_config():
+    """tOLIet: one record per seat electrode, and a negative full-scale factor."""
+    config = load_config("tollet")
+    assert config.slug == "tollet"
+    assert config.version == "1.0.1"
+    # PLUX/BITalino text export, added for this dataset. The ECG columns are named
+    # in the signal path because the file also stores a sequence number, four
+    # digital I/O columns and two 6-bit analog channels that are zero throughout.
+    assert config.signal_format == "opensignals"
+    # NOT A UNIT CONVERSION IN THE USUAL SENSE. The opensignals reader returns
+    # fractions of full scale in [-0.5, 0.5), so this is the amplifier's span in
+    # millivolts, and it is NEGATIVE because the seat's front end inverts. The two
+    # together reproduce the release's own read_ecg_data.py exactly:
+    # ((1024 - raw)/1024 - 0.5) * (33/11).
+    assert config.signal_unit_scale == -3.0
+    # ONE LEAD, LITERALLY: a record is one electrode channel of one sitting, so the
+    # tensor is (1, samples). Which electrode is in the labels' `channel` /
+    # `electrode_texture`, not in the lead name, because it varies per record.
+    assert config.leads == 1
+    assert config.lead_names == ["ECG"]
+    assert len(config.lead_names) == config.leads
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # DataSet.csv is semicolon-separated with a BOM, lists four records that do not
+    # exist, has one row per sitting rather than per channel, and says nothing
+    # about which electrodes made contact. TolletSplitter generates this instead.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_id"
+    assert config.patient_id_column == "subject_id"
+    # 145 sittings x 4 electrodes = 580 records over 86 subjects, and the four
+    # channels of one sitting are the same beats, so grouping is not optional.
+    assert config.label_column == "observations"
+    assert config.label_format == "single"
+    # False, and checked rather than assumed: record_id always ends in "_A<n>"
+    # and signal_path always contains ":A<n>", so neither can be coerced. The
+    # split's reproducibility instead rests on TolletSplitter pinning the dtype
+    # when it reads its own metadata cache — see TestTolletSplitter.
+    assert config.zero_padded_identifiers is False
+    assert config.identifier_dtypes() == {}
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # CC BY 4.0 verbatim in the shipped LICENSE.txt, so the fold CSVs are
+    # published — despite a contradictory sentence in the README.
+    assert config.license == "CC-BY-4.0"
+    assert config.publish_fold_csvs is True
+    assert config.has_predefined_splits is False
+    assert config.n_folds == 10
+
+
+def test_tollet_expected_samples_is_empty_because_length_varies():
+    """14,400 to 197,250 samples, so any value here would flag most of the release.
+
+    check_truncated_signal returns [] for a rate with no entry, which is the
+    intended escape hatch — see the expected_samples gotcha in CLAUDE.md.
+    """
+    config = load_config("tollet")
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_tollet_amplitude_bound_is_the_converter_span_and_cannot_fire():
+    """+/-1.5 mV full scale into 10 bits, so no sample can fall outside it.
+
+    amplitude_outlier is therefore a no-op for this dataset and is kept in the
+    list so the report says so. The +1.5 end IS attained — by every electrode that
+    made no contact, which reads a constant code 0 — so the float32 rounding trap
+    in CLAUDE.md was checked rather than assumed: code 0 gives exactly -0.5 and
+    -0.5 * -3.0 is exactly 1.5, so the comparison is exact.
+    """
+    import numpy as np
+
+    config = load_config("tollet")
+    assert config.validation is not None
+    assert config.validation.amplitude_range_mv == (-1.5, 1.5)
+    assert float(np.float32(0.0) / np.float32(1024) - np.float32(0.5)) == -0.5
+    assert float(np.float32(-0.5) * np.float32(-3.0)) == 1.5
+    # The other rail, code 1023, is inside the bound and also exact.
+    low = float(np.float32(1023) / np.float32(1024) - np.float32(0.5)) * -3.0
+    assert low == -1.4970703125
+    assert low > -1.5

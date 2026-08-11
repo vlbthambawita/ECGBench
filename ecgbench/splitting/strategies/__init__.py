@@ -45,6 +45,7 @@ from . import (  # noqa: F401
     stdb,
     svdb,
     szdb,
+    tollet,
     wctecgdb,
     zzu_pecg,
 )

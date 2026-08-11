@@ -140,6 +140,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         stdb,
         svdb,
         szdb,
+        tollet,
         wctecgdb,
         zzu_pecg,
     )
@@ -171,6 +172,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "sddb": sddb.load_labels,
         "stdb": stdb.load_labels,
         "szdb": szdb.load_labels,
+        "tollet": tollet.load_labels,
         "shdb_af": shdb_af.load_labels,
         "leipzig_heart_center_ecg": leipzig_heart_center_ecg.load_labels,
         "mimic_iv_ecg": mimic_iv_ecg.load_labels,

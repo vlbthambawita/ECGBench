@@ -70,6 +70,14 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
         # The transpose of "csv": one ROW per lead, one column per sample, and no
         # header at all — already the orientation the checks want, so no .T.
         signal = np.loadtxt(record_path, delimiter=",", dtype=np.float32, ndmin=2)
+    elif signal_format == "opensignals":
+        # PLUX/BITalino text export; the ECG columns are named in the path, and
+        # the samples come back as fractions of full scale for signal_unit_scale
+        # to turn into millivolts. Window-less like the rest of this function.
+        from ecgbench.dataset import _parse_opensignals_ref, _read_opensignals
+
+        path, channels = _parse_opensignals_ref(record_path)
+        signal = _read_opensignals(path, channels, 0, None)
     elif signal_format == "npy":
         # Records are rows of one shared array per split, so the reference is
         # "<file>.npy:<row>". Memory-mapped, or validating 100,000 records would
@@ -103,7 +111,7 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5"
         )
 
     if unit_scale != 1.0:

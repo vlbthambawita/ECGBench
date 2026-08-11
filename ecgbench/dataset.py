@@ -103,6 +103,15 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
                 return handle.readline().count(",") + 1
         except Exception:
             return None
+    if signal_format == "opensignals":
+        # No length is recorded anywhere in the header, so it is the data-line
+        # count. Only ever reached to build an error message, so the extra pass
+        # over the file costs nothing a user waits on.
+        try:
+            path, _ = _parse_opensignals_ref(record_path)
+            return _opensignals_length(path)
+        except Exception:
+            return None
     if signal_format == "hdf5":
         try:
             import h5py
@@ -240,6 +249,176 @@ def _parse_npy_ref(record_path: str) -> tuple[str, int]:
     return path, int(row)
 
 
+#: Extensions an OpenSignals text export may carry. Used to tell a
+#: ``:<channels>`` suffix from a colon that happens to be part of the path.
+_OPENSIGNALS_SUFFIXES = (".txt", ".dat")
+
+
+def _parse_opensignals_ref(record_path: str) -> tuple[str, list[str] | None]:
+    """Split a ``<file>.txt:<label>,<label>,...`` reference into file and channels.
+
+    An OpenSignals file stores every channel the acquisition board offered,
+    connected or not, so which of them carry the ECG is a per-dataset fact and
+    has to travel with the path — the reader has no access to the config. tOLIet
+    stores six analog channels and uses four, hence
+    ``ECG_EXP/15_1.txt:A1,A2,A3,A4``.
+
+    Without a suffix every channel the header names in its ``label`` list is
+    returned, in header order. A colon is only read as a separator when what
+    precedes it ends in a recognised extension, so a directory named with a
+    colon stays part of the path.
+    """
+    text = str(record_path)
+    head, separator, tail = text.rpartition(":")
+    if separator and head.lower().endswith(_OPENSIGNALS_SUFFIXES):
+        channels = [name.strip() for name in tail.split(",") if name.strip()]
+        if not channels:
+            raise ValueError(
+                f"OpenSignals record {record_path!r} ends in ':' but names no "
+                "channels. Drop the colon to take every channel the header lists."
+            )
+        return head, channels
+    return text, None
+
+
+def _read_opensignals_header(record_path: str) -> tuple[dict, int]:
+    """Parse the ``#``-prefixed preamble of an OpenSignals text export.
+
+    Returns the device's metadata dict and the number of header lines, which is
+    what a sample offset has to be measured from. The format is three lines — a
+    version banner, a one-line JSON blob, and ``# EndOfHeader`` — but the count
+    is taken from the file rather than assumed, because OpenSignals writes one
+    JSON entry per connected device and a two-device file has more.
+    """
+    import json
+
+    payload = None
+    n_header = 0
+    with open(record_path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line.startswith("#"):
+                break
+            n_header += 1
+            body = line[1:].strip()
+            if body.startswith("{"):
+                payload = body
+
+    if payload is None:
+        raise ValueError(
+            f"{record_path!r} has no OpenSignals JSON header line. An OpenSignals "
+            "text export starts with '# OpenSignals Text File Format', a '# {...}' "
+            "line describing the columns, and '# EndOfHeader'."
+        )
+
+    devices = json.loads(payload)
+    if not isinstance(devices, dict) or not devices:
+        raise ValueError(f"OpenSignals header of {record_path!r} names no device.")
+    if len(devices) > 1:
+        raise ValueError(
+            f"OpenSignals file {record_path!r} holds {len(devices)} devices "
+            f"({sorted(devices)}); reading a multi-device export is not supported, "
+            "because the columns of the second device continue the same rows."
+        )
+    return next(iter(devices.values())), n_header
+
+
+def _opensignals_length(record_path: str) -> int | None:
+    """Data-line count of an OpenSignals file — the only place its length lives."""
+    try:
+        with open(record_path, encoding="utf-8", errors="replace") as handle:
+            return sum(
+                1 for line in handle if line.strip() and not line.startswith("#")
+            )
+    except OSError:
+        return None
+
+
+def _read_opensignals(
+    record_path: str, channels: list[str] | None, start: int, length: int | None
+) -> np.ndarray:
+    """Read an OpenSignals text export as (leads, samples), centred full-scale.
+
+    **The returned values are fractions of full scale in [-0.5, 0.5), not
+    millivolts**, and that is deliberate: the header records each column's bit
+    depth but not the amplifier's reference voltage or gain, so the volts-per-
+    full-scale factor is a property of the sensor and belongs in the config's
+    ``signal_unit_scale``. For tOLIet that factor is -3.0 mV — negative because
+    the seat's differential front end inverts, which is why the release's own
+    ``read_ecg_data.py`` computes ``1024 - raw`` before scaling.
+
+    Rows are samples, so ``start``/``length`` push down to skiprows/nrows and a
+    window decodes only what it asks for.
+    """
+    device, n_header = _read_opensignals_header(record_path)
+
+    columns = device.get("column")
+    if not columns:
+        raise ValueError(
+            f"OpenSignals header of {record_path!r} has no 'column' list, so its "
+            "channels cannot be named."
+        )
+    if channels is None:
+        channels = list(device.get("label") or [])
+        if not channels:
+            raise ValueError(
+                f"OpenSignals header of {record_path!r} has no 'label' list, so "
+                "which columns are channels is ambiguous. Name them in the path "
+                "as '<file>.txt:A1,A2'."
+            )
+
+    missing = [name for name in channels if name not in columns]
+    if missing:
+        raise ValueError(
+            f"OpenSignals record {record_path!r} does not have channel(s) {missing}. "
+            f"Its header names: {list(columns)}"
+        )
+    indices = [columns.index(name) for name in channels]
+
+    # Bit depth is per column and the reader must not assume they agree: a
+    # BITalino board mixes 10-bit analog inputs with 6-bit ones on the same rows.
+    resolutions = device.get("resolution")
+    if not resolutions or len(resolutions) != len(columns):
+        raise ValueError(
+            f"OpenSignals header of {record_path!r} declares {len(columns)} columns "
+            f"but {0 if not resolutions else len(resolutions)} resolutions, so the "
+            "samples cannot be converted to full scale."
+        )
+
+    try:
+        frame = pd.read_csv(
+            record_path,
+            sep="\t",
+            header=None,
+            skiprows=n_header + start,
+            nrows=length,
+            usecols=indices,
+            # Trailing tab plus CRLF leaves a stray field after the last column;
+            # usecols never reaches it, and this keeps a ragged line from raising.
+            engine="c",
+            on_bad_lines="skip",
+        )
+    except pd.errors.EmptyDataError:
+        # A window starting past the last sample skips every row, and pandas
+        # complains about the file rather than about the window.
+        raise _window_error(
+            record_path, start, length, _opensignals_length(record_path)
+        ) from None
+    # read_csv returns usecols in file order regardless of how they were asked
+    # for, so reorder to the requested channel order rather than trusting it.
+    order = [sorted(indices).index(i) for i in indices]
+    raw = frame.to_numpy(dtype=np.float32)[:, order]
+
+    scale = np.asarray([2.0 ** resolutions[i] for i in indices], dtype=np.float32)
+    signal = (raw / scale - np.float32(0.5)).T
+
+    if signal.size == 0 and start == 0 and length is None:
+        raise ValueError(f"OpenSignals record {record_path!r} holds no samples.")
+    if signal.size == 0 or (length is not None and signal.shape[1] != length):
+        available = start + (0 if signal.size == 0 else signal.shape[1])
+        raise _window_error(record_path, start, length, available)
+    return signal
+
+
 def _load_signal(
     record_path: str,
     signal_format: str,
@@ -301,6 +480,14 @@ def _load_signal(
             if start >= available or (length is not None and sampto > available):
                 raise _window_error(record_path, start, length, available)
             signal = signal[:, start:sampto]
+    elif signal_format == "opensignals":
+        # PLUX/BITalino OpenSignals text export: a '#'-prefixed preamble whose
+        # JSON line names every column and its bit depth, then tab-separated
+        # integers, one row per sample. Which columns are the ECG travels in the
+        # path (see _parse_opensignals_ref), and the samples come back as
+        # fractions of full scale for signal_unit_scale to turn into millivolts.
+        path, channels = _parse_opensignals_ref(record_path)
+        signal = _read_opensignals(path, channels, start, length)
     elif signal_format == "npy":
         # One array per split holding every record, so the reference names a row
         # rather than a file of its own. Memory-mapped: the window slices before
@@ -342,7 +529,7 @@ def _load_signal(
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5"
         )
 
     if unit_scale != 1.0:

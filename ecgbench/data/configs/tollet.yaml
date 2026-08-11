@@ -1,0 +1,342 @@
+# ECGBench Config: tOLIet (thigh-based ECG from a toilet seat)
+# =============================================================
+# https://physionet.org/content/tollet/1.0.1/
+#
+# 145 sittings on an instrumented toilet seat by 86 people, each recorded through
+# the thighs by four electrode pairs of differing surface texture at once. The
+# point of the release is to compare those textures; the reference for "what the
+# heart was actually doing" is a clinical 12-lead ECG recorded at the same time,
+# shipped for 23 of the sittings.
+#
+# SEVEN THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. ONE ECGBENCH RECORD IS ONE ELECTRODE CHANNEL, NOT ONE SITTING. Each of the
+#    145 .txt files holds four differential channels taken at the same instant
+#    from four electrode pairs moulded into the same seat, differing only in
+#    surface texture: A1 flat, A2 sinusoidal, A3 pyramidal, A4 trapezoidal.
+#    ECGBench exposes each channel as its own single-lead record, "<source>_<ch>"
+#    — 15_1_A2 is the sinusoidal channel of subject 15's second sitting. So 145
+#    files x 4 textures = 580 records, and `leads: 1` below is literal.
+#
+#    WHY NOT FOUR LEADS PER FILE, which is what the files look like: because
+#    three quarters of the channels are not ECG (point 2), and a flat lead inside
+#    an otherwise good record makes ECGBench reject the WHOLE record. Only 5 of
+#    the 145 files have all four textures live, so a 4-lead record set would give
+#    a `clean` version of 5 records and two empty folds. Per channel, `clean` is
+#    the 342 channels that actually recorded.
+#
+# 2. 342 OF THE 580 CHANNELS CARRY A SIGNAL AND 238 DO NOT, AND THAT IS WHAT
+#    `clean` MEANS HERE. Sit a person on the seat and some electrode pairs make
+#    contact and some do not; a pair that did not reads a constant ADC code of 0
+#    for the whole sitting — a constant +1.5 mV, so `missing_leads` (all-NaN or
+#    all-zero) never sees it and `flat_line` does. Per texture, live in: 140 of
+#    145 for A1 (flat), 127 for A2 (sinusoidal), 68 for A4 (trapezoidal) and
+#    SEVEN for A3 (pyramidal). The pyramidal electrode essentially never worked,
+#    which is a finding about electrode geometry rather than a defect.
+#
+#    ECGBench does not invent a threshold for this: the label loader runs the
+#    project's own check_flat_line per channel and exposes the verdict as
+#    `signal_active`, so the label column and the validation report are the same
+#    decision. `clean/` is exactly the signal_active records.
+#
+# 3. `signal_active` IS A FLOOR, NOT A GUARANTEE, AND `amplitude_outlier` IS A
+#    NO-OP. The front end is ±1.5 mV full scale into a 10-bit converter, so every
+#    sample is inside amplitude_range_mv by construction and that check cannot
+#    fire. What actually goes wrong is saturation AT the rail: 66 of the 145
+#    sittings drive at least one live channel into one, and a channel that
+#    oscillates BETWEEN both rails has a large variance and passes flat_line while
+#    carrying no ECG (58_1_A4: variance 0.028 mV^2, at a rail for 99.7% of its
+#    samples). 12 live channels are railed for more than half their samples. No
+#    check in CHECK_REGISTRY measures this; the labels' `clipped_fraction` does,
+#    and anything depending on morphology should filter on it too. (The highest
+#    ADC code occurring anywhere in the release is 1022, not 1023.)
+#
+# 4. RECORD LENGTH VARIES FOURTEENFOLD, AND THE LANDING PAGE OVERSTATES IT.
+#    Records run 14,400 to 197,250 samples at 1 kHz — 14.4 s to 197.2 s, median
+#    126.3 s — against the abstract's "up to 5 minutes". expected_samples is
+#    therefore deliberately empty (see the validation block) and any window= has
+#    to fit the 14,400-sample shortest record.
+#
+# 5. THE RELEASE SAYS 149 SITTINGS AND SHIPS 145. DataSet.csv lists 149 IDs;
+#    ECG_EXP/ holds 145 .txt files. 12_1, 13_1, 14_1 and 41_1 are tabulated and
+#    absent. ECGBench drops those four rows with a warning rather than emitting
+#    records that would all fail corrupt_header. The subject count is unaffected:
+#    86 either way, because each of the four is a *later* sitting of a subject
+#    whose first is present.
+#
+# 6. THE 12-LEAD REFERENCES ARE NOT PART OF THE RECORD SET. ECG_REF/ holds 23
+#    Sapphire-format .XML files in microvolts, one per sitting, covering subjects
+#    58, 59, 60, 67 and 68-86. They are a different modality in a format no
+#    ECGBench reader supports, and folding them in would put 10-second clinical
+#    12-lead ECGs and two-minute thigh recordings in the same folds.
+#    `has_reference_ecg` and `reference_path` in the labels point at them; parse
+#    them with the release's own Script/read_ref_data.py.
+#
+# 7. 580 RECORDS ARE NOT 580 INDEPENDENT OBSERVATIONS. The four channels of a
+#    sitting are simultaneous measurements of one thigh-to-thigh derivation, so
+#    the independent unit is the sitting (145) or the subject (86). Folds group by
+#    subject, so nothing leaks across a fold boundary, but a model evaluated as
+#    though it saw 580 samples overstates its evidence. `source_record` in the
+#    labels is there to collapse them.
+#
+# THE README CONTRADICTS THE LICENCE. README.md ends "Redistribution is not
+# permitted without explicit authorization from the authors", while the shipped
+# LICENSE.txt is verbatim CC BY 4.0 and the PhysioNet landing page states CC BY
+# 4.0. The licence travelling with the data governs (the same rule applied to
+# ikem), so publish_fold_csvs is left at its default and the identifier-only fold
+# CSVs go to the Hub. The waveforms themselves are not redistributed by ECGBench
+# in any case.
+#
+# ALL 174 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt.
+
+name: "tOLIet (Thigh-based ECG from a Toilet Seat)"
+slug: "tollet"
+version: "1.0.1"
+url: "https://physionet.org/content/tollet/1.0.1/"
+download_url: null  # TolletSplitter generates metadata_csv, so this must stay null
+license: "CC-BY-4.0"  # verbatim in the shipped LICENSE.txt; see the README note above
+description: >
+  Single-lead electrocardiograms acquired at the thighs by an "invisible" ECG
+  system built into a toilet seat: 145 sittings by 86 volunteers at the Centro
+  Hospitalar Universitario de Lisboa Central, each recorded simultaneously by four
+  polymeric dry-electrode pairs embedded in the seat that differ only in surface
+  texture — flat, sinusoidal, pyramidal and trapezoidal. The release is therefore
+  a controlled comparison of electrode geometry under the hardest realistic
+  condition: dry skin, no gel, no preparation, and whatever contact a seated
+  person happens to make. ECGBench exposes each electrode channel as its own
+  single-lead record, giving 580 records of which 342 carry a signal; the rest are
+  pairs that made no contact and are kept in the `original` version only. Signals
+  are 1 kHz, 10-bit over a ±1.5 mV span, band-limited 0.5-40 Hz in hardware, and
+  run 14.4 s to 197.2 s. 23 of the sittings have a simultaneous clinical 12-lead
+  resting ECG as ground truth. Age, weight, height and sex ship per subject; four
+  sittings carry a paroxysmal atrial fibrillation note and the rest carry no
+  diagnosis at all.
+citation: >
+  Silva, A. S., Placido da Silva, H., Correia, M., Goncalves da Costa, A. C., &
+  Laranjo, S. (2026). tOLIet: Single-lead Thigh-based Electrocardiography Using
+  Polymeric Dry Electrodes (version 1.0.1). PhysioNet.
+  https://doi.org/10.13026/411k-1476. See also Silva et al., Scientific Data
+  (2026), https://doi.org/10.1038/s41597-026-06713-6. PhysioNet also asks for:
+  Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG, Mietus
+  JE, Moody GB, Peng C-K, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet:
+  Components of a New Research Resource for Complex Physiologic Signals.
+  Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/411k-1476"
+
+creators:
+  - type: Person
+    name: "Aline Santos Silva"
+    url: "https://physionet.org/content/tollet/1.0.1/"
+  - type: Person
+    name: "Hugo Placido da Silva"
+    url: "https://physionet.org/content/tollet/1.0.1/"
+  - type: Organization
+    name: "INESC TEC / Instituto de Telecomunicacoes"
+    url: "https://www.inesctec.pt/en"
+
+# --- Signal Properties ---
+# PLUX/BITalino OpenSignals text export: three '#' preamble lines, the second a
+# JSON blob naming all eleven columns and their bit depths, then tab-separated
+# integers. `signal_path` carries the four ECG column labels after a colon —
+# "ECG_EXP/15_1.txt:A1,A2,A3,A4" — because the file also stores nSeq, four digital
+# I/O columns and two 6-bit analog channels that are zero throughout.
+signal_format: "opensignals"
+# THE READER RETURNS FRACTIONS OF FULL SCALE, NOT MILLIVOLTS, so this factor is
+# not a unit conversion in the usual sense: it is the amplifier's full-scale span
+# in mV, and it is NEGATIVE because the seat's differential front end inverts.
+# Together they reproduce the release's own read_ecg_data.py exactly —
+# ((1024 - raw)/1024 - 0.5) * (33/11) — to the last bit, which was checked
+# sample-for-sample against np.loadtxt of the raw file rather than assumed.
+signal_unit_scale: -3.0
+# ONE LEAD, LITERALLY: a record is a single electrode channel of a single sitting
+# (point 1), so the tensor is (1, samples). Which electrode is in the labels'
+# `channel` / `electrode_texture`, not in the lead name, because it varies from
+# record to record. There is only one derivation in this dataset — thigh to thigh
+# — so leads=[...] has nothing to select and is never needed.
+leads: 1
+lead_names: ["ECG"]
+duration_seconds: 126  # median; length varies 14.4-197.2 s, see point 4
+sampling_rates: [1000]
+default_sampling_rate: 1000
+
+# --- File Structure ---
+# No usable metadata file ships. DataSet.csv is semicolon-separated with a UTF-8
+# BOM and 16 unnamed empty columns, lists four records that do not exist, and says
+# nothing about which electrode textures were connected — the fact that decides
+# whether a record is valid. TolletSplitter builds this CSV on first run via
+# ecgbench.labels.tollet, which scans all four channels of all 145 files. The
+# validation engine re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# The release's own IDs: "1".."86" for a first session, "15_1" / "63_2" for later
+# ones. Unique across the release.
+# "1_A1", "15_1_A2", "63_2_A4": the release's own sitting ID with the electrode
+# channel appended, because one sitting becomes four records.
+record_id_column: "record_id"
+# False, and checked rather than assumed: record_id always ends in "_A<n>" and
+# signal_path always contains ":A<n>", so neither is ever all-digits and the CSV
+# round trip cannot coerce them. subject_id IS all-digits ("1".."86") and so comes
+# back as int64 — the same as mitdb's and ptbxl's numeric ids, which is why this
+# flag stays off; it exists for ids that LOSE information when coerced, and 15
+# carries everything "15" does.
+#
+# The one place that is not good enough is the generated metadata cache, because
+# the split is computed from string subject ids on the first run and from whatever
+# the CSV gives back on later ones, and StratifiedGroupKFold orders its groups by
+# value — so int64 groups there would silently produce a different partition and a
+# different fold_digest for the same data. TolletSplitter pins the dtype on that
+# read, the way ECGIDDBSplitter does. tests/test_splitting.py checks both runs
+# agree.
+zero_padded_identifiers: false
+# 86 subjects for 580 records — 145 sittings x 4 electrodes, 1 to 3 sittings each.
+# The four channels of one sitting are the SAME BEATS (point 7) and the same
+# person's thighs on the same seat are not an independent sample either, so
+# grouping is essential. engine.py uses StratifiedGroupKFold on this column.
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  1000: "signal_path"  # "ECG_EXP/<sitting>.txt:<channel>", e.g. "ECG_EXP/15_1.txt:A2"
+
+# --- Labels ---
+# There is no diagnosis for all but 16 of the 580 records. `observations` is the
+# release's free-text clinical note, populated for 4 of the 145 sittings — all
+# paroxysmal AF. It is named as label_column because it is the only clinical
+# column that exists, NOT because it is trainable: 564 empty strings is not a
+# class. The dataset's own
+# stated tasks are electrode-texture comparison and biometric identification, and
+# for the latter the label is subject_id, which is also patient_id_column — so
+# ECGBench's subject-grouped folds cannot be used to train an identifier. Split
+# within subject on `session_index` for that.
+label_column: "observations"
+label_format: "single"
+
+stratification:
+  # TolletSplitter takes `stratify_class` from the label loader: sex crossed with
+  # whether all four textures recorded — F_complete (26 subjects, 32 records),
+  # F_partial (40/53), M_complete (22/27), M_partial (29/33).
+  #
+  # WHY THE CROSS. Sex alone is the obvious axis and keeps the female fraction at
+  # 0.57-0.60 across folds, but it is not what decides how big a fold is in the
+  # version most people load: `recording_complete` is what makes a record valid,
+  # so `clean` holds only 59 records and stratifying on sex alone scatters them
+  # 2 to 9 per fold — a fourfold spread in the default training set. Stratifying
+  # on completeness alone fixes that (5-6 per fold) and lets the female fraction
+  # swing 0.40-0.86. The cross gives 5-7 clean records per fold at 0.53-0.64
+  # female, measured over the shipped files at random_state=42.
+  #
+  # REJECTED: sex crossed with an age cut. It behaves like sex alone (clean 2-8)
+  # and leaves only 6 older-female and 6 older-male subjects inside `clean`,
+  # below the ten a class needs to reach all ten folds. Age is exposed in the
+  # labels instead. See ecgbench.labels.tollet.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# None. Neither the release nor the paper assigns records to train or test.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # DELIBERATELY EMPTY. Length varies 14,400 to 197,250 samples (point 4), so any
+  # value here would flag most of the release as truncated. check_truncated_signal
+  # returns [] for a rate with no entry, which is the intended escape hatch — see
+  # the expected_samples gotcha in CLAUDE.md.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The converter's own span: 10 bits across a +/-1.5 mV front end, so code 0 is
+  # exactly +1.5 mV and code 1023 exactly -1.4970703125 mV. NOTHING CAN EXCEED
+  # THIS, so amplitude_outlier is a no-op for this dataset by construction and
+  # reports zero failures — it is kept in the list so the report says so rather
+  # than silently omitting a check every other config runs. The real amplitude
+  # pathology here is saturation *at* the rail, which no check in CHECK_REGISTRY
+  # measures; A1_clipped_fraction..A4_clipped_fraction in the labels do (point 3).
+  # The bound is attained on the +1.5 side by every inactive channel, so it was
+  # checked against the float32 rounding trap in CLAUDE.md rather than assumed:
+  # code 0 gives exactly -0.5 in float32 and -0.5 * -3.0 is exactly 1.5, so the
+  # comparison is exact and no slack is needed. flat_line is the check that
+  # actually does the work for this dataset — it is what separates `clean` from
+  # `original` (point 2) and the only one that fails any record.
+  amplitude_range_mv: [-1.5, 1.5]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/tollet.py explodes DataSet.csv to one row per
+# electrode channel and scans every channel of every file, because whether an
+# electrode made contact — the fact that decides validity — is recorded nowhere
+# but in the samples.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "single-lead"
+    - "thigh"
+    - "dry electrodes"
+    - "polymeric electrodes"
+    - "electrode texture"
+    - "unobtrusive monitoring"
+    - "smart toilet"
+    - "seated acquisition"
+    - "biometrics"
+    - "PhysioNet"
+  rai_data_collection: >
+    145 recordings collected from 86 volunteers seated on a toilet seat
+    instrumented with four pairs of polymeric dry electrodes, at the Centro
+    Hospitalar Universitario de Lisboa Central, and published on PhysioNet in
+    February 2026. The four pairs differ only in the surface texture moulded into
+    them — flat, sinusoidal, pyramidal and trapezoidal — and record the same
+    thigh-to-thigh derivation simultaneously, so the release is a within-subject
+    comparison of electrode geometry rather than a clinical cohort. Acquisition is
+    through bare skin at the posterior thigh with no gel, no abrasion and no
+    electrode placement by an operator: contact is whatever a person sitting down
+    happens to make, which is the condition the system is meant to work in and the
+    reason a large fraction of the signal saturates. Signals are digitised at
+    1 kHz with 10-bit resolution over a +/-1.5 mV span and band-limited 0.5-40 Hz
+    in hardware; recordings run 14.4 s to 197.2 s. 23 of the recordings were taken
+    alongside a clinical 12-lead resting ECG from a hospital cardiograph, which
+    ships as XML in microvolts. Age, weight, height and sex were recorded per
+    subject; no clinical examination was performed beyond a free-text note present
+    for four recordings.
+  rai_data_biases: >
+    A convenience sample of 86 volunteers at one Lisbon hospital, not a clinical
+    or population cohort, and it is neither a healthy cohort nor a diseased one —
+    no examination was done, and the only clinical information in the release is a
+    free-text atrial fibrillation note on 4 of the 145 recordings. It skews female
+    (50 of 86 subjects) and middle-aged-to-young (subject mean 31.7 +/- 13.1
+    years, range 18 to 83), and body habitus is narrow: weight 49-95 kg, height
+    150-185 cm, BMI 16.6-34.1. Because the electrodes work through the thigh, body
+    composition is not a nuisance variable here but part of the measurement, so a
+    model fitted to this cohort should not be assumed to transfer to bodies
+    outside that range. The dominant structural bias is in the acquisition rather
+    than the people: only 59 of the 145 recordings have all four electrode
+    textures connected, and which textures are present is not random with respect
+    to when the recording was made, so a comparison of textures drawn from the
+    whole release is confounded by session. 104 recordings drive at least one
+    channel into a converter rail, so amplitude distributions are censored, and
+    the clipped fraction differs systematically between textures. All acquisition
+    is seated, dry-electrode and single-derivation, so nothing here describes
+    resting supine 12-lead morphology except in the 23 recordings that ship a
+    clinical reference.
+  rai_personal_sensitive_info: >
+    De-identified in the sense that subjects are numbered 1 to 86 and no name,
+    contact detail or medical record number ships. Age, weight, height and sex are
+    given per subject, and four subjects carry a specific cardiac note
+    (paroxysmal atrial fibrillation, one of them a month after ablation, one with
+    left bundle branch block and cardiomyopathy under study) — a combination that
+    is a weak but non-empty re-identification surface within a cohort of 86 people
+    at one named hospital. As with any ECG collection the waveforms are themselves
+    a biometric: the release states biometric identification as an intended use,
+    and 53 of the subjects contributed more than one session, so the data
+    demonstrates rather than merely permits re-identification across sittings. No
+    recording date, timestamp or session interval ships, which limits linkage to
+    external records. Nothing in the data constitutes a diagnosis for the other 82
+    subjects.

@@ -6168,3 +6168,167 @@ class TestSZDBSplitter:
             SZDBSplitter().get_stratification_labels(
                 pd.DataFrame({"record_name": ["sz01"]}), self._config(sample_config)
             )
+
+
+class TestTolletSplitter:
+    """tOLIet: a generated metadata CSV, one row per seat electrode.
+
+    The cache is not an optimisation — ``validate_dataset`` re-reads
+    ``metadata_csv`` from disk rather than reusing the splitter's frame, so a
+    splitter that only fixed the paths in memory would leave validation resolving
+    nothing. That is the bug Chapman shipped with for months.
+    """
+
+    HEADER = (
+        "# OpenSignals Text File Format. Version 1\n"
+        '# {"": {"sampling rate": 1000, '
+        '"resolution": [4, 1, 1, 1, 1, 10, 10, 10, 10, 6, 6], '
+        '"label": ["A1", "A2", "A3", "A4", "A5", "A6"], '
+        '"column": ["nSeq", "I1", "I2", "O1", "O2", "A1", "A2", "A3", "A4", '
+        '"A5", "A6"]}}\n'
+        "# EndOfHeader\n"
+    )
+
+    def _tree(self, tmp_path):
+        """Two subjects, three sittings, a mix of live and dead electrodes."""
+        root = tmp_path / "tollet"
+        (root / "ECG_EXP").mkdir(parents=True)
+        sittings = [
+            ("1", [(300, 700), (350, 650), 0, 0], "Male"),
+            ("1_1", [(200, 800), 0, 0, 0], "Male"),
+            ("2", [(300, 700), (350, 650), 0, 0], "Female"),
+        ]
+        lines = ["﻿ID;Age;Weight ;Height;Gender;Observations field;;;"]
+        for name, codes, sex in sittings:
+            rows = []
+            for i in range(200):
+                values = [i, 0, 0, 0, 0]
+                for code in codes:
+                    values.append(
+                        code[0] + (i * (code[1] - code[0])) // 199
+                        if isinstance(code, tuple)
+                        else code
+                    )
+                rows.append("\t".join(str(v) for v in values + [0, 0]) + "\t\r")
+            (root / "ECG_EXP" / f"{name}.txt").write_text(
+                self.HEADER + "\n".join(rows) + "\n", encoding="utf-8"
+            )
+            lines.append(f"{name};40;70;170;{sex};;;;")
+        (root / "DataSet.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return root
+
+    @pytest.fixture
+    def config(self):
+        from ecgbench.config import load_config
+
+        return load_config("tollet")
+
+    def test_load_metadata_explodes_sittings_into_channels(self, tmp_path, config):
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        root = self._tree(tmp_path)
+        df = TolletSplitter().load_metadata(root, config)
+        assert len(df) == 12  # 3 sittings x 4 electrodes
+        assert df["subject_id"].nunique() == 2
+        assert df["source_record"].nunique() == 3
+        assert set(df["channel"]) == {"A1", "A2", "A3", "A4"}
+
+    def test_the_generated_csv_is_written_where_validation_will_look(
+        self, tmp_path, config
+    ):
+        """validate_dataset re-reads config.metadata_csv from disk itself."""
+        import pandas as pd
+
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        root = self._tree(tmp_path)
+        assert not (root / config.metadata_csv).exists()
+        TolletSplitter().load_metadata(root, config)
+        written = pd.read_csv(root / config.metadata_csv, dtype=config.identifier_dtypes())
+        assert len(written) == 12
+        signal_col = config.signal_path_columns[config.default_sampling_rate]
+        # Every path in the file must resolve to one column of a real file.
+        for reference in written[signal_col]:
+            path, _, channel = str(reference).partition(":")
+            assert (root / path).exists()
+            assert channel in ("A1", "A2", "A3", "A4")
+
+    def test_the_second_run_reads_the_cache_rather_than_rescanning(
+        self, tmp_path, config
+    ):
+        """Rescanning is 17.9 million samples; the cache must be authoritative."""
+        from ecgbench.splitting.strategies import tollet as strategy
+
+        root = self._tree(tmp_path)
+        strategy.TolletSplitter().load_metadata(root, config)
+
+        # Delete the signals: a cached run must not need them.
+        for path in (root / "ECG_EXP").glob("*.txt"):
+            path.unlink()
+        df = strategy.TolletSplitter().load_metadata(root, config)
+        assert len(df) == 12
+
+    def test_the_cache_reproduces_the_scan_exactly_including_dtypes(
+        self, tmp_path, config
+    ):
+        """A run off the cache must partition identically to a run off the scan.
+
+        subject_id is all-digits, so a plain ``read_csv`` gives int64 where the
+        label loader gives str — and ``StratifiedGroupKFold`` orders its groups by
+        value, so the two would produce different folds and different
+        ``fold_digest`` values for identical data. The splitter pins the dtype for
+        exactly this reason; ``config.identifier_dtypes()`` is empty here.
+        """
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        assert config.identifier_dtypes() == {}
+        root = self._tree(tmp_path)
+        splitter = TolletSplitter()
+
+        fresh = splitter.load_metadata(root, config)          # built by the scan
+        cached = splitter.load_metadata(root, config)         # read back from disk
+        for column in ("record_id", "subject_id", "signal_path"):
+            assert cached[column].map(type).eq(str).all(), column
+            assert list(cached[column]) == list(fresh[column]), column
+
+        partitions = []
+        for df in (fresh, cached):
+            result = split_dataset(
+                df, splitter.get_stratification_labels(df, config), config, n_folds=2
+            )
+            partitions.append(
+                {
+                    number: sorted(fold["record_id"].astype(str))
+                    for number, fold in result.folds.items()
+                }
+            )
+        assert partitions[0] == partitions[1]
+
+    def test_stratification_is_sex_crossed_with_liveness(self, tmp_path, config):
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        root = self._tree(tmp_path)
+        splitter = TolletSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+        assert labels.name == "sex_x_signal_active"
+        assert set(labels) == {"M_active", "M_flat", "F_active", "F_flat"}
+        # Liveness is per channel, so one subject appears in two classes.
+        assert labels[df["subject_id"] == "1"].nunique() == 2
+
+    def test_stratification_needs_load_metadata_first(self, config):
+        import pandas as pd
+
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            TolletSplitter().get_stratification_labels(
+                pd.DataFrame({"record_id": ["1_A1"]}), config
+            )
+
+    def test_the_splitter_is_registered_and_not_the_generic_fallback(self):
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.tollet import TolletSplitter
+
+        assert isinstance(get_splitter("tollet"), TolletSplitter)

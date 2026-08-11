@@ -337,6 +337,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ltstdb` | **`ECG, ECG` in 22 of 86 records, and 11 further layouts in the other 64** — the only dataset here where the lead **count** varies as well as the names: 68 records store two signals and 18 store three. The modal layout is the 22 records whose headers say "Electrode locations were not recorded", so `leads=["ECG"]` returns signal 0 for those and **no name reaches signal 1**. No lead is in all 86 (MLIII 29, V4 27), and `V4/MLIII` and `MLIII/V4` are both present, 20 records and 6. See below |
 | `szdb` | **`ECG` — one channel, and the third here that is not called `I`.** All 7 headers name the single channel `ECG`, and the paper says only "continuous single-lead ECG signals" — no electrode placement anywhere, so it is a channel position. Two quirks specific to this release: the 7 superseded `.hea-` copies describe it as `column 1` instead, so `lead_names` had to come from the current headers; and the **ADC gain differs between records** — 25 adu/mV in five, 10 in `sz05` and `sz06` — which moves the 8-bit rail from [−4.0, +6.2] mV to [−10.0, +15.5] mV |
 | `ecgiddb` | **`ECG I`, `ECG I filtered` — two channels holding ONE lead.** Identical in all 310 headers, raw first. Both are Lead I from limb clamps; channel 1 is the author's own offline preprocessing of channel 0 (level-9 `db8` wavelet baseline removal, adaptive 50 Hz bandstop, 5th-order Butterworth lowpass at 40 Hz), and it is zero-phase, so the two are sample-aligned. `config.leads` is 2 because that is the tensor shape; the catalogue says 1 electrode pair. Select `leads=["ECG I"]` or a model gets the same lead twice — the same trap as `wctecgdb`, which ships every one of its 37 channels raw *and* filtered |
+| `tollet` | **`ECG` — one channel, and the electrode is not in the name.** A record here is one *electrode* of one sitting, not one sitting: the seat carries four dry pads that differ only in surface texture (flat, sinusoidal, pyramidal, trapezoidal) and record the same thigh-to-thigh derivation at once, and ECGBench splits each file into four single-lead records. So the texture varies from record to record and cannot be a lead name — it is `labels["electrode_texture"]`, and `leads=` has nothing to select. The signal path names the column instead: `ECG_EXP/15_1.txt:A2`. **238 of the 580 records are pads that never made contact**, which is what `clean` (342) excludes |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -975,6 +976,28 @@ multiple seizures), which is what makes it evidence rather than a guess;
 `n_folds: 5`** rather than 10 — seven records over five subjects cannot make ten folds,
 and at seven folds `StratifiedGroupKFold` would emit two empty ones without a word. See
 `examples/load_szdb.py`.
+
+`tollet` is the only dataset here where **one source recording becomes several
+records**, and the only one read from a `opensignals` file. 145 sittings on a toilet
+seat instrumented with four dry polymer electrode pairs, each pair differing only in
+surface texture (flat, sinusoidal, pyramidal, trapezoidal) and all four sampling the
+same thigh-to-thigh derivation at once, at 1 kHz through a ±1.5 mV 10-bit front end.
+Four things to know. **A record is one electrode, not one sitting** — 145 × 4 = 580
+single-lead records named `15_1_A2` — because a pair that made no contact reads a
+constant code, and as a fourth lead inside a four-lead record that one dead pad sinks
+the whole sitting through `flat_line`: only 5 of the 145 sittings have all four live,
+so the four-lead model would give a `clean` version of 5 records and two empty folds.
+Per electrode it is **342 of 580**, and the per-texture answer is the release's own
+result: the flat pad worked in 140 of its 145 sittings, sinusoidal 127, trapezoidal
+68, and **pyramidal 7**. **`amplitude_outlier` cannot fire** — the converter bounds
+every sample inside `amplitude_range_mv` by construction — and the real pathology is
+saturation *at* the rail, which no check measures: 12 records that pass `flat_line`
+are railed for over half their samples, one of them for 99.97%, so filter on the
+labels' `clipped_fraction` too. And **580 records are 145 independent observations**:
+the four channels of a sitting are the same beats, so group on `source_record` before
+counting, as the subject-grouped folds already do. Its `signal_unit_scale` is
+**negative** (`-3.0`), being the amplifier's full-scale span in mV with the front
+end's inversion folded in. See `examples/load_tollet.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

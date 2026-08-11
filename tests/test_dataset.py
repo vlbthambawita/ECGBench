@@ -2099,3 +2099,157 @@ class TestECGIDDBChannels:
         assert load_config("ecgiddb").leads == 2
         # The format string has to carry the reconciliation, or the "1" is a lie.
         assert "raw" in entry.format and "filtered" in entry.format
+
+
+class TestOpenSignalsReader:
+    """The PLUX/BITalino text export, added for tOLIet.
+
+    Three things this format does that no other ECGBench reader does: it names its
+    columns in a JSON header line, it stores channels the dataset does not want
+    (a sequence number, digital I/O, and analog inputs at a different bit depth),
+    and it returns **fractions of full scale rather than millivolts** — the volts
+    per full scale is a property of the sensor, not the file, so it lives in
+    ``signal_unit_scale``.
+    """
+
+    #: The real tOLIet preamble, with A5/A6 at 6 bits like a BITalino board, so a
+    #: reader that assumed one bit depth for the whole row would be wrong.
+    HEADER = (
+        "# OpenSignals Text File Format. Version 1\n"
+        '# {"": {"sampling rate": 1000, '
+        '"resolution": [4, 1, 1, 1, 1, 10, 10, 10, 10, 6, 6], '
+        '"label": ["A1", "A2", "A3", "A4", "A5", "A6"], '
+        '"column": ["nSeq", "I1", "I2", "O1", "O2", "A1", "A2", "A3", "A4", '
+        '"A5", "A6"]}}\n'
+        "# EndOfHeader\n"
+    )
+
+    def _write(self, path, n=50):
+        """One file where every column is identifiable: column j holds (j+1)*100 + i."""
+        rows = []
+        for i in range(n):
+            rows.append("\t".join(str((j + 1) * 100 + i) for j in range(11)) + "\t\r")
+        path.write_text(self.HEADER + "\n".join(rows) + "\n", encoding="utf-8")
+        return path
+
+    def test_channels_are_selected_by_name_from_the_path(self, tmp_path):
+        """``<file>.txt:A1,A3`` reads those two columns, in that order."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        signal = _load_signal(f"{path}:A1,A3", "opensignals")
+        assert signal.shape == (2, 50)
+        # A1 is column 5 (600 + i) and A3 column 7 (800 + i), each over 2**10.
+        assert signal[0][0] == pytest.approx(600 / 1024 - 0.5)
+        assert signal[1][0] == pytest.approx(800 / 1024 - 0.5)
+
+    def test_requested_order_is_honoured_not_file_order(self, tmp_path):
+        """read_csv returns usecols in file order; the reader must reorder."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        forward = _load_signal(f"{path}:A1,A4", "opensignals")
+        reversed_ = _load_signal(f"{path}:A4,A1", "opensignals")
+        assert np.allclose(reversed_[0], forward[1])
+        assert np.allclose(reversed_[1], forward[0])
+
+    def test_bit_depth_is_per_column(self, tmp_path):
+        """A5 is 6-bit on the same rows as the 10-bit A1, per the header."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        signal = _load_signal(f"{path}:A1,A5", "opensignals")
+        assert signal[0][0] == pytest.approx(600 / 1024 - 0.5)
+        assert signal[1][0] == pytest.approx(1000 / 64 - 0.5)
+
+    def test_unit_scale_is_applied_and_may_be_negative(self, tmp_path):
+        """tOLIet's -3.0 both scales to millivolts and inverts the polarity."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        plain = _load_signal(f"{path}:A1", "opensignals")
+        scaled = _load_signal(f"{path}:A1", "opensignals", -3.0)
+        assert np.allclose(scaled, plain * -3.0)
+        # And it reproduces the release's own read_ecg_data.py formula exactly.
+        raw = np.array([600 + i for i in range(50)], dtype=np.float64)
+        assert np.allclose(scaled[0], ((1024 - raw) / 1024 - 0.5) * (33 / 11))
+
+    def test_default_is_every_channel_the_header_labels(self, tmp_path):
+        """No ':' suffix means the six analog channels, in header order."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        assert _load_signal(str(path), "opensignals").shape == (6, 50)
+
+    def test_window_is_pushed_into_the_reader(self, tmp_path):
+        """(start, length) becomes skiprows/nrows, so it decodes only its samples."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        whole = _load_signal(f"{path}:A1", "opensignals")
+        assert np.allclose(_load_signal(f"{path}:A1", "opensignals", 1.0, (10, 5)),
+                           whole[:, 10:15])
+        # length=None means "to the end".
+        assert np.allclose(_load_signal(f"{path}:A1", "opensignals", 1.0, (40, None)),
+                           whole[:, 40:])
+
+    def test_a_window_past_the_end_names_the_record_and_its_length(self, tmp_path):
+        """numpy/pandas return a short array rather than raising; we must not."""
+        from ecgbench.dataset import WindowOutOfRangeError, _load_signal, _record_length
+
+        path = self._write(tmp_path / "1.txt")
+        with pytest.raises(WindowOutOfRangeError, match="1.txt"):
+            _load_signal(f"{path}:A1", "opensignals", 1.0, (48, 10))
+        with pytest.raises(WindowOutOfRangeError):
+            _load_signal(f"{path}:A1", "opensignals", 1.0, (60, 5))
+        # The length in that message comes from counting data lines.
+        assert _record_length(f"{path}:A1", "opensignals") == 50
+
+    def test_an_unknown_channel_lists_what_the_file_has(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path / "1.txt")
+        with pytest.raises(ValueError, match=r"A9.*nSeq"):
+            _load_signal(f"{path}:A9", "opensignals")
+
+    def test_a_file_with_no_json_header_says_what_the_format_is(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        path = tmp_path / "1.txt"
+        path.write_text("1\t2\t3\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="OpenSignals"):
+            _load_signal(f"{path}:A1", "opensignals")
+
+    def test_a_multi_device_export_is_refused_rather_than_half_read(self, tmp_path):
+        """Two devices continue the same rows, so column indices would be wrong."""
+        from ecgbench.dataset import _load_signal
+
+        path = tmp_path / "1.txt"
+        path.write_text(
+            "# OpenSignals Text File Format. Version 1\n"
+            '# {"AA": {"resolution": [10], "column": ["A1"], "label": ["A1"]}, '
+            '"BB": {"resolution": [10], "column": ["A1"], "label": ["A1"]}}\n'
+            "# EndOfHeader\n1\t2\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="2 devices"):
+            _load_signal(f"{path}:A1", "opensignals")
+
+    def test_the_validation_engine_reads_it_the_same_way(self, tmp_path):
+        """engine.py keeps its own window-less copy of _load_signal; it must agree."""
+        from ecgbench.dataset import _load_signal
+        from ecgbench.validation.engine import _load_signal as _validation_load
+
+        path = self._write(tmp_path / "1.txt")
+        assert np.allclose(
+            _validation_load(f"{path}:A1,A2", "opensignals", -3.0),
+            _load_signal(f"{path}:A1,A2", "opensignals", -3.0),
+        )
+
+    def test_a_path_without_a_recognised_extension_keeps_its_colon(self, tmp_path):
+        """A directory named with a colon must not be read as a channel list."""
+        from ecgbench.dataset import _parse_opensignals_ref
+
+        assert _parse_opensignals_ref("a/b.txt:A1,A2") == ("a/b.txt", ["A1", "A2"])
+        assert _parse_opensignals_ref("a:b/c.txt") == ("a:b/c.txt", None)
+        assert _parse_opensignals_ref("plain.txt") == ("plain.txt", None)

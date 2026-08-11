@@ -11059,3 +11059,262 @@ class TestSZDBLabels:
         # The `#:` block above SUBJECT_IDS is a Sphinx comment, not a runtime
         # __doc__, so the pointer to the verifier is checked in the source.
         assert "verify_subject_grouping" in inspect.getsource(szdb)
+
+
+class TestTolletLabels:
+    """tOLIet: one record per seat electrode, and liveness taken from validation.
+
+    Two structural facts this class pins. A record is **one electrode channel of
+    one sitting**, not a sitting, because three quarters of the channels made no
+    contact and a flat lead inside a 4-lead record sinks the whole record. And
+    ``signal_active`` is ECGBench's own ``check_flat_line`` verdict rather than a
+    threshold invented in the label module, so the label column and the validation
+    report cannot disagree about what ``clean`` means.
+    """
+
+    HEADER = (
+        "# OpenSignals Text File Format. Version 1\n"
+        '# {"": {"sampling rate": 1000, '
+        '"resolution": [4, 1, 1, 1, 1, 10, 10, 10, 10, 6, 6], '
+        '"label": ["A1", "A2", "A3", "A4", "A5", "A6"], '
+        '"column": ["nSeq", "I1", "I2", "O1", "O2", "A1", "A2", "A3", "A4", '
+        '"A5", "A6"]}}\n'
+        "# EndOfHeader\n"
+    )
+
+    def _write_sitting(self, root, name, codes, n=200):
+        """One ECG_EXP/<name>.txt whose four channels follow ``codes``.
+
+        ``codes`` is one entry per channel: an int writes that constant code (a
+        dead electrode), a tuple ``(low, high)`` sweeps between them (a live one).
+        """
+        directory = root / "ECG_EXP"
+        directory.mkdir(parents=True, exist_ok=True)
+        rows = []
+        for i in range(n):
+            values = [i, 0, 0, 0, 0]
+            for code in codes:
+                if isinstance(code, tuple):
+                    values.append(code[0] + (i * (code[1] - code[0])) // max(n - 1, 1))
+                else:
+                    values.append(code)
+            values += [0, 0]
+            rows.append("\t".join(str(v) for v in values) + "\t\r")
+        (directory / f"{name}.txt").write_text(
+            self.HEADER + "\n".join(rows) + "\n", encoding="utf-8"
+        )
+
+    def _tree(self, tmp_path, sittings, references=()):
+        """Build a dataset root: DataSet.csv, ECG_EXP/, optionally ECG_REF/."""
+        root = tmp_path / "tollet"
+        root.mkdir()
+        lines = ["﻿ID;Age;Weight ;Height;Gender;Observations field;;;"]
+        for name, codes, age, sex, note in sittings:
+            self._write_sitting(root, name, codes)
+            lines.append(f"{name};{age};70;170;{sex};{note};;;")
+        (root / "DataSet.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        if references:
+            (root / "ECG_REF").mkdir()
+            for name in references:
+                (root / "ECG_REF" / f"{name}.XML").write_text("<x/>", encoding="utf-8")
+        return root
+
+    def _sittings(self):
+        """Two subjects: one with two sittings, one with a single all-dead one."""
+        return [
+            # subject 1, first sitting: A1 and A2 live, A3 unconnected (code 0),
+            # A4 railed at the bottom with a couple of counts of dither.
+            ("1", [(300, 700), (350, 650), 0, (1020, 1021)], 40, "Male", ""),
+            # subject 1, second sitting: only A1 live.
+            ("1_1", [(200, 800), 0, 0, 0], 40, "Male", "Paroxysmal AF"),
+            # subject 2: nothing made contact at all.
+            ("2", [0, 0, 0, 0], 27, "Female", ""),
+        ]
+
+    @pytest.fixture
+    def config(self):
+        from ecgbench.config import load_config
+
+        return load_config("tollet")
+
+    def test_one_record_per_electrode_channel(self, tmp_path, config):
+        """3 sittings x 4 electrodes = 12 records, named <sitting>_<channel>."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+        assert len(df) == 12
+        assert df.index.name == "record_id"
+        assert set(df.index) == {
+            f"{s}_{c}" for s in ("1", "1_1", "2") for c in ("A1", "A2", "A3", "A4")
+        }
+        assert df.loc["1_1_A2", "source_record"] == "1_1"
+        assert df.loc["1_1_A2", "channel"] == "A2"
+        # The signal path resolves to ONE column of the shared file.
+        assert df.loc["1_1_A2", "signal_path"] == "ECG_EXP/1_1.txt:A2"
+
+    def test_signal_active_is_the_flat_line_check_not_a_local_threshold(
+        self, tmp_path, config
+    ):
+        """The label and the validation verdict have to be the same decision."""
+        from ecgbench.dataset import _load_signal
+        from ecgbench.labels.tollet import load_labels
+        from ecgbench.validation.checks import check_flat_line
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+
+        for record_id, row in df.iterrows():
+            signal = _load_signal(
+                str(root / row["signal_path"]), "opensignals", config.signal_unit_scale
+            )
+            assert row["signal_active"] == (not check_flat_line(signal, config)), record_id
+
+        # A live sweep and a dead constant, plus a railed channel with dither that
+        # is still flat — the case a nunique() test would call live.
+        assert bool(df.loc["1_A1", "signal_active"])
+        assert not bool(df.loc["1_A3", "signal_active"])
+        assert not bool(df.loc["1_A4", "signal_active"])
+
+    def test_an_unconnected_electrode_reads_plus_one_and_a_half_millivolts(
+        self, tmp_path, config
+    ):
+        """Code 0 is +1.5 mV, not 0 mV — so missing_leads never sees it.
+
+        That is why ``flat_line`` is what separates clean from original here, and
+        why the amplitude bound's upper end is attained by the dead channels.
+        """
+        from ecgbench.labels.tollet import load_labels
+        from ecgbench.validation.checks import check_missing_leads
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+        assert df.loc["2_A1", "min_mv"] == 1.5
+        assert df.loc["2_A1", "max_mv"] == 1.5
+
+        from ecgbench.dataset import _load_signal
+
+        signal = _load_signal(
+            str(root / df.loc["2_A1", "signal_path"]),
+            "opensignals",
+            config.signal_unit_scale,
+        )
+        assert check_missing_leads(signal, config) == []
+
+    def test_clipped_fraction_catches_what_flat_line_cannot(self, tmp_path, config):
+        """A channel oscillating between both rails passes flat_line, so say so.
+
+        ``signal_active`` is a floor and not a guarantee; the real release has
+        channels at a rail for 99.7% of their samples with a variance of 0.028.
+        """
+        from ecgbench.labels.tollet import load_labels
+
+        sittings = [("1", [(0, 1023), (300, 700), 0, 0], 40, "Male", "")]
+        root = self._tree(tmp_path, sittings)
+        df = load_labels(root, config)
+        assert bool(df.loc["1_A1", "signal_active"])
+        assert df.loc["1_A1", "clipped_fraction"] > 0
+        # The genuinely useful channel is not clipped at all.
+        assert df.loc["1_A2", "clipped_fraction"] == 0.0
+
+    def test_metadata_rows_with_no_signal_file_are_dropped_with_a_warning(
+        self, tmp_path, config, caplog
+    ):
+        """DataSet.csv lists 149 IDs and the release ships 145 .txt files."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings())
+        text = (root / "DataSet.csv").read_text(encoding="utf-8")
+        (root / "DataSet.csv").write_text(text + "9_9;33;70;170;Male;;;;\n", encoding="utf-8")
+
+        with caplog.at_level("WARNING"):
+            df = load_labels(root, config)
+        assert not any(str(i).startswith("9_9") for i in df.index)
+        assert "9_9" in caplog.text
+
+    def test_the_semicolon_bom_and_padding_columns_are_all_undone(
+        self, tmp_path, config
+    ):
+        """DataSet.csv is ';'-separated, UTF-8-BOM, and padded to 22 fields."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+        assert not any(str(c).startswith("Unnamed") for c in df.columns)
+        assert not any("﻿" in str(c) for c in df.columns)
+        assert df.loc["1_A1", "age"] == 40
+        assert df.loc["1_A1", "sex"] == "male"
+        assert df.loc["2_A1", "sex"] == "female"
+        # Weight carries a trailing space in the header and must still be found.
+        assert df.loc["1_A1", "weight_kg"] == 70
+        assert df.loc["1_A1", "bmi"] == pytest.approx(70 / 1.7**2, abs=0.01)
+
+    def test_subject_and_session_come_out_of_the_record_name(self, tmp_path, config):
+        """"15_1" is subject 15's second sitting; no timestamps ship."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+        assert df.loc["1_A1", "subject_id"] == "1"
+        assert df.loc["1_1_A1", "subject_id"] == "1"
+        assert df.loc["1_A1", "session_index"] == 0
+        assert df.loc["1_1_A1", "session_index"] == 1
+        assert df.loc["1_A1", "n_sittings_for_subject"] == 2
+        assert df.loc["2_A1", "n_sittings_for_subject"] == 1
+
+    def test_the_clinical_reference_is_flagged_but_not_loaded(self, tmp_path, config):
+        """23 of the 145 sittings have a 12-lead XML; ECGBench does not read it."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings(), references=("1_1",))
+        df = load_labels(root, config)
+        assert bool(df.loc["1_1_A1", "has_reference_ecg"])
+        assert df.loc["1_1_A1", "reference_path"] == "ECG_REF/1_1.XML"
+        assert not bool(df.loc["1_A1", "has_reference_ecg"])
+        assert df.loc["1_A1", "reference_path"] == ""
+        # The reference is per sitting, so all four channels of it are flagged.
+        assert df.loc[[f"1_1_{c}" for c in ("A1", "A2", "A3", "A4")],
+                      "has_reference_ecg"].all()
+
+    def test_stratify_class_crosses_sex_with_liveness(self, tmp_path, config):
+        """Not sex alone: signal_active is what decides the size of `clean`."""
+        from ecgbench.labels.tollet import load_labels
+
+        root = self._tree(tmp_path, self._sittings())
+        df = load_labels(root, config)
+        assert df.loc["1_A1", "stratify_class"] == "M_active"
+        assert df.loc["1_A3", "stratify_class"] == "M_flat"
+        assert df.loc["2_A1", "stratify_class"] == "F_flat"
+
+    def test_the_docstring_warns_that_the_four_channels_are_the_same_beats(self):
+        """580 records are 145 independent observations, and that must be said."""
+        from ecgbench.labels import tollet
+
+        doc = (tollet.__doc__ or "") + (tollet.load_labels.__doc__ or "")
+        assert "same beats" in doc
+        assert "source_record" in doc
+
+    def test_a_missing_dataset_csv_says_where_to_get_it(self, tmp_path, config):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.tollet import scan_records
+
+        root = self._tree(tmp_path, self._sittings())
+        (root / "DataSet.csv").unlink()
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            scan_records(root, config)
+        assert "physionet.org/content/tollet" in str(excinfo.value)
+
+    def test_pointing_at_the_signal_directory_instead_of_the_root_says_so(
+        self, tmp_path, config
+    ):
+        from ecgbench.labels.tollet import scan_records
+
+        root = self._tree(tmp_path, self._sittings())
+        with pytest.raises(FileNotFoundError, match="ECG_EXP"):
+            scan_records(root / "ECG_EXP", config)
+
+    def test_the_loader_is_registered_for_the_slug(self):
+        from ecgbench.labels import _custom_loaders
+        from ecgbench.labels.tollet import load_labels
+
+        assert _custom_loaders()["tollet"] is load_labels
