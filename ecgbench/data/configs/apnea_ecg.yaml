@@ -1,0 +1,285 @@
+# ECGBench Config: Apnea-ECG Database
+# ===================================
+# https://physionet.org/content/apnea-ecg/1.0.0/
+#
+# 70 overnight single-lead ECG recordings, 6.75 h to 9.62 h each, 573.7 hours in
+# total, with an expert apnea annotation for every one of their 34,313 minutes.
+# This is the reference dataset for detecting sleep apnea from the ECG alone, and
+# it is the PhysioNet/CinC Challenge 2000 data. The task is per-minute binary
+# classification, not per-record: 13,064 of those minutes are apnea.
+#
+# FIVE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE 70 RECORDS COME FROM 30 SUBJECTS, AND THE RELEASE'S OWN LEARNING/TEST
+#    SPLIT LEAKS 18 OF THEM. Apnea-ECG publishes no subject identifier anywhere —
+#    not in the headers, not in RECORDS, not in the annotations — so nothing warns
+#    a user that 27 of the 30 subjects contributed more than one night, up to
+#    four. The grouping is recoverable from the age/sex/height/weight published
+#    per record in additional-information.txt (exactly 32 distinct values over 70
+#    records) plus two verified duplicate recordings (point 2), giving 30. 18 of
+#    those subjects, 49 OF THE 70 RECORDS, have recordings in both the challenge
+#    learning set (a/b/c) and the challenge test set (x). Training on one and
+#    evaluating on the other — the standard protocol in this literature — puts
+#    70% of the test records in front of a model that has already seen that
+#    subject. ECGBench does NOT adopt that split: patient_id_column is
+#    subject_id, so folds go through StratifiedGroupKFold. `challenge_set` stays
+#    a label column, so the original challenge result is still reproducible, with
+#    the leak stated instead of inherited.
+#
+# 2. TWO PAIRS OF RECORDS ARE THE SAME RECORDING, BIT FOR BIT. x35 is x22 shifted
+#    by 40 s and c06 is c05 shifted by 80 s: after shifting, 100.000% of the
+#    2,883,000 and 2,785,000 overlapping ADC samples are equal, against a
+#    maximum-over-lag correlation of 0.003-0.054 for every control pair including
+#    same-subject different-night ones. The demographics contradict each other
+#    across x22/x35 (27 F 158 cm 53 kg against 31 M 184 cm 74 kg), so one of those
+#    rows is wrong and there is no way to tell which. Both records are KEPT — each
+#    is an official record with official annotations — and `duplicate_of` names
+#    the relationship. See ecgbench/labels/apnea_ecg.py:DUPLICATE_RECORDS.
+#
+# 3. THE PARTITION IS 70 RECORDS, THOUGH RECORDS LISTS 86. The other 16 are not
+#    additional recordings: 8 `*r` records (a01r, ...) hold Resp C, Resp A, Resp N
+#    and SpO2 and NO ECG at all, and 8 `*er` records (a01er, ...) point their
+#    headers at the very same a01.dat as the plain record, so their ECG is the
+#    same bytes. Including the latter would put one recording in the partition
+#    twice. `has_respiration` flags the 8 ECG records whose companions exist.
+#
+# 4. THE A/B/C CLASS IS DERIVED, AND IT REPRODUCES EXACTLY. The release encodes
+#    the class in the record NAME for the learning set only. Applying PhysioNet's
+#    stated criterion to the .apn counts (C under 5 apnea minutes, B 5-99, A 100+)
+#    reproduces all 35 learning-set letters with no exceptions, which is what
+#    licenses applying it to the 35 xNN records — landing them on 20 A / 5 B /
+#    10 C, the learning set's exact composition. Folds are balanced on it.
+#
+# 5. THE .qrs BEATS ARE MACHINE-GENERATED AND UNAUDITED. PhysioNet states they
+#    came from sqrs125 at per-record thresholds and that "in no case were the
+#    annotations hand-edited". mean_hr_bpm / sdnn_ms / rmssd_ms are computed from
+#    them and describe a whole night of mixed sleep; they are not an HRV result,
+#    and .qrs is not a beat-detection reference.
+#
+# ALL 383 SHIPPED DATA FILES VERIFY against the release's own SHA256SUMS.txt (the
+# only listed file absent from this copy is annotations.shtml, a documentation
+# page). The 35 x*.apn files are NOT in that checksum list and are not supposed to
+# be: PhysioNet withheld the test-set answers for the challenge and posted them on
+# 2020-06-01, a year after the 2019 checksum file was written.
+
+name: "Apnea-ECG Database"
+slug: "apnea_ecg"
+version: "1.0.0"
+url: "https://physionet.org/content/apnea-ecg/1.0.0/"
+download_url: null  # ApneaECGSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  70 overnight single-lead ECG recordings from 30 subjects, contributed by Thomas
+  Penzel of Philipps-University Marburg and released as the data for the
+  PhysioNet/CinC Challenge 2000. Each recording runs a full night — 6.75 h to
+  9.62 h, 573.7 hours in total — digitised at 100 Hz with 12-bit resolution at
+  200 A/D units per millivolt, from a single unnamed ECG channel. The reference
+  annotation is per minute: an expert marked each of the 34,313 recorded minutes
+  as apnea or not, on the basis of simultaneously recorded respiration and oxygen
+  saturation, and 13,064 of them are apnea. Records also carry the apnea,
+  hypopnea and apnea-hypopnea indices and the subject's age, sex, height and
+  weight. The release divides itself into a 35-record learning set (a01-a20 apnea,
+  b01-b05 borderline, c01-c10 control) and the 35 test records x01-x35 whose
+  answers were withheld until the challenge closed and posted in 2020; that
+  division is NOT subject-disjoint and ECGBench does not use it as a split. Eight
+  records have companions carrying chest, abdominal and nasal respiration and
+  SpO2, which are not part of this partition because their ECG is byte-identical
+  to the plain record's.
+citation: >
+  Penzel T, Moody GB, Mark RG, Goldberger AL, Peter JH. The Apnea-ECG Database.
+  Computers in Cardiology 2000;27:255-258. PhysioNet also asks for: Goldberger AL,
+  Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB,
+  Peng C-K, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet: Components of a
+  New Research Resource for Complex Physiologic Signals. Circulation
+  101(23):e215-e220 (2000).
+doi: "10.13026/C23W2R"
+
+creators:
+  - type: Person
+    name: "Thomas Penzel"
+    url: "https://physionet.org/content/apnea-ecg/1.0.0/"
+  - type: Organization
+    name: "Philipps-University Marburg / MIT Laboratory for Computational Physiology"
+    url: "https://physionet.org/content/apnea-ecg/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every header declares its gain explicitly — `a01.dat 16 200 12 0 -12 5827 0 ECG`
+# — so wfdb applies 200 adu/mV itself and reports millivolts. Nothing needs
+# scaling. This is the calibration PhysioNet states in prose too ("16 bits per
+# sample, 200 A/D units per millivolt"), so the header and the description agree
+# and there is no figure to reconcile.
+signal_unit_scale: 1.0
+leads: 1
+# The single channel is named "ECG" in all 70 headers, and that is genuinely all
+# the release says about it. No electrode placement is documented anywhere, so
+# ECGDataset(leads=["ECG"]) selects the only channel, not a known anatomical
+# lead. Do NOT map it onto a standard lead by analogy with any other database.
+lead_names: ["ECG"]
+# Mean; NOT uniform, and the spread matters for windows: 2,430,000 samples
+# (24,300 s, 6.75 h, x17) to 3,462,000 (34,620 s, 9.62 h, a12). PhysioNet
+# describes the range as "slightly less than 7 hours to nearly 10 hours".
+duration_seconds: 29503.4
+sampling_rates: [100]
+default_sampling_rate: 100
+
+# --- File Structure ---
+# No metadata file ships in any usable form. The record list is in RECORDS, the
+# labels in 70 .apn annotation files, the indices and demographics in a
+# fixed-width ASCII table (additional-information.txt), and the geometry in the
+# headers. ApneaECGSplitter builds this CSV from all four on first run, via
+# ecgbench.labels.apnea_ecg. The validation engine re-reads it from disk, so the
+# dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are a letter and two
+# digits ("a01", "x35"), so they are never all-digits and the CSV round-trip
+# cannot coerce them to int. Contrast afdb ("00735") and ltafdb ("00"), which
+# both need it. export_splits verifies this.
+zero_padded_identifiers: false
+# THE FIELD THAT STOPS THIS DATASET LEAKING. The release ships no subject
+# identifier at all; subject_id is recovered by ecgbench.labels.apnea_ecg.
+# assign_subject_ids from the published age/sex/height/weight, merged with two
+# bit-identical duplicate recordings. 30 groups for 70 records — see the header.
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  100: "signal_path"  # bare record stem, e.g. "a01" — the tree is flat
+
+# --- Labels ---
+# The release's own three classes, derived from the .apn counts by
+# ecgbench.labels.apnea_ecg.derive_apnea_class. 40 A, 10 B, 20 C.
+#
+# THIS IS A RECORD-LEVEL SUMMARY, NOT THE TASK. The ground truth of Apnea-ECG is
+# the per-minute A/N sequence in `apnea_sequence`; apnea_class is the whole-night
+# reduction the challenge used to describe records. Train on the minutes.
+label_column: "apnea_class"
+label_format: "single"
+
+stratification:
+  # ApneaECGSplitter takes stratify_class from the label loader: the A/B/C class,
+  # 40/10/20, every class comfortably larger than the 10 folds. AHI severity was
+  # the alternative and does not survive — its four conventional bins split
+  # 25/3/11/31 and a class of 3 cannot be spread over 10 folds.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# FALSE DELIBERATELY, and this is the single most consequential line in this
+# config. The release does divide itself into a learning set and a test set, and
+# that division is what every paper on this database uses — but 18 of the 30
+# subjects have records on both sides of it. Adopting it would ship a leaky split
+# under ECGBench's name. `challenge_set` in the labels preserves it for anyone
+# reproducing the 2000 challenge.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # DELIBERATELY EMPTY, like nsrdb, afdb, ptbdb and challenge2021: these are
+  # whole nights of sleep and their length varies legitimately by almost three
+  # hours, 2,430,000 samples (x17) against 3,462,000 (a12). Any single threshold
+  # would drop complete recordings as truncated. Omitting the rate disables the
+  # check rather than making it fire — `truncated_signal` stays in the list below
+  # only so a future re-release with uniform lengths needs one line here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # The 12-bit rail, computed from the hardware: baseline 0 at the declared gain
+  # of 200 adu/mV puts every possible sample in [-2048, 2047] adu = [-10.24,
+  # 10.235] mV. UNLIKE nsrdb, THIS RELEASE ACTUALLY REACHES IT — 27 records touch
+  # the lower rail and 38 the upper, which is what a night of ambulatory Holter
+  # with electrode movement looks like — so the bound sits exactly on an attained
+  # value and the float32 question in CLAUDE.md's gotcha list applies.
+  #
+  # It needs no slack, and that was checked rather than assumed: _load_signal
+  # casts to float32, and BOTH rails round toward zero there —
+  # float32(10.235) = 10.234999656 and float32(-10.24) = -10.239999771 — so a
+  # railed sample compares strictly inside the bound and cannot trip the check.
+  # (Contrast chfdb, whose 10.585 rail rounds outward to 10.585000038 and needed
+  # widening to 10.586.) What this check guards is a mis-scaled copy — microvolts,
+  # or a re-release with a different gain — which would exceed it by orders of
+  # magnitude on the first record.
+  amplitude_range_mv: [-10.24, 10.235]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/apnea_ecg.py reads the per-minute apnea
+# annotations into a string, parses the fixed-width polysomnography table,
+# derives the A/B/C class, recovers subject_id, and summarises the unaudited
+# .qrs detections. There is no source CSV to point at — RECORDS, the headers, the
+# .apn/.qrs files and additional-information.txt are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "sleep apnea"
+    - "obstructive sleep apnea"
+    - "polysomnography"
+    - "apnea-hypopnea index"
+    - "single-lead"
+    - "overnight"
+    - "Holter"
+    - "per-minute annotations"
+    - "PhysioNet/CinC Challenge 2000"
+    - "PhysioNet"
+  rai_data_collection: >
+    70 overnight recordings collected at Philipps-University Marburg and
+    contributed by Dr Thomas Penzel for the PhysioNet/CinC Challenge 2000. Each is
+    a single ECG channel digitised at 100 Hz with 12-bit resolution at 200 A/D
+    units per millivolt, running 6.75 h to 9.62 h — 573.7 hours in total. The
+    reference annotation is one expert label per minute of recording, apnea or
+    not, assigned on the basis of simultaneously recorded respiration and oxygen
+    saturation signals rather than from the ECG; 34,313 minutes are annotated and
+    13,064 of them are apnea. A separate table published with the release gives
+    per-record apnea, hypopnea and apnea-hypopnea indices and the subject's age,
+    sex, height and weight. Eight recordings retain the respiration and SpO2
+    channels as companion records. A second annotation set of QRS positions ships
+    alongside, but it is machine-generated by sqrs125 and was never hand-edited.
+    The release divides itself into a 35-record learning set and 35 test records
+    whose annotations were withheld until the challenge closed in 2000 and
+    published in 2020.
+  rai_data_biases: >
+    The cohort is small and narrow: 70 recordings from only 30 subjects, so
+    within-subject data is abundant and between-subject variation is scarce, and
+    27 of the 30 subjects contributed between two and four nights. Nothing in the
+    release identifies the subject, which makes the imbalance invisible and makes
+    the release's own learning/test division unsafe — 18 of the 30 subjects have
+    recordings on both sides of it, so the standard protocol in this literature
+    evaluates on subjects seen in training. The subjects are overwhelmingly male
+    (25 of the 30, contributing 57 of the 70 records) and middle-aged (27 to 63),
+    so nothing here describes sleep apnea in children, in the elderly, or in a
+    sex-balanced population; height and weight are recorded but the cohort is
+    skewed toward high body mass, which is itself the dominant risk factor for the
+    condition being detected. Class balance is a construction rather than a
+    prevalence: 40 apnea, 10 borderline and 20 control records were selected to
+    make a challenge scoreable, and 38.1% of all annotated minutes are apnea,
+    neither of which reflects any clinical population. The apnea labels were derived from respiration and
+    oxygen saturation, so a model is being trained to recover from one channel a
+    judgement made on others, and the labelling threshold is one expert's at one
+    centre in the 1990s. Two pairs of records are the same recording released
+    twice, so an ungrouped split can place identical waveform in train and test.
+    The recordings predate modern equipment, come from one German sleep
+    laboratory, and use a single unnamed ECG channel whose electrode placement is
+    documented nowhere.
+  rai_personal_sensitive_info: >
+    De-identified. Each subject is described by age, sex, height and weight in a
+    published table, together with clinical indices (apnea index, hypopnea index,
+    apnea-hypopnea index) that constitute a sleep-apnea diagnosis. No name, no
+    date, no institution-level identifier and no subject or tape number ships with
+    the data; record names are the challenge's own a/b/c/x numbering. Those four
+    demographic fields are nevertheless enough to distinguish 32 of the 70
+    records' subjects from one another, which is precisely why ECGBench can
+    recover the subject grouping — a re-identification risk in principle, though
+    the cohort is 30 people described only by four coarse attributes with no date
+    or place of recording. Ages run 27 to 63, so no subject falls in the range
+    that would require special handling under the common 89-and-over convention.

@@ -5601,3 +5601,194 @@ class TestSTDBSplitter:
             assert 2 in layouts, f"fold {fold} holds no two-channel record"
         # And all but one fold holds a single-channel record too, on this seed.
         assert sum(1 in layouts for layouts in per_fold.values()) >= 9
+
+
+class TestApneaECGSplitter:
+    """70 records, 30 subjects, and a predefined split that must not be used.
+
+    Every other splitter here either has a patient column handed to it or has
+    genuinely one record per patient. This one exists because Apnea-ECG ships no
+    subject identifier at all while containing up to four nights per subject, so
+    the grouping has to be reconstructed before a fold can be assigned.
+    """
+
+    INFO_HEADER = (
+        "Additional information about the recordings used in the "
+        "PhysioNet/CinC Challenge 2000\n"
+        "\n"
+        "Record\tLength\tnon-apn\tapnea\thours\tAI\tHI\tAHI\tAge\tSex\theight\tweight\n"
+        "\n"
+    )
+
+    #: (record, apnea_minutes, total_minutes, age, sex, height, weight).
+    #: a01/a14 share all four demographic fields, and so do a02/x01 — the latter
+    #: pair straddling the challenge's learning/test boundary exactly as 18 real
+    #: subjects do. 7 records, 5 subjects.
+    RECORDS = (
+        ("a01", 120, 140, 51, "M", 175, 102),
+        ("a14", 110, 140, 51, "M", 175, 102),
+        ("a02", 130, 140, 38, "M", 180, 120),
+        ("b01", 20, 140, 44, "F", 170, 63),
+        ("c01", 0, 140, 31, "M", 184, 74),
+        ("x01", 125, 140, 38, "M", 180, 120),
+        ("x30", 115, 140, 44, "M", 177, 105),
+    )
+
+    def _tree(self, tmp_path):
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        info = [self.INFO_HEADER]
+        for rec, apnea, total, age, sex, height, weight in self.RECORDS:
+            n_samples = total * 6000
+            (tmp_path / f"{rec}.hea").write_text(
+                f"{rec} 1 100 {n_samples}\n{rec}.dat 16 200 12 0 -12 5827 0 ECG\n",
+                encoding="utf-8",
+            )
+            np.zeros(n_samples, dtype=np.int16).tofile(tmp_path / f"{rec}.dat")
+            wfdb.wrann(
+                rec, "apn",
+                sample=np.arange(total, dtype=np.int64) * 6000,
+                symbol=list("A" * apnea + "N" * (total - apnea)),
+                fs=100,
+                write_dir=str(tmp_path),
+            )
+            wfdb.wrann(
+                rec, "qrs",
+                sample=np.arange(1, total * 60) * 100,
+                symbol=["N"] * (total * 60 - 1),
+                fs=100,
+                write_dir=str(tmp_path),
+            )
+            info.append(
+                f"{rec}\t{total}\t{total - apnea}\t{apnea}\t9\t10\t5\t15.0\t"
+                f"{age}\t{sex}\t{height}\t{weight}\t\t\n"
+            )
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(rec for rec, *_ in self.RECORDS) + "\n", encoding="utf-8"
+        )
+        (tmp_path / "additional-information.txt").write_text(
+            "".join(info), encoding="utf-8"
+        )
+        return tmp_path
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="apnea_ecg", metadata_csv="ecgbench_metadata.csv",
+            record_id_column="record_name", patient_id_column="subject_id",
+            signal_path_columns={100: "signal_path"}, default_sampling_rate=100,
+            label_column="apnea_class", leads=1, zero_padded_identifiers=False,
+        )
+
+    def test_registered_splitter_is_not_the_generic_fallback(self):
+        from ecgbench.splitting.strategies.apnea_ecg import ApneaECGSplitter
+
+        assert isinstance(get_splitter("apnea_ecg"), ApneaECGSplitter)
+
+    def test_builds_metadata_with_subject_grouping_and_derived_class(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+
+        df = get_splitter("apnea_ecg").load_metadata(tree, config).set_index("record_name")
+
+        assert len(df) == 7
+        # Two subjects have two records each, so 7 records make 5 subjects.
+        assert df["subject_id"].nunique() == 5
+        assert df.loc["a01", "subject_id"] == df.loc["a14", "subject_id"]
+        # The leak this dataset actually has: one subject on both sides of the
+        # challenge's own learning/test division.
+        assert df.loc["a02", "subject_id"] == df.loc["x01", "subject_id"]
+        assert df.loc["a02", "challenge_set"] == "learning"
+        assert df.loc["x01", "challenge_set"] == "test"
+        assert df.loc["a01", "apnea_class"] == "A"
+        assert df.loc["b01", "apnea_class"] == "B"
+        assert df.loc["c01", "apnea_class"] == "C"
+        assert df.loc["a01", "signal_path"] == "a01"
+        assert set(df["challenge_set"]) == {"learning", "test"}
+
+    def test_metadata_csv_is_written_to_disk_because_validation_re_reads_it(
+        self, sample_config, tmp_path
+    ):
+        """validate_dataset reads the CSV itself; an in-memory frame is invisible.
+
+        This is the trap that shipped Chapman broken for months — a path or column
+        fix-up living only in load_metadata.
+        """
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+
+        assert not (tree / config.metadata_csv).exists()
+        get_splitter("apnea_ecg").load_metadata(tree, config)
+        assert (tree / config.metadata_csv).exists()
+
+        # Second call reads the cache and agrees with the first.
+        cached = get_splitter("apnea_ecg").load_metadata(tree, config)
+        assert len(cached) == 7
+        assert cached["subject_id"].nunique() == 5
+
+    def test_stratification_labels_come_from_the_label_loader_s_column(
+        self, sample_config, tmp_path
+    ):
+        pytest.importorskip("wfdb")
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+        splitter = get_splitter("apnea_ecg")
+
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert labels.name == "apnea_class"
+        assert labels.value_counts().to_dict() == {"A": 5, "B": 1, "C": 1}
+
+    def test_stratification_refuses_a_frame_the_loader_did_not_produce(
+        self, sample_config
+    ):
+        """Recomputing the mapping here is what let PTB-XL's two copies drift."""
+        import pandas as pd
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            get_splitter("apnea_ecg").get_stratification_labels(
+                pd.DataFrame({"record_name": ["a01"]}), self._config(sample_config)
+            )
+
+    def test_grouped_split_keeps_every_subject_in_one_fold(
+        self, sample_config, tmp_path
+    ):
+        """The point of the whole exercise, end to end through split_dataset.
+
+        With 5 subject groups and 7 records, an ungrouped split would be free to
+        put a01 in train and a14 in test — the failure mode the release's own
+        learning/test division actually has, for 49 of its 70 records.
+        """
+        pytest.importorskip("wfdb")
+        from ecgbench.splitting import split_dataset
+
+        tree = self._tree(tmp_path)
+        config = self._config(sample_config)
+        splitter = get_splitter("apnea_ecg")
+        df = splitter.load_metadata(tree, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        result = split_dataset(df, labels, config, n_folds=5)
+
+        assert result.group_column == "subject_id"
+        assert set(result.folds) == {1, 2, 3, 4, 5}
+
+        assigned = pd.concat(
+            [frame.assign(fold=fold) for fold, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert len(assigned) == 7
+        folds_per_subject = assigned.groupby("subject_id")["fold"].nunique()
+        assert (folds_per_subject == 1).all()
+        # Specifically: the pair that straddles the challenge's own split does
+        # not straddle an ECGBench fold.
+        a02_fold = assigned.loc[assigned["record_name"] == "a02", "fold"].iloc[0]
+        x01_fold = assigned.loc[assigned["record_name"] == "x01", "fold"].iloc[0]
+        assert a02_fold == x01_fold

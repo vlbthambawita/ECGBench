@@ -2,6 +2,7 @@
 
 from . import (  # noqa: F401
     afdb,
+    apnea_ecg,
     brugada_huca,
     challenge2017,
     challenge2020,

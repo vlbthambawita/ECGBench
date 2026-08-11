@@ -333,6 +333,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `qtdb` | **`ECG1`, `ECG2` in 57 of 105 records, and 19 further layouts in the other 48** — the most varied in the catalogue, and the only one whose *modal* layout is a placeholder. Those 57 (every excerpt from `svdb`, `nsrdb`, `stdb`, MIT-BIH Long-Term and the sudden-death Holters) state no electrode placement at all. The 15 MIT-BIH Arrhythmia excerpts match `mitdb`'s names exactly; the 33 European ST-T ones use the ESC's **original electrode nomenclature** (`D3`, `CM5`, `CC5`, `ML5`, `CM2`, `mod.V1`, `V2-V3`) and agree with `edb`'s names for the same bit-identical channels in only **2 of 33**. `D3, V4` and `V4, D3` are both present. See below |
 | `stdb` | **`ECG1`, `ECG2` — but only 18 of the 28 records have both.** The `ltafdb`/`sddb` case for naming (every header describes every channel as the bare word `ECG`, so these are positions ECGBench assigns), plus a second problem those two do not have: **records 313-317 and 319-323 store a single channel**, which nothing in the release mentions. The config declares `alternate_lead_names: {1: ["ECG1"]}`, so `leads=["ECG2"]` raises for those ten rather than returning ECG1. Not MLII/V1 — and the temptation is strongest here, because this release shares `mitdb`'s 360 Hz rate and three-digit record numbering. Its **ADC gain varies by record and by channel**, over 31 values from 161 to 500 adu/mV |
 | `shdb_af` | **`ECG1`, `ECG2` — and here they mean something.** The only two-lead Holter in the catalogue whose channels have a documented electrode placement: the release states `ECG1` is a **modified CC5** lead and `ECG2` a **NASA** lead, in all 128 records. The names stay as the headers spell them, so `leads=["ECG1"]` selects a known placement rather than a bare position — but neither is one of the standard twelve, so this still must not be stacked with 12-lead data |
+| `apnea_ecg` | **`ECG` — one channel, and the second dataset here that is not called `I`.** All 70 headers name the single overnight channel `ECG`, and the release documents no electrode placement anywhere — not on the landing page, not in `annotations.html`, not in `additional-information.txt`. The Holter montage makes a modified chest lead the likely guess, but a guess is what naming it `II` or `V2` would ship, so it stays a channel position |
 | `ltstdb` | **`ECG, ECG` in 22 of 86 records, and 11 further layouts in the other 64** — the only dataset here where the lead **count** varies as well as the names: 68 records store two signals and 18 store three. The modal layout is the 22 records whose headers say "Electrode locations were not recorded", so `leads=["ECG"]` returns signal 0 for those and **no name reaches signal 1**. No lead is in all 86 (MLIII 29, V4 27), and `V4/MLIII` and `MLIII/V4` are both present, 20 records and 6. See below |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
@@ -913,6 +914,25 @@ four revisions, all exposed: 412 of 8,528 changed between the first and last, al
 entirely into the noisy class, and the shipped file numbers are one behind the paper's
 V1/V2/V3. No demographics or patient identifiers exist at all, so folds are stratified
 but **ungrouped**. See `examples/load_challenge2017.py`.
+
+`apnea_ecg` is the second single-lead dataset, and the one where **the release's own
+train/test split leaks subjects** — the first case in this catalogue where a provider's
+division had to be rejected rather than adopted. Its 70 overnight recordings carry an
+expert apnea annotation for **every one of their 34,313 minutes**, so the ground truth
+is per minute (`apnea_sequence`, one `A`/`N` character each) and the record-level
+`apnea_class` is only a whole-night summary. Three things to know. The 70 records come
+from **30 subjects**, and Apnea-ECG ships **no subject identifier anywhere**, so nothing
+warns you that 27 of them contributed two to four nights — 18 subjects, **49 of the 70
+records**, have recordings on both sides of the challenge's a/b/c vs x division.
+`subject_id` is reconstructed from the age/sex/height/weight published per record (32
+distinct values, the quoted subject count) and folds are grouped on it;
+`has_predefined_splits` is `false` and `challenge_set` survives as a label. **Two pairs
+of records are the same recording**: `x35` is `x22` shifted 40 s and `c06` is `c05`
+shifted 80 s, 100.000% identical over 2.8 M samples, and the demographics of `x22` and
+`x35` contradict each other — both are kept, grouped into one fold. And records are
+whole nights, 2,430,000–3,462,000 samples, so batching needs a `window=` sized to the
+shortest; `window=(i * 6000, 6000)` returns exactly minute *i*, the labelled unit. See
+`examples/load_apnea_ecg.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

@@ -9945,3 +9945,431 @@ class TestSTDBLabels:
         assert pd.isna(row["adc_gain_ECG2"])
         assert row["record_group"] == "exercise_stress"
         assert row["signal_path"] == "313"
+
+
+class TestApneaECGLabels:
+    """Apnea-ECG: per-minute ground truth, and a subject grouping the release hides.
+
+    Every other database in this catalogue either ships a patient identifier or
+    genuinely has one recording per subject. Apnea-ECG has neither: 70 records
+    from 30 subjects, and nothing in the headers, RECORDS or the annotations says
+    so. The loader has to recover the grouping from the one place the release does
+    publish subject attributes, or every fold leaks.
+    """
+
+    INFO = (
+        "Additional information about the recordings used in the "
+        "PhysioNet/CinC Challenge 2000\n"
+        "\n"
+        "The table below presents additional information (not made available "
+        "during the challenge)\n"
+        "about the Apnea-ECG Database records.\n"
+        "\n"
+        "Record\tLength\tnon-apn\tapnea\thours\tAI\tHI\tAHI\tAge\tSex\theight\tweight\n"
+        "\tminutes\tminutes\tminutes\tw/apnea\t\t\t\t\t\t(cm)\t(kg)\n"
+        "\n"
+        "a01\t490\t20\t470\t9\t12.5\t57.1\t69.6\t51\tM\t175\t102\t\t\n"
+        "a14\t510\t127\t383\t8\t17.3\t37.4\t54.7\t51\tM\t175\t102\t\t\n"
+        "b01\t488\t469\t19\t2\t0.12\t0.12\t0.24\t44\tF\t170\t63\t\t\n"
+        "c01\t485\t485\t0\t0\t0\t0\t0\t31\tM\t184\t74\t\t\n"
+    )
+
+    def _header(self, rec, n_samples, n_sig=1):
+        """A real Apnea-ECG header: 100 Hz, gain 200, baseline 0, channel "ECG"."""
+        if n_sig == 1:
+            return (
+                f"{rec} 1 100 {n_samples}\n"
+                f"{rec}.dat 16 200 12 0 -12 5827 0 ECG\n"
+            )
+        # The `*r` companion shape: respiration and SpO2, and no ECG at all.
+        return (
+            f"{rec} 4 100 {n_samples}\n"
+            f"{rec}.dat 16 20000 16 0 -2030 -21303 0 Resp C\n"
+            f"{rec}.dat 16 20000 16 0 -6892 -27013 0 Resp A\n"
+            f"{rec}.dat 16 20000 16 0 4709 -10435 0 Resp N\n"
+            f"{rec}.dat 16 1 16 0 98 -4510 0 SpO2\n"
+        )
+
+    def _write_record(self, tmp_path, rec, sequence, n_sig=1):
+        """Write one record: header, .dat, .apn (one per minute) and .qrs."""
+        wfdb = pytest.importorskip("wfdb")
+
+        n_minutes = len(sequence)
+        n_samples = n_minutes * 6000
+        (tmp_path / f"{rec}.hea").write_text(
+            self._header(rec, n_samples, n_sig), encoding="utf-8"
+        )
+        np.zeros(n_samples * n_sig, dtype=np.int16).tofile(tmp_path / f"{rec}.dat")
+
+        if n_sig != 1:
+            return
+        # The real convention: one annotation per minute, starting at sample 0.
+        wfdb.wrann(
+            rec, "apn",
+            sample=np.arange(n_minutes, dtype=np.int64) * 6000,
+            symbol=list(sequence),
+            fs=100,
+            write_dir=str(tmp_path),
+        )
+        # Beats exactly 1 s apart, plus one "|" QRS-like artifact marker.
+        beats = np.arange(1, n_minutes * 60) * 100
+        wfdb.wrann(
+            rec, "qrs",
+            sample=np.concatenate([[50], beats]),
+            symbol=["|"] + ["N"] * len(beats),
+            fs=100,
+            write_dir=str(tmp_path),
+        )
+
+    def _tree(self, tmp_path, records, info=None, companions=()):
+        """records: {name: apnea_sequence}; companions get the no-ECG header."""
+        for rec, sequence in records.items():
+            self._write_record(tmp_path, rec, sequence)
+        for rec in companions:
+            self._write_record(tmp_path, rec, "N" * 10, n_sig=4)
+        (tmp_path / "RECORDS").write_text(
+            "\n".join(list(records) + list(companions)) + "\n", encoding="utf-8"
+        )
+        (tmp_path / "additional-information.txt").write_text(
+            self.INFO if info is None else info, encoding="utf-8"
+        )
+        return tmp_path
+
+    def test_labels_come_from_annotations_not_a_csv(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("apnea_ecg").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # RECORDS, headers, .apn/.qrs and the table
+        assert spec.join_column == "record_name"
+
+    def test_the_polysomnography_table_parses_from_under_its_prose_header(
+        self, tmp_path
+    ):
+        """It is a fixed-width ASCII table, not a CSV, under 20 lines of prose.
+
+        Data rows are matched rather than counted from the top, so rewording the
+        explanation above them cannot shift the parse.
+        """
+        from ecgbench.labels.apnea_ecg import parse_additional_information
+
+        (tmp_path / "additional-information.txt").write_text(self.INFO, encoding="utf-8")
+        df = parse_additional_information(tmp_path).set_index("record_name")
+
+        assert list(df.index) == ["a01", "a14", "b01", "c01"]
+        assert df.loc["a01", "ahi"] == 69.6
+        assert df.loc["a01", "ai"] == 12.5
+        assert df.loc["a01", "hi"] == 57.1
+        assert df.loc["a01", "published_minutes"] == 490
+        assert df.loc["a01", "published_apnea_minutes"] == 470
+        assert df.loc["a01", "age"] == 51
+        assert df.loc["a01", "sex"] == "M"
+        assert df.loc["a01", "height_cm"] == 175
+        assert df.loc["a01", "weight_kg"] == 102
+        # Not a header row, and not one of the prose lines.
+        assert "Record" not in df.index
+
+    def test_a_missing_table_names_the_file_and_says_the_folds_would_leak(
+        self, tmp_path
+    ):
+        """Without it there is no AHI, no demographics and no subject grouping."""
+        from ecgbench.labels.apnea_ecg import parse_additional_information
+
+        with pytest.raises(LabelSourceMissingError, match="additional-information.txt"):
+            parse_additional_information(tmp_path)
+
+    def test_apnea_class_reproduces_the_letter_in_the_record_name(self):
+        """PhysioNet's criterion, applied to the .apn counts, at its boundaries.
+
+        C is fewer than 5 apnea minutes, A is 100 or more, B is between. On the
+        real release this reproduces all 35 learning-set letters exactly, which is
+        what licenses applying it to the 35 xNN records whose names carry none.
+        """
+        from ecgbench.labels.apnea_ecg import derive_apnea_class
+
+        assert derive_apnea_class(0) == "C"
+        assert derive_apnea_class(4) == "C"
+        assert derive_apnea_class(5) == "B"  # boundary: 5 is borderline, not control
+        assert derive_apnea_class(99) == "B"
+        assert derive_apnea_class(100) == "A"  # boundary: a10 has exactly 100
+        assert derive_apnea_class(534) == "A"
+
+    def test_ahi_severity_uses_the_clinical_cut_points_not_a_right_closed_bin(self):
+        """AHI of exactly 5 is mild, not normal — two real records sit there."""
+        from ecgbench.labels.apnea_ecg import ahi_severity
+
+        assert ahi_severity(0.0) == "normal"
+        assert ahi_severity(4.9) == "normal"
+        assert ahi_severity(5.0) == "mild"  # b05 and x11
+        assert ahi_severity(14.9) == "mild"
+        assert ahi_severity(15.0) == "moderate"
+        assert ahi_severity(29.9) == "moderate"
+        assert ahi_severity(30.0) == "severe"
+        assert ahi_severity(float("nan")) == ""
+
+    def test_records_sharing_all_four_demographics_become_one_subject(self, tmp_path):
+        """The whole basis of the grouping, and the reason it is defensible.
+
+        Age, sex, height and weight take exactly 32 distinct values over the real
+        70 records — the number of subjects the database is described by. Here
+        a01 and a14 share all four and must not end up in different folds.
+        """
+        from ecgbench.labels.apnea_ecg import assign_subject_ids
+
+        df = pd.DataFrame({
+            "record_name": ["a01", "a14", "b01", "c01"],
+            "age": [51, 51, 44, 31],
+            "sex": ["M", "M", "F", "M"],
+            "height_cm": [175, 175, 170, 184],
+            "weight_kg": [102, 102, 63, 74],
+        })
+        out = assign_subject_ids(df).set_index("record_name")
+
+        assert out.loc["a01", "subject_id"] == out.loc["a14", "subject_id"]
+        assert out.loc["a01", "subject_id"] == "subj_a01"  # lowest name in the group
+        assert out["subject_id"].nunique() == 3
+
+    def test_a_verified_duplicate_recording_merges_two_demographic_groups(self):
+        """x35 IS x22, so {x17, x22} and {c01, x35} are one subject, not two.
+
+        The demographics of x22 and x35 contradict each other (27 F 158 cm
+        against 31 M 184 cm) while their waveforms are bit-identical, so one of
+        those rows is wrong and there is no way to tell which. Merging
+        transitively over-groups by design: it costs a little fold granularity,
+        where under-grouping leaks and cannot be detected downstream.
+        """
+        from ecgbench.labels.apnea_ecg import assign_subject_ids
+
+        df = pd.DataFrame({
+            "record_name": ["c01", "x17", "x22", "x35"],
+            "age": [31, 27, 27, 31],
+            "sex": ["M", "F", "F", "M"],
+            "height_cm": [184, 158, 158, 184],
+            "weight_kg": [74, 53, 53, 74],
+        })
+        out = assign_subject_ids(df).set_index("record_name")
+
+        assert out["subject_id"].nunique() == 1
+        assert out.loc["x35", "duplicate_of"] == "x22"
+        assert out.loc["c01", "duplicate_of"] == ""
+
+    def test_the_duplicate_table_records_the_offset_that_was_verified(self):
+        """Both entries must carry the shift that made the samples line up.
+
+        x22[i] == x35[i + 4000] and c05[i] == c06[i + 8000], each 100.000% exact
+        over 2.88 M and 2.79 M ADC samples. The offsets are in the constant so the
+        claim stays checkable against the real files.
+        """
+        from ecgbench.labels import apnea_ecg
+
+        assert apnea_ecg.DUPLICATE_RECORDS == {
+            "x35": ("x22", 4000),
+            "c06": ("c05", 8000),
+        }
+        for duplicate, (canonical, offset) in apnea_ecg.DUPLICATE_RECORDS.items():
+            assert duplicate != canonical
+            assert offset > 0
+        assert "bit for bit" in apnea_ecg.__doc__
+
+    def test_companion_records_with_no_ecg_stay_out_of_the_partition(self, tmp_path):
+        """RECORDS lists 86 names; only the 70 single-channel ECG records count.
+
+        The `*r` records hold respiration and SpO2 and no ECG at all, and the
+        `*er` records point their headers at the plain record's own .dat — so
+        including either would put a non-ECG record, or one recording twice, into
+        the partition.
+        """
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(
+            tmp_path, {"a01": "NAAN", "c01": "NNNN"}, companions=["a01r"]
+        )
+        df = scan_records(tree).set_index("record_name")
+
+        assert list(df.index) == ["a01", "c01"]
+        assert "a01r" not in df.index
+        assert df.loc["a01", "lead_names"] == "ECG"
+        # Derived from the companions actually present, not from a constant: a01r
+        # is in this tree and c01r is not, so c01 must not inherit the flag from
+        # the documented set (which does list c01).
+        assert df.loc["a01", "has_respiration"]
+        assert not df.loc["c01", "has_respiration"]
+
+    def test_the_two_record_filters_must_agree_or_the_scan_refuses(self, tmp_path):
+        """Name and channel layout are checked independently, on purpose.
+
+        Either filter alone would silently admit the wrong set if a re-release
+        changed the naming or the channel count, and a partition that is quietly
+        wrong is the failure this dataset is most exposed to. Disagreement is an
+        error, never resolved by preferring one of them.
+        """
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {"a01": "NAAN"})
+        # An [abcx]NN name whose header declares the companion layout.
+        self._write_record(tmp_path, "b02", "N" * 4, n_sig=4)
+        (tmp_path / "RECORDS").write_text("a01\nb02\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="selected by its name"):
+            scan_records(tree)
+
+    def test_a_missing_apn_file_names_the_2020_answer_release(self, tmp_path):
+        """The one likely cause is a pre-2020 download, not a broken one.
+
+        PhysioNet withheld the test set's answers for the challenge and published
+        x01.apn-x35.apn only on 2020-06-01. A copy fetched earlier holds all 70
+        signals and 35 labels, and wfdb would report that as a bare
+        FileNotFoundError naming a path.
+        """
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {"a01": "NAAN", "x01": "NNNN"})
+        (tree / "x01.apn").unlink()
+
+        with pytest.raises(LabelSourceMissingError, match="2020-06-01"):
+            scan_records(tree)
+
+    def test_a_tree_with_no_ecg_records_says_so_rather_than_failing_obscurely(
+        self, tmp_path
+    ):
+        """Pointing at the dataset root instead of the version directory.
+
+        Without the guard this fails with a KeyError on a frame that has no
+        columns, which says nothing about the actual mistake.
+        """
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {}, companions=["a01r"])
+
+        with pytest.raises(LabelSourceMissingError, match="No single-channel ECG"):
+            scan_records(tree)
+
+    def test_the_apnea_sequence_is_the_ground_truth_and_its_counts_agree(
+        self, tmp_path
+    ):
+        """One character per minute, in record order, straight from the .apn file."""
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {"a01": "NAANAA", "c01": "NNNNNN"})
+        df = scan_records(tree).set_index("record_name")
+
+        assert df.loc["a01", "apnea_sequence"] == "NAANAA"
+        assert df.loc["a01", "n_annotated_minutes"] == 6
+        assert df.loc["a01", "n_apnea_minutes"] == 4
+        assert df.loc["a01", "n_nonapnea_minutes"] == 2
+        assert df.loc["a01", "apnea_minute_fraction"] == pytest.approx(4 / 6)
+        assert df.loc["c01", "n_apnea_minutes"] == 0
+        # Length matches the sequence, so a per-minute target can be built from it.
+        assert (df["apnea_sequence"].str.len() == df["n_annotated_minutes"]).all()
+
+    def test_qrs_artifacts_are_counted_but_never_enter_an_rr_interval(self, tmp_path):
+        """The "|" markers are QRS-like artifacts, not beats.
+
+        PhysioNet states the .qrs files are machine-generated by sqrs125 and were
+        never hand-edited, so they describe the record rather than reference it.
+        Letting a "|" into the RR series would corrupt two intervals per marker.
+        """
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {"a01": "NAAN"})
+        df = scan_records(tree).set_index("record_name")
+
+        assert df.loc["a01", "n_qrs_artifacts"] == 1
+        assert df.loc["a01", "n_qrs_beats"] == 4 * 60 - 1
+        # Beats exactly 1 s apart -> 60 bpm, and no jitter at all.
+        assert df.loc["a01", "mean_hr_bpm"] == pytest.approx(60.0)
+        assert df.loc["a01", "sdnn_ms"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_annotations_off_the_minute_grid_warn_rather_than_shift_silently(
+        self, tmp_path, caplog
+    ):
+        """apnea_sequence is indexed by minute downstream.
+
+        A gap would move every label after it with no error raised, which is the
+        kind of failure that shows up as a mediocre model rather than a traceback.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        from ecgbench.labels.apnea_ecg import scan_records
+
+        tree = self._tree(tmp_path, {"a01": "NAAN"})
+        # Rewrite the .apn with a minute missing from the middle.
+        wfdb.wrann(
+            "a01", "apn",
+            sample=np.array([0, 6000, 18000, 24000]),
+            symbol=list("NAAN"),
+            fs=100,
+            write_dir=str(tree),
+        )
+        with caplog.at_level("WARNING"):
+            scan_records(tree)
+
+        assert "not at exact one-minute intervals" in caplog.text
+
+    def test_the_stratification_label_is_the_release_s_own_class(self):
+        """40/10/20 over 10 folds; AHI severity's 23/5/11/31 would not survive."""
+        from ecgbench.labels.apnea_ecg import attach_stratify_class
+
+        df = pd.DataFrame({"apnea_class": ["A", "A", "B", "C"]})
+        out = attach_stratify_class(df)
+
+        assert list(out["stratify_class"]) == ["A", "A", "B", "C"]
+
+    def test_stratify_class_refuses_to_guess_when_the_class_is_absent(self):
+        """The splitter reads this column rather than recomputing the mapping."""
+        from ecgbench.labels.apnea_ecg import attach_stratify_class
+
+        with pytest.raises(ValueError, match="apnea_class"):
+            attach_stratify_class(pd.DataFrame({"record_name": ["a01"]}))
+
+    def test_a_record_missing_from_the_table_is_an_error_not_a_null_subject(
+        self, tmp_path
+    ):
+        """Every subject-level field, grouping included, comes from that join.
+
+        A left join would leave the record with no subject_id, and an ungrouped
+        record is exactly the leak this dataset is prone to.
+        """
+        from ecgbench.config import load_config
+        from ecgbench.labels.apnea_ecg import load_labels
+
+        # x01 has a record but no row in the table.
+        tree = self._tree(tmp_path, {"a01": "NAAN", "x01": "NNNN"})
+
+        with pytest.raises(ValueError, match="no row in additional-information.txt"):
+            load_labels(tree, load_config("apnea_ecg"))
+
+    def test_end_to_end_frame_carries_grouping_class_and_challenge_set(
+        self, tmp_path
+    ):
+        """The four sources merged: RECORDS, headers, .apn/.qrs and the table."""
+        from ecgbench.config import load_config
+        from ecgbench.labels.apnea_ecg import load_labels
+
+        tree = self._tree(
+            tmp_path,
+            {
+                "a01": "A" * 120 + "N" * 20,   # >= 100 apnea minutes -> class A
+                "a14": "A" * 110 + "N" * 30,   # same subject as a01
+                "b01": "A" * 20 + "N" * 100,   # 5..99 -> class B
+                "c01": "N" * 100,              # < 5 -> class C
+            },
+        )
+        df = load_labels(tree, load_config("apnea_ecg"))
+
+        assert df.index.name == "record_name"
+        assert list(df["apnea_class"]) == ["A", "A", "B", "C"]
+        assert df.loc["a01", "apnea_class_name"] == "apnea"
+        # a01 and a14 share all four demographic fields -> one subject.
+        assert df.loc["a01", "subject_id"] == df.loc["a14", "subject_id"]
+        assert df["subject_id"].nunique() == 3
+        # The challenge division is preserved as a label, never as a split.
+        assert set(df["challenge_set"]) == {"learning"}
+        assert df.loc["a01", "ahi"] == 69.6
+        assert df.loc["a01", "ahi_severity"] == "severe"
+        assert df.loc["c01", "ahi_severity"] == "normal"
+        assert df.loc["a01", "bmi"] == pytest.approx(102 / 1.75**2)
+        assert df.loc["a01", "signal_path"] == "a01"
+        # The shipped signal can be shorter than the table scores (c07, c08 are
+        # 25 and 22 minutes short), so both figures are exposed side by side.
+        assert df.loc["a01", "n_annotated_minutes"] == 140
+        assert df.loc["a01", "published_minutes"] == 490

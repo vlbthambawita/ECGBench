@@ -102,6 +102,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
     """
     from ecgbench.labels import (
         afdb,
+        apnea_ecg,
         challenge2017,
         challenge2020,
         challenge2021,
@@ -158,6 +159,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "incartdb": incartdb.load_labels,
         "mitdb": mitdb.load_labels,
         "afdb": afdb.load_labels,
+        "apnea_ecg": apnea_ecg.load_labels,
         "ltafdb": ltafdb.load_labels,
         "ltstdb": ltstdb.load_labels,
         "nsrdb": nsrdb.load_labels,

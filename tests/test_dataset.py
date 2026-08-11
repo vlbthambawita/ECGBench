@@ -1490,6 +1490,29 @@ class TestPerRecordLeadLayouts:
         assert not config.alternate_lead_names
         assert not config.record_lead_layouts
 
+    def test_apnea_ecg_declares_the_single_channel_name_its_headers_use(self):
+        """The second single-lead dataset here, and its channel is also "ECG".
+
+        Like challenge2017, and for the same reason: all 70 headers end their one
+        signal line with the bare description ``ECG``, and the release documents
+        no electrode placement anywhere — not on the landing page, not in
+        ``annotations.html``, not in ``additional-information.txt``. The overnight
+        Holter montage would make a modified chest lead the likely guess, but a
+        guess is exactly what naming it "II" or "V2" would ship. It stays a
+        channel position.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("apnea_ecg")
+        assert config.leads == 1
+        assert config.lead_names == ["ECG"]
+        assert len(config.lead_names) == config.leads
+        # Must not be stackable with 12-lead data by name.
+        assert not {"I", "II", "III", "aVR", "aVL", "aVF"} & set(config.lead_names)
+        # One channel in every record: no per-record layout mechanism applies.
+        assert not config.alternate_lead_names
+        assert not config.record_lead_layouts
+
     def test_afdb_channels_are_positions_and_must_not_be_named_leads(self):
         """AFDB's headers call its two channels ECG1/ECG2 and name no anatomy.
 

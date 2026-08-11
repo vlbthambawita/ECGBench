@@ -2516,3 +2516,74 @@ def test_stdb_labels_are_module_based_with_no_source_csv():
     from ecgbench.labels import _custom_loaders
 
     assert "stdb" in _custom_loaders()
+
+
+def test_load_apnea_ecg_config():
+    """Apnea-ECG: one unnamed channel, whole nights, and a leaky predefined split."""
+    config = load_config("apnea_ecg")
+    assert config.slug == "apnea_ecg"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares its gain explicitly (200 adu/mV), so wfdb reports mV
+    # and nothing needs rescaling. PhysioNet's prose states the same figure, so
+    # header and description agree.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 1
+    # "ECG" is the name all 70 headers use, and the release documents no
+    # electrode placement — so this is a channel, not a named anatomical lead.
+    assert config.lead_names == ["ECG"]
+    assert len(config.lead_names) == config.leads
+    assert config.sampling_rates == [100]
+    assert config.default_sampling_rate == 100
+    assert config.signal_path_columns == {100: "signal_path"}
+    # No usable metadata ships: the record list, the per-minute labels, the
+    # indices and the demographics live in four different places, and
+    # ApneaECGSplitter merges them into this.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # THE FIELD THAT STOPS THIS DATASET LEAKING. The release ships no subject
+    # identifier at all; subject_id is recovered from the published
+    # age/sex/height/weight and two bit-identical duplicate recordings, giving 30
+    # subjects for 70 records. Leaving this null would look correct and would put
+    # the same subject in train and test.
+    assert config.patient_id_column == "subject_id"
+    # A single layout in all 70 headers, so neither per-record lead mechanism
+    # applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Names are a letter and two digits ("a01"), never all-digits, so the CSV
+    # round-trip cannot coerce them to int.
+    assert config.zero_padded_identifiers is False
+    assert config.label_column == "apnea_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    # THE MOST CONSEQUENTIAL LINE IN THAT CONFIG. Apnea-ECG *does* divide itself
+    # into a learning set and a test set, and that division is what the whole
+    # literature on this database uses — but 18 of its 30 subjects have records
+    # on both sides, so adopting it would ship a subject-leaky split under
+    # ECGBench's name. `challenge_set` survives as a label instead.
+    assert config.has_predefined_splits is False
+    assert config.predefined_splits is None
+    # Length varies legitimately by nearly three hours (6.75 h to 9.62 h), so no
+    # sample count can be expected — an empty dict disables the check rather than
+    # making it fire.
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    assert config.validation.expected_leads == 1
+    # The attained 12-bit rail. Both bounds round toward zero in float32
+    # (10.234999656, -10.239999771), so a railed sample compares strictly inside
+    # and needs no slack — unlike chfdb's 10.585, which rounds outward.
+    assert config.validation.amplitude_range_mv == (-10.24, 10.235)
+    assert "amplitude_outlier" in config.validation.checks
+
+    assert config.labels is not None
+    assert config.labels.available
+    assert config.labels.source_csv is None  # the annotations and headers are the source
+    assert config.labels.join_column == config.record_id_column == "record_name"
+
+    from ecgbench.labels import _custom_loaders
+
+    assert "apnea_ecg" in _custom_loaders()
