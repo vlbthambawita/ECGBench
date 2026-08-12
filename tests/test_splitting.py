@@ -6332,3 +6332,209 @@ class TestTolletSplitter:
         from ecgbench.splitting.strategies.tollet import TolletSplitter
 
         assert isinstance(get_splitter("tollet"), TolletSplitter)
+
+
+class TestBUTQDBSplitter:
+    """BUT QDB: a generated metadata CSV, because the release ships none at all.
+
+    ``subject-info.csv`` is five demographic columns keyed by recording, with no
+    path, no geometry and nothing about the annotations; the quality labels are 18
+    separate headerless 12-column interval CSVs. The cache is not an optimisation —
+    ``validate_dataset`` re-reads ``metadata_csv`` from disk rather than reusing the
+    splitter's frame, so a splitter that only built the frame in memory would leave
+    validation resolving nothing. That is the bug Chapman shipped with for months.
+    """
+
+    N = 1000
+
+    def _tree(self, tmp_path):
+        """Four records from three subjects: one high class-3 burden, three low."""
+        import numpy as np
+
+        root = tmp_path / "butqdb"
+        root.mkdir()
+        plan = {
+            # record: (consensus intervals, demographics)
+            "200001": ([(0, 700, 1), (700, 900, 2), (900, 1000, 3)],
+                       ("F", 30, 170, 65, 0)),          # 10% class 3 -> high
+            "200002": ([(0, 1000, 1)], ("F", 30, 170, 65, 0)),
+            "201001": ([(0, 400, 2), (400, 1000, 0)], ("M", 44, 180, 80, 1)),
+            "202001": ([(0, 1000, 1)], ("M", 21, 175, 70, 0)),
+        }
+        for record_id, (intervals, _) in plan.items():
+            directory = root / record_id
+            directory.mkdir()
+            (directory / f"{record_id}_ECG.hea").write_text(
+                f"{record_id}_ECG 1 1000 {self.N}\n"
+                f"{record_id}_ECG.dat 16 0.99998(0)/uV 0 0 0 0 0 ECG\n"
+                "#ECG\n"
+            )
+            (directory / f"{record_id}_ECG.dat").write_bytes(
+                np.arange(self.N, dtype="<i2").tobytes()
+            )
+            rows = [
+                ",".join([str(s + 1), str(e), str(k)] * 4)
+                for s, e, k in intervals
+            ]
+            (directory / f"{record_id}_ANN.csv").write_text("\n".join(rows) + "\n")
+        (root / "RECORDS").write_text(
+            "\n".join(f"{r}/{r}_{k}" for r in plan for k in ("ACC", "ECG")) + "\n"
+        )
+        (root / "subject-info.csv").write_text(
+            "ID;Gender;Age;Height;Weight;Smoker\n"
+            + "\n".join(
+                f"{r};{d[0]};{d[1]};{d[2]};{d[3]};{d[4]}"
+                for r, (_, d) in plan.items()
+            )
+            + "\n"
+        )
+        return root
+
+    @pytest.fixture
+    def config(self):
+        from ecgbench.config import load_config
+
+        return load_config("butqdb")
+
+    def test_load_metadata_builds_one_row_per_ecg_record(self, tmp_path, config):
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        root = self._tree(tmp_path)
+        df = BUTQDBSplitter().load_metadata(root, config)
+        # RECORDS lists eight entries, four of them accelerometer records.
+        assert len(df) == 4
+        assert df["subject_id"].nunique() == 3
+        assert list(df["session_index"]) == [1, 2, 1, 1]
+        assert not df["signal_path"].str.contains("_ACC").any()
+
+    def test_the_generated_csv_is_written_where_validation_will_look(
+        self, tmp_path, config
+    ):
+        """validate_dataset re-reads config.metadata_csv from disk itself."""
+        import pandas as pd
+
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        root = self._tree(tmp_path)
+        assert not (root / config.metadata_csv).exists()
+        BUTQDBSplitter().load_metadata(root, config)
+        written = pd.read_csv(root / config.metadata_csv, dtype=config.identifier_dtypes())
+        assert len(written) == 4
+        signal_col = config.signal_path_columns[config.default_sampling_rate]
+        # Every path must be a wfdb stem naming a header that exists.
+        for stem in written[signal_col]:
+            assert (root / f"{stem}.hea").exists()
+            assert (root / f"{stem}.dat").exists()
+
+    def test_a_read_only_data_directory_fails_loudly(self, tmp_path, config, monkeypatch):
+        """An in-memory-only frame would leave validation with no metadata at all."""
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        root = self._tree(tmp_path)
+        original = pd.DataFrame.to_csv
+
+        def refuse(self, path_or_buf=None, *args, **kwargs):
+            if path_or_buf is not None and str(path_or_buf).endswith(config.metadata_csv):
+                raise OSError("read-only file system")
+            return original(self, path_or_buf, *args, **kwargs)
+
+        monkeypatch.setattr(pd.DataFrame, "to_csv", refuse)
+        with pytest.raises(OSError, match="must be writable"):
+            BUTQDBSplitter().load_metadata(root, config)
+
+    def test_the_second_run_reads_the_cache_rather_than_rescanning(
+        self, tmp_path, config
+    ):
+        """Rescanning is 1.72 billion samples; the cache must be authoritative."""
+        from ecgbench.splitting.strategies import butqdb as strategy
+
+        root = self._tree(tmp_path)
+        strategy.BUTQDBSplitter().load_metadata(root, config)
+
+        # Delete the signals and the annotations: a cached run must not need them.
+        for path in root.rglob("*_ECG.dat"):
+            path.unlink()
+        for path in root.rglob("*_ANN.csv"):
+            path.unlink()
+        df = strategy.BUTQDBSplitter().load_metadata(root, config)
+        assert len(df) == 4
+
+    def test_the_cache_reproduces_the_scan_exactly_including_dtypes(
+        self, tmp_path, config
+    ):
+        """A run off the cache must partition identically to a run off the scan.
+
+        record_id and subject_id are all-digits, so a plain ``read_csv`` gives int64
+        where the label loader gives str — and ``StratifiedGroupKFold`` orders its
+        groups by value, so the two would produce different folds and different
+        ``fold_digest`` values for identical data. The splitter pins the dtypes for
+        exactly this reason; ``config.identifier_dtypes()`` is empty here.
+        """
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        assert config.identifier_dtypes() == {}
+        root = self._tree(tmp_path)
+        splitter = BUTQDBSplitter()
+
+        fresh = splitter.load_metadata(root, config)      # built by the scan
+        cached = splitter.load_metadata(root, config)     # read back from disk
+        for column in ("record_id", "subject_id", "signal_path", "acc_path"):
+            assert cached[column].map(type).eq(str).all(), column
+            assert list(cached[column]) == list(fresh[column]), column
+
+        partitions = []
+        for df in (fresh, cached):
+            result = split_dataset(
+                df, splitter.get_stratification_labels(df, config), config, n_folds=2
+            )
+            partitions.append(
+                {
+                    number: sorted(fold["record_id"].astype(str))
+                    for number, fold in result.folds.items()
+                }
+            )
+        assert partitions[0] == partitions[1]
+
+    def test_stratification_is_the_class_three_burden(self, tmp_path, config):
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        root = self._tree(tmp_path)
+        splitter = BUTQDBSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+        assert labels.name == "class3_burden"
+        assert set(labels) == {"class3_high", "class3_low"}
+        assert list(labels) == ["class3_high", "class3_low", "class3_low", "class3_low"]
+
+    def test_folds_keep_a_subjects_recordings_together(self, tmp_path, config):
+        """Two 24-hour recordings of the same chest must not span a fold boundary."""
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        root = self._tree(tmp_path)
+        splitter = BUTQDBSplitter()
+        df = splitter.load_metadata(root, config)
+        result = split_dataset(
+            df, splitter.get_stratification_labels(df, config), config, n_folds=2
+        )
+        placement: dict[str, set[int]] = {}
+        for number, fold in result.folds.items():
+            for subject in fold["subject_id"].astype(str):
+                placement.setdefault(subject, set()).add(number)
+        assert all(len(folds) == 1 for folds in placement.values()), placement
+        assert result.group_column == "subject_id"
+
+    def test_stratification_needs_load_metadata_first(self, config):
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            BUTQDBSplitter().get_stratification_labels(
+                pd.DataFrame({"record_id": ["100001"]}), config
+            )
+
+    def test_the_splitter_is_registered_and_not_the_generic_fallback(self):
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
+
+        assert isinstance(get_splitter("butqdb"), BUTQDBSplitter)

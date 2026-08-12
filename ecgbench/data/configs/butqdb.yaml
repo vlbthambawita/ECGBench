@@ -1,0 +1,339 @@
+# ECGBench Config: Brno University of Technology ECG Quality Database (BUT QDB)
+# ==============================================================================
+# https://physionet.org/content/butqdb/1.0.0/
+#
+# 18 single-lead wearable ECG recordings, each longer than 24 hours, from 15 people
+# going about ordinary life with a Bittium Faros 180 on their chest. 478.7 hours of
+# signal at 1 kHz, with a 3-axis accelerometer alongside it. What makes it unlike
+# every other dataset in ECGBench is the ground truth: three ECG experts graded the
+# SIGNAL QUALITY sample by sample, and the release ships all three opinions plus
+# their consensus.
+#
+# SEVEN THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE LABEL IS PER SAMPLE, NOT PER RECORD, AND THE FOLD CSVs CANNOT CARRY IT.
+#    Fold CSVs are identifiers only by design, so the per-record columns from
+#    `labels=True` are summaries — fractions of annotated time in each quality
+#    class. The real ground truth is
+#    `ecgbench.labels.butqdb.quality_vector(data_path, record_id, start=, length=)`,
+#    which returns one class per sample aligned to `ECGDataset(window=(start,
+#    length))`. Anyone training a quality classifier wants that function, not
+#    `dominant_consensus_class`.
+#
+# 2. ONLY 20.8% OF THE RECORDED TIME IS ANNOTATED, AND IT IS CONCENTRATED IN THREE
+#    RECORDS. 100001, 105001 and 111001 are graded end to end (24.19 h, 38.65 h,
+#    25.18 h) and hold 88.6% of all annotated time. The other 15 get two 20-minute
+#    segments each, plus five extra segments the authors chose for being noisy —
+#    four of 20 minutes and one of 2 minutes — so 113001 has 60 annotated minutes,
+#    114001 62, 124001 80 and the remaining twelve exactly 40.
+#
+#    AND THE TWO STANDARD SEGMENTS ARE AT A FIXED OFFSET, which the release does not
+#    mention: samples 28,800,000-30,000,000 and 57,600,000-58,800,000 in every one of
+#    those 15 records — 8 h 00 m and 16 h 00 m into the recording, 20 minutes each. So
+#    `window=(0, n)`, the obvious first thing to try, lands on unannotated signal for
+#    15 of the 18 records however small n is.
+#    `ecgbench.labels.butqdb.annotated_blocks` returns the bounds per record.
+#
+# 3. THOSE 20-MINUTE SEGMENTS ARE NOT A RANDOM SAMPLE OF THE RECORDING. Five were
+#    "subjectively selected" to raise the proportion of poor signal, so the class
+#    mix over annotated time is deliberately worse than over free-living ECG as a
+#    whole: class 1 51.5%, class 2 33.3%, class 3 15.2%. And 87% of the class-3 time
+#    is one record (105001, 13.2 h of it). Do not quote 15.2% as a property of
+#    24-hour wearable ECG.
+#
+# 4. THE FOURTH COLUMN TRIPLE IS THE CONSENSUS, AND IT BEHAVES AS A MAJORITY VOTE.
+#    The release says the annotation CSV holds "3 columns x 3 annotators + consensus"
+#    and does not say how the consensus was formed. Checked over all 357,799,001
+#    annotated samples: a majority of the three experts exists at 99.863% of them and
+#    the consensus equals it at all but 3,103 (99.99913%), and it differs from every
+#    expert at only 378 samples in the whole release. The residuals sit at interval
+#    boundaries. `consensus_matches_majority` in the labels records it per record.
+#
+# 5. THE EXPERTS DISAGREE A GREAT DEAL, WHICH IS THE CEILING ON ANY RESULT. All
+#    three agree on 248,410,246 of the 357,799,001 annotated samples — 69.43%.
+#    Pairwise agreement averaged over the 18 records is 0.82 (experts 1-2), 0.81
+#    (1-3), 0.89 (2-3); expert 1 is systematically stricter,
+#    calling class 2 where the others call class 1 — on 121001 expert 1 gives 51.8%
+#    class 1 against expert 2's 90.4%. The per-expert fractions are in the labels so
+#    that ceiling is visible rather than implicit.
+#
+# 6. EVERY RECORD SATURATES THE CONVERTER, SO `amplitude_outlier` IS A NO-OP HERE.
+#    All 18 records attain both 16-bit ADC rails, so the bound below has to be their
+#    union and cannot exclude anything. `clipped_fraction` in the labels is what
+#    measures saturation: 114001 is at a rail for 0.015% of its samples, 100001 for
+#    two samples out of 87 million. See the validation block.
+#
+# 7. `clean` AND `original` ARE THE SAME 18 RECORDS, DELIBERATELY. This is the one
+#    dataset here whose subject IS signal quality, so excluding records for being
+#    noisy would destroy the thing it exists to measure — the noisiest recording,
+#    105001, is the single most valuable one. Nothing fails a check: no NaN sample,
+#    no unreadable header, no flat lead, and per point 6 no amplitude outlier. Use
+#    the quality annotations, not ECGBench's `is_valid`, to decide what is analysable.
+#
+# ALL 95 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt.
+
+name: "Brno University of Technology ECG Quality Database (BUT QDB)"
+slug: "butqdb"
+version: "1.0.0"
+url: "https://physionet.org/content/butqdb/1.0.0/"
+download_url: null  # BUTQDBSplitter generates metadata_csv, so this must stay null
+license: "CC-BY-4.0"  # verbatim CC BY 4.0 in the shipped LICENSE.txt
+description: >
+  Eighteen single-lead electrocardiograms, each longer than 24 hours, recorded from
+  15 subjects (9 female, 6 male, aged 21 to 83) between August 2018 and October 2019
+  with a Bittium Faros 180 chest recorder while they went about ordinary daily life —
+  "free-living conditions", the only restriction being no bathing or swimming. 478.7
+  hours of ECG at 1,000 Hz, with 3-axis accelerometry at 100 Hz alongside every
+  recording. The point of the release is signal quality: three ECG experts graded the
+  ECG sample by sample into three classes — all waveforms measurable, QRS detectable
+  but nothing finer, and unusable — and the database ships each expert's opinion and
+  their consensus. Three recordings are graded end to end and the other 15 in two
+  20-minute segments each, plus five further segments chosen for being noisy, giving
+  99.4 hours of sample-level ground truth. It is a quality-assessment benchmark, not
+  a diagnostic one: there is no cardiac diagnosis anywhere in the release.
+citation: >
+  Nemcova, A., Smisek, R., Opravilova, K., Vitek, M., Smital, L., & Marsanova, L.
+  (2020). Brno University of Technology ECG Quality Database (BUT QDB) (version
+  1.0.0). PhysioNet. https://doi.org/10.13026/kah4-0w24. See also Smital, L.,
+  Felton, C. L., Gilbert, B., Holmes, D., Haider, C. R., Vitek, M., et al. (2020).
+  Real-time quality assessment of long-term ECG signals recorded by wearables in
+  free-living conditions. IEEE Transactions on Biomedical Engineering.
+  https://doi.org/10.1109/tbme.2020.2969719. PhysioNet also asks for: Goldberger AL,
+  Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng
+  C-K, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
+  Research Resource for Complex Physiologic Signals. Circulation 101(23):e215-e220
+  (2000).
+doi: "10.13026/kah4-0w24"
+
+creators:
+  - type: Person
+    name: "Andrea Nemcova"
+    url: "https://physionet.org/content/butqdb/1.0.0/"
+  - type: Person
+    name: "Radovan Smisek"
+    url: "https://physionet.org/content/butqdb/1.0.0/"
+  - type: Person
+    name: "Lukas Smital"
+    url: "https://physionet.org/content/butqdb/1.0.0/"
+  - type: Organization
+    name: "Department of Biomedical Engineering, Brno University of Technology"
+    url: "https://www.vut.cz/en/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# The headers declare `/uV` with a per-record gain (0.99998 to 1.996 ADC units per
+# microvolt) and a per-record baseline (-18289 to +11462), so wfdb hands back
+# microvolts and this factor turns them into the millivolts everything downstream
+# assumes. Verified against one record sample-for-sample: d_signal 32292 with gain
+# 1.996 and baseline -12200 gives 22290.58 uV = 22.29 mV.
+signal_unit_scale: 0.001
+# One lead, and the header names it exactly "ECG" — no derivation is stated anywhere
+# in the release beyond "single-lead" from a chest-worn Faros 180, so leads=[...] has
+# nothing to choose between and is never needed.
+leads: 1
+lead_names: ["ECG"]
+# NOMINAL ONLY, and the shortest record. Length varies from 86,420,000 samples
+# (103003, 24.01 h) to 139,147,000 (105001, 38.65 h) — see the expected_samples note.
+duration_seconds: 86420.0
+# The 100 Hz accelerometer is deliberately absent from this list. It is a separate
+# WFDB record per recording (`<id>_ACC`, 3 channels in milli-g) and not an ECG;
+# `acc_path` in the labels points at it. Declaring 100 here would make ECGBench
+# offer to load accelerometry as if it were an ECG lead.
+sampling_rates: [1000]
+default_sampling_rate: 1000
+
+# --- File Structure ---
+# NO METADATA FILE SHIPS. subject-info.csv holds five demographic columns and no
+# path, no record geometry and nothing about the annotations; the quality labels are
+# in 18 separate headerless 12-column CSVs. BUTQDBSplitter builds this file on first
+# run via ecgbench.labels.butqdb, which reads every header, every annotation file
+# and scans all 1.72 billion samples for converter saturation. The validation engine
+# re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# The release's own six-digit name with the "_ECG" suffix dropped: "100001", where
+# the first three digits are the subject and the last three the session.
+record_id_column: "record_id"
+# False, and checked rather than assumed: record ids run 100001-126001 and subject
+# ids 100-126, so no identifier has a leading zero and the CSV round trip through
+# int64 loses nothing — the same position as mitdb and ptbxl.
+#
+# The one place that is not good enough is the generated metadata cache. The split is
+# computed from string subject ids on the first run and from whatever the CSV gives
+# back on later ones, and StratifiedGroupKFold orders its groups by value, so int64
+# groups there would silently produce a different partition and a different
+# fold_digest for identical data. BUTQDBSplitter pins the dtype on that read, the way
+# TolletSplitter and ECGIDDBSplitter do.
+zero_padded_identifiers: false
+# 15 subjects for 18 records: subject 100 was recorded twice and 103 three times.
+# The grouping is recovered from the record name — the release documents the six
+# digits as "<3-digit subject><3-digit session>" — and checked, because the records
+# sharing a prefix must carry identical demographics in subject-info.csv, and do.
+# Without it, two 24-hour recordings of the same chest a day apart could land on
+# opposite sides of a fold boundary.
+patient_id_column: "subject_id"
+
+signal_path_columns:
+  1000: "signal_path"  # "100001/100001_ECG" — one directory per recording
+
+# --- Labels ---
+# THE MODAL QUALITY CLASS OVER ANNOTATED SAMPLES, AND IT IS A REDUCTION OF THE REAL
+# LABEL, NOT THE LABEL. It is 1 for 15 of the 18 records, 2 for two and 3 for one, and
+# for 15 of them it summarises 40 minutes of a 24-hour recording (point 2). It is
+# named here because the config needs one column and this is the only per-record
+# class the data supports. The ground truth is per sample:
+# ecgbench.labels.butqdb.quality_vector. Do not train on this column.
+label_column: "dominant_consensus_class"
+label_format: "single"
+
+stratification:
+  # BUTQDBSplitter takes `stratify_class` from the label loader: whether more than
+  # 1% of the record's annotated time is class 3 (unusable). 12 records / 9 subjects
+  # low, 6 records / 6 subjects high.
+  #
+  # WHY CLASS-3 BURDEN AND NOT SEX. What the folds have to balance is unusable
+  # signal, because rejecting unusable signal is the task. Only six records carry an
+  # appreciable class-3 burden, so at most six of the ten folds can hold one — and
+  # this axis achieves exactly six, the arithmetic maximum. Sex, which nsrdb and
+  # chfdb use, reaches five, and buys nothing in exchange: 15 subjects over 10 folds
+  # put one or two records in a fold, so the female fraction per fold is 0, 0.5 or 1
+  # whatever it is stratified on. This axis also happens to spread the three
+  # fully-annotated records (88.6% of all annotated time) across three folds, so no
+  # cross with annotation depth is needed.
+  #
+  # THE THRESHOLD IS NOT TUNED. Class-3 fractions run 0.00%-0.38% for twelve records
+  # and 2.8%-50.0% for six, so any cut in [0.4%, 2.8%] gives the same partition.
+  #
+  # REJECTED: every cross of two axes, because StratifiedGroupKFold needs at least
+  # one class holding n_folds records and no cross of 18 records has one — sex x
+  # class-3 burden raises outright. Also rejected: dominant consensus class (15/2/1,
+  # a singleton class) and an age cut (arbitrary boundary; the subject median of 37
+  # reaches five folds, and 45 reaches six only by luck). See
+  # ecgbench.labels.butqdb.attach_stratify_class for the measured table.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# None. Neither the release nor the paper assigns records to train or test.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # DELIBERATELY EMPTY, like nsrdb, sddb, chfdb and ptbdb. Every record is a
+  # different length — 86,420,000 to 139,147,000 samples, 24.01 h to 38.65 h — and
+  # each is a complete recording that simply ran until the battery or the subject
+  # stopped, so any single threshold would flag most of the release as truncated.
+  # Omitting the rate disables the check rather than making it fire;
+  # `truncated_signal` stays in the list below so a future release with uniform
+  # lengths needs one line here, not two.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # THE UNION OF EVERY RECORD'S 16-BIT RAIL, WHICH MAKES THIS CHECK A NO-OP — and
+  # that is the honest setting, not a widened one. Gain and baseline differ per
+  # record, so each has its own physical span: 100001 covers [-10.30, +22.53] mV,
+  # 124001 [-32.77, +15.78], 104001 [-32.77, +32.77]. ALL 18 RECORDS ATTAIN BOTH OF
+  # THEIR RAILS, so any bound tighter than this union excludes real recordings, and
+  # this union excludes nothing. `flat_line` and `nan_values` also pass everywhere,
+  # so `clean` is all 18 records — see point 7 of the header.
+  #
+  # The bounds are attained, so they were checked against the float32 rounding trap
+  # in CLAUDE.md rather than computed in float64 and hoped for. The extremes
+  # `_load_signal` actually produces are -32.76765823364258 mV (104001 and the other
+  # unity-gain records) and +32.768115997314453 mV (100002); a bound of 32.768 would
+  # have excluded the very record it was computed from. 32.769 leaves a thousandth of
+  # a millivolt of slack on both sides.
+  #
+  # WHAT THIS DOES NOT CATCH, and what to use instead: saturation *at* the rail.
+  # Every record touches one — 114001 for 13,866 samples (0.015%), 100001 for two —
+  # and `clipped_fraction` in the labels is the only thing that reports it. What the
+  # check does still guard is a mis-scaled copy: a re-release in ADC counts, or one
+  # that forgot signal_unit_scale, would exceed this by a factor of 1000 on the first
+  # record.
+  amplitude_range_mv: [-32.769, 32.769]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/butqdb.py. The labels are 18 headerless 12-column
+# CSVs of sample-index intervals — 3 columns per expert plus 3 for the consensus —
+# which have to be expanded, cross-checked between annotators and reduced to
+# per-record fractions; the demographics come from a semicolon-separated file keyed
+# by recording rather than by subject; and the converter-saturation columns need a
+# pass over 1.72 billion samples. None of that is a column select.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "single-lead"
+    - "signal quality"
+    - "quality assessment"
+    - "noise"
+    - "artifact"
+    - "wearable"
+    - "free-living"
+    - "long-term monitoring"
+    - "accelerometer"
+    - "Bittium Faros"
+    - "inter-annotator agreement"
+    - "PhysioNet"
+  rai_data_collection: >
+    18 recordings longer than 24 hours collected from 15 volunteers between August
+    2018 and October 2019 by the cardiology team at the Department of Biomedical
+    Engineering, Brno University of Technology, and published on PhysioNet in July
+    2020. Subjects wore a Bittium Faros 180 chest recorder — single-lead ECG at
+    1,000 Hz plus 3-axis accelerometry at 100 Hz — under free-living conditions,
+    carrying out ordinary daily activities with no restriction other than avoiding
+    water. The purpose of the collection is signal quality rather than diagnosis, and
+    the annotation effort is the substance of the release: three ECG experts
+    independently graded the ECG sample by sample into three classes (all significant
+    waveforms measurable; QRS reliably detectable but finer points not; QRS not
+    reliably detectable and the signal unusable), and a consensus of the three ships
+    alongside their individual opinions. Three of the recordings were graded end to
+    end; the other 15 were graded in two 20-minute segments each, and five further
+    segments were chosen subjectively for poor quality and graded as well, giving
+    99.4 hours of sample-level ground truth over 478.7 hours of signal. The study was
+    approved by the Institutional Review Board of the DBME Faculty of Electrical
+    Engineering and Communication, Brno University of Technology (protocol
+    EC:EK:05b/2018), and written informed consent was obtained from every subject.
+  rai_data_biases: >
+    Fifteen volunteers at one Czech university, not a clinical or population cohort,
+    and no cardiac examination was performed — the release contains no diagnosis of
+    any kind, so this is neither a healthy cohort nor a diseased one. The age
+    distribution is bimodal rather than broad: eight subjects are 21 to 28 and seven
+    are 37 to 83, with nothing between 28 and 37, so any age effect estimated here is
+    estimated across a gap. Three subjects smoke. Body habitus is narrow (height
+    153-184 cm, weight 43-85 kg). The structural bias that matters most is in the
+    annotation rather than the people: only 20.8% of the recorded time is graded at
+    all, and 88.6% of the graded time comes from just three of the 18 recordings, so
+    a model trained on annotated segments is trained largely on three subjects. Five
+    of the graded segments were deliberately selected for being noisy, which makes
+    the class mix over annotated time (51.5% / 33.3% / 15.2%) worse than free-living
+    ECG actually is, and 87% of the unusable time is a single recording. The three
+    experts agree unanimously on only 69.4% of graded samples and one of them is
+    systematically stricter than the other two, so the consensus label carries real
+    annotator variance and any accuracy measured against it is bounded by that. All
+    signal is single-lead chest-worn ambulatory ECG from one recorder model, so
+    nothing here describes 12-lead resting morphology or any other device's noise
+    characteristics.
+  rai_personal_sensitive_info: >
+    De-identified: subjects are numbered 100 to 126 and no name, contact detail or
+    medical record number ships. Per-subject gender, age, height, weight and smoking
+    status are given, which within a cohort of 15 people at one named institution is a
+    small but non-empty re-identification surface — the 83-year-old woman is unique in
+    the cohort on age alone. No date, clock time or location ships with any recording,
+    which limits linkage to external records, and the recording period is stated only
+    as a 15-month range. No diagnosis, medication or clinical finding is recorded for
+    anyone. As with any ECG collection the waveforms are themselves a biometric, and
+    two subjects contributed more than one 24-hour recording, so the data permits
+    matching a person across sessions; the recordings are also long enough to expose
+    daily-routine information (sleep and activity timing) through the accelerometer
+    signal, which is a behavioural rather than a clinical disclosure.

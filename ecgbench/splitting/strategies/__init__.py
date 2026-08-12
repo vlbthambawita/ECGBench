@@ -4,6 +4,7 @@ from . import (  # noqa: F401
     afdb,
     apnea_ecg,
     brugada_huca,
+    butqdb,
     challenge2017,
     challenge2020,
     challenge2021,

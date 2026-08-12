@@ -2859,3 +2859,110 @@ def test_tollet_amplitude_bound_is_the_converter_span_and_cannot_fire():
     low = float(np.float32(1023) / np.float32(1024) - np.float32(0.5)) * -3.0
     assert low == -1.4970703125
     assert low > -1.5
+
+
+def test_load_butqdb_config():
+    """BUT QDB: one channel, microvolts, and a label that lives per sample."""
+    config = load_config("butqdb")
+    assert config.slug == "butqdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # The headers declare `/uV` with a PER-RECORD gain (0.99998 to 1.996 ADC units
+    # per microvolt) and baseline (-18289 to +11462), so wfdb returns microvolts and
+    # this turns them into the millivolts everything downstream assumes.
+    assert config.signal_unit_scale == 0.001
+    # One lead, and the header names it exactly "ECG" — no derivation is stated
+    # anywhere in the release beyond "single-lead" from a chest-worn Faros 180.
+    assert config.leads == 1
+    assert config.lead_names == ["ECG"]
+    assert len(config.lead_names) == config.leads
+    # The 100 Hz accelerometer is DELIBERATELY not a declared rate: it is a separate
+    # WFDB record per recording and not an ECG. `acc_path` in the labels points at it.
+    assert config.sampling_rates == [1000]
+    assert config.default_sampling_rate == 1000
+    assert 100 not in config.sampling_rates
+    assert config.signal_path_columns == {1000: "signal_path"}
+    # No metadata file ships at all — subject-info.csv is five demographic columns
+    # keyed by recording, with no path and nothing about the annotations.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_id"
+    # 15 subjects for 18 records (100 recorded twice, 103 three times), recovered
+    # from the six-digit record name. Grouping is not optional: without it two
+    # 24-hour recordings of the same chest can land on opposite sides of a fold.
+    assert config.patient_id_column == "subject_id"
+    # A REDUCTION, not the ground truth — the label of this dataset is per sample.
+    assert config.label_column == "dominant_consensus_class"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # Record ids run 100001-126001 and subject ids 100-126, so no identifier has a
+    # leading zero and the int64 round trip loses nothing. Reproducibility instead
+    # rests on BUTQDBSplitter pinning the dtype when it reads its own cache.
+    assert config.zero_padded_identifiers is False
+    assert config.identifier_dtypes() == {}
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    # Module-based labels: 18 headerless 12-column interval CSVs are not a column
+    # select, so source_csv is null and the module does the work.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_id"
+    # Openly licensed, so the identifier-only fold CSVs go to the Hub.
+    assert config.publish_fold_csvs is True
+
+
+def test_butqdb_leaves_expected_samples_empty_because_no_two_records_agree():
+    """24.01 h to 38.65 h, every record a different length and all complete.
+
+    Omitting the rate disables ``check_truncated_signal`` rather than making it
+    fire, which is the documented escape hatch. ``duration_seconds`` is the
+    SHORTEST record, not a nominal length every record has.
+    """
+    config = load_config("butqdb")
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    assert config.duration_seconds == 86420.0  # 103003, the shortest, at 1 kHz
+
+
+def test_butqdb_amplitude_bound_is_the_union_of_every_records_rail():
+    """Every one of the 18 records attains both of its 16-bit rails.
+
+    Gain and baseline differ per record, so each has a different physical span —
+    100001 covers [-10.30, +22.53] mV and 104001 [-32.77, +32.77]. The bound has to
+    be the union, which makes ``amplitude_outlier`` a no-op for this dataset; the
+    real pathology is saturation *at* the rail, which ``clipped_fraction`` in the
+    labels measures and no check in CHECK_REGISTRY does.
+
+    The bounds are ATTAINED, so the float32 rounding trap in CLAUDE.md applies: the
+    extremes ``_load_signal`` actually produces are -32.76765823364258 mV and
+    +32.768115997314453 mV, and a bound of 32.768 would have excluded the very
+    record it was computed from.
+    """
+    import numpy as np
+
+    config = load_config("butqdb")
+    assert config.validation is not None
+    assert config.validation.amplitude_range_mv == (-32.769, 32.769)
+    assert "amplitude_outlier" in config.validation.checks
+
+    low, high = config.validation.amplitude_range_mv
+
+    def attained(adc, gain, baseline):
+        """What _load_signal produces: float64 conversion, float32 cast, x0.001."""
+        uv = (adc - baseline) / gain
+        return float(np.float32(np.float32(uv) * np.float32(0.001)))
+
+    # 104001 and the other unity-gain records reach the negative extreme, and it
+    # rounds AWAY from zero in float32 — the direction that can trip a bound.
+    negative = attained(-32767, 0.99998, 0)
+    assert negative == -32.76765823364258
+    assert negative < -32.76765535310707  # the float64 value, which is not enough
+    assert negative >= low
+    # 100002 reaches the positive extreme, past a bound of 32.768.
+    positive = attained(32767, 1.5581, -18289)
+    assert positive == 32.768115997314453
+    assert positive > 32.768
+    assert positive <= high

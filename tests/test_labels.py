@@ -11318,3 +11318,389 @@ class TestTolletLabels:
         from ecgbench.labels.tollet import load_labels
 
         assert _custom_loaders()["tollet"] is load_labels
+
+
+class TestBUTQDBLabels:
+    """BUT QDB: the one dataset here whose ground truth is a label per sample.
+
+    Three structural facts this class pins. The annotation CSV is **1-based and
+    inclusive** — the format ``ann_reader.m`` expects — and the loader converts it
+    to 0-based half-open bounds, so an off-by-one silently shifts every label
+    against the signal. Every fraction is over **annotated** samples, not over the
+    record, because 15 of the 18 records are graded for 40 minutes of a 24-hour
+    recording. And the fourth column triple is the **consensus**, not a fourth
+    annotator, which the release states and the loader measures.
+    """
+
+    #: (record, subject demographics) — 200 recorded twice, 201 once, so the
+    #: subject grouping recovered from the six-digit name has something to recover.
+    SUBJECTS = {
+        "200001": ("F", 30, 170, 65, 0),
+        "200002": ("F", 30, 170, 65, 0),
+        "201001": ("M", 44, 180, 80, 1),
+    }
+
+    N = 1000
+
+    def _header(self, record_id, n_samples, gain, baseline):
+        """The shipped header format, verbatim in shape."""
+        return (
+            f"{record_id}_ECG 1 1000 {n_samples}\n"
+            f"{record_id}_ECG.dat 16 {gain}({baseline})/uV 0 0 0 0 0 ECG\n"
+            "#ECG\n"
+        )
+
+    def _ann_csv(self, per_annotator):
+        """Build a 12-column headerless annotation file.
+
+        ``per_annotator`` is four lists of ``(start0, end0, quality_class)`` tiling
+        ``[0, N)``. Written back out 1-based and inclusive, blank-padded, exactly
+        as the release ships it.
+        """
+        columns = []
+        for intervals in per_annotator:
+            columns.append(
+                [(str(s + 1), str(e), str(k)) for s, e, k in intervals]
+            )
+        height = max(len(c) for c in columns)
+        lines = []
+        for row in range(height):
+            fields = []
+            for column in columns:
+                fields.extend(column[row] if row < len(column) else ("", "", ""))
+            lines.append(",".join(fields))
+        return "\n".join(lines) + "\n"
+
+    def _tree(self, tmp_path):
+        """Three records: one graded end to end, one in two blocks, one in one."""
+        import numpy as np
+
+        root = tmp_path / "butqdb"
+        root.mkdir()
+
+        # 200001: fully graded. Consensus 700 class 1, 200 class 2, 100 class 3, so
+        # 10% class 3 and `class3_high`. Expert 1 is the strict outlier, calling the
+        # first stretch class 2 where the other two call it class 1 — so the
+        # consensus is the majority and NOT expert 1.
+        full = [
+            [(0, 700, 2), (700, 900, 2), (900, 1000, 3)],   # expert 1
+            [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],   # expert 2
+            [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],   # expert 3
+            [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],   # consensus
+        ]
+        # 200002: two graded blocks of 200 samples, the rest class 0 = ungraded.
+        # The second block is two TOUCHING intervals of different classes, which
+        # annotated_blocks must merge into one block rather than report as two.
+        two_blocks = [
+            [(0, 100, 0), (100, 300, 1), (300, 600, 0), (600, 700, 1),
+             (700, 800, 2), (800, 1000, 0)]
+        ] * 4
+        # 201001: one graded block, all class 2, no class 3 at all.
+        one_block = [[(0, 400, 2), (400, 1000, 0)]] * 4
+
+        plan = {
+            "200001": (full, 0.99998, 0),
+            "200002": (two_blocks, 1.5581, -18289),
+            "201001": (one_block, 1.996, -12200),
+        }
+        for record_id, (per_annotator, gain, baseline) in plan.items():
+            directory = root / record_id
+            directory.mkdir()
+            (directory / f"{record_id}_ECG.hea").write_text(
+                self._header(record_id, self.N, gain, baseline)
+            )
+            samples = np.arange(self.N, dtype="<i2")
+            # Two samples at each 16-bit rail, so clipped_fraction is 4/1000. The
+            # invalid marker -32768 is deliberately absent, as it is in the release.
+            samples[0] = samples[1] = 32767
+            samples[2] = samples[3] = -32767
+            (directory / f"{record_id}_ECG.dat").write_bytes(samples.tobytes())
+            (directory / f"{record_id}_ANN.csv").write_text(
+                self._ann_csv(per_annotator)
+            )
+
+        # RECORDS lists the accelerometer records too; only the ECG ones may become
+        # ECGBench records.
+        (root / "RECORDS").write_text(
+            "\n".join(
+                f"{r}/{r}_{kind}" for r in plan for kind in ("ACC", "ECG")
+            )
+            + "\n"
+        )
+        (root / "subject-info.csv").write_text(
+            "ID;Gender;Age;Height;Weight;Smoker\n"
+            + "\n".join(
+                f"{r};{s[0]};{s[1]};{s[2]};{s[3]};{s[4]}"
+                for r, s in self.SUBJECTS.items()
+            )
+            + "\n"
+        )
+        return root
+
+    @pytest.fixture
+    def config(self):
+        from ecgbench.config import load_config
+
+        return load_config("butqdb")
+
+    def test_intervals_come_back_zero_based_and_half_open(self, tmp_path, config):
+        """The file is 1-based inclusive; ``signal[start:end]`` must be the stretch."""
+        from ecgbench.labels.butqdb import load_quality_intervals
+
+        root = self._tree(tmp_path)
+        intervals = load_quality_intervals(root, "200001")
+        assert list(intervals["start"]) == [0, 700, 900]
+        assert list(intervals["end"]) == [700, 900, 1000]
+        assert list(intervals["quality_class"]) == [1, 2, 3]
+        # Half-open and contiguous: no sample counted twice, none missed.
+        assert intervals["n_samples"].sum() == self.N
+        assert list(intervals["duration_secs"]) == [0.7, 0.2, 0.1]
+
+    def test_all_four_annotators_are_returned_and_named(self, tmp_path, config):
+        from ecgbench.labels.butqdb import ANNOTATORS, load_quality_intervals
+
+        root = self._tree(tmp_path)
+        every = load_quality_intervals(root, "200001", annotator=None)
+        assert list(dict.fromkeys(every["annotator"])) == list(ANNOTATORS)
+        assert ANNOTATORS == ("expert_1", "expert_2", "expert_3", "consensus")
+
+    def test_a_gap_in_an_annotators_intervals_raises(self, tmp_path, config):
+        """A gap would make every fraction computed from the file wrong, silently."""
+        from ecgbench.labels.butqdb import parse_annotation_csv
+
+        root = self._tree(tmp_path)
+        path = root / "200001" / "200001_ANN.csv"
+        gapped = [[(0, 700, 1), (800, 1000, 2)]] * 4  # 700..800 belongs to nobody
+        path.write_text(self._ann_csv(gapped))
+        with pytest.raises(ValueError, match="gap or an overlap"):
+            parse_annotation_csv(path, self.N)
+
+    def test_intervals_not_reaching_the_end_of_the_record_raise(self, tmp_path):
+        from ecgbench.labels.butqdb import parse_annotation_csv
+
+        root = self._tree(tmp_path)
+        path = root / "200001" / "200001_ANN.csv"
+        path.write_text(self._ann_csv([[(0, 900, 1)]] * 4))
+        with pytest.raises(ValueError, match="but the record holds"):
+            parse_annotation_csv(path, self.N)
+
+    def test_quality_vector_aligns_with_the_window_argument(self, tmp_path):
+        """``quality_vector(start, length)`` must match ``ECGDataset(window=...)``.
+
+        This is the function anyone training on this dataset actually needs: the
+        per-record columns are summaries, the label is per sample.
+        """
+        import numpy as np
+
+        from ecgbench.labels.butqdb import quality_vector
+
+        root = self._tree(tmp_path)
+        whole = quality_vector(root, "200001")
+        assert whole.dtype == np.int8
+        assert whole.shape == (self.N,)
+        assert whole[0] == 1 and whole[699] == 1
+        assert whole[700] == 2 and whole[899] == 2
+        assert whole[900] == 3 and whole[-1] == 3
+
+        window = quality_vector(root, "200001", start=650, length=100)
+        assert window.shape == (100,)
+        assert np.array_equal(window, whole[650:750])
+        # An expert's own opinion is reachable, and differs from the consensus here.
+        strict = quality_vector(root, "200001", annotator="expert_1", start=0, length=10)
+        assert set(strict.tolist()) == {2}
+        assert set(whole[:10].tolist()) == {1}
+
+    def test_a_window_past_the_end_of_the_record_raises(self, tmp_path):
+        from ecgbench.labels.butqdb import quality_vector
+
+        root = self._tree(tmp_path)
+        with pytest.raises(ValueError, match="past the end of record"):
+            quality_vector(root, "200001", start=900, length=200)
+
+    def test_zero_is_ungraded_and_annotated_blocks_merges_touching_intervals(
+        self, tmp_path
+    ):
+        """Class 0 is "never annotated", not a fourth quality level.
+
+        A graded 20-minute segment is one block of annotated time even when the
+        annotator cut it into a class-1 stretch followed by a class-2 stretch, so
+        the block list must merge intervals that touch — otherwise
+        ``n_annotated_blocks`` counts quality transitions rather than segments.
+        """
+        from ecgbench.labels.butqdb import annotated_blocks, quality_vector
+
+        root = self._tree(tmp_path)
+        blocks = annotated_blocks(root, "200002")
+        assert list(blocks["start"]) == [100, 600]
+        assert list(blocks["end"]) == [300, 800]
+        assert list(blocks["block"]) == [1, 2]
+        # Four graded intervals, two blocks.
+        vector = quality_vector(root, "200002")
+        assert (vector > 0).sum() == 400
+        assert set(vector[100:300].tolist()) == {1}
+        assert set(vector[:100].tolist()) == {0}
+
+    def test_fractions_are_over_annotated_samples_not_over_the_record(
+        self, tmp_path, config
+    ):
+        """400 of 1000 samples graded, all class 2 — so class 2 is 1.0, not 0.4."""
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        row = df.loc["201001"]
+        assert row["annotated_samples"] == 400
+        assert row["annotated_fraction"] == pytest.approx(0.4)
+        assert not bool(row["fully_annotated"])
+        assert bool(df.loc["200001", "fully_annotated"])
+        assert row["consensus_class2_fraction"] == pytest.approx(1.0)
+        assert row["consensus_class1_fraction"] == pytest.approx(0.0)
+        assert row["consensus_class3_fraction"] == pytest.approx(0.0)
+        assert row["consensus_class2_secs"] == pytest.approx(0.4)
+        assert row["dominant_consensus_class"] == 2
+
+    def test_the_consensus_is_the_majority_and_not_the_strict_expert(
+        self, tmp_path, config
+    ):
+        """Expert 1 grades the first 70% class 2; the consensus follows the other two.
+
+        The release states the layout is "3 annotators + consensus" without saying
+        how the consensus was formed, so the loader measures it rather than
+        asserting it — that is what ``consensus_matches_majority`` is.
+        """
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        row = df.loc["200001"]
+        assert row["expert_1_class1_fraction"] == pytest.approx(0.0)
+        assert row["expert_2_class1_fraction"] == pytest.approx(0.7)
+        assert row["expert_3_class1_fraction"] == pytest.approx(0.7)
+        assert row["consensus_class1_fraction"] == pytest.approx(0.7)
+        # A majority exists everywhere here, and the consensus is it everywhere.
+        assert row["expert_majority_fraction"] == pytest.approx(1.0)
+        assert row["consensus_matches_majority"] == pytest.approx(1.0)
+        # Experts 2 and 3 agree completely, expert 1 on 30% of samples.
+        assert row["expert_unanimous_fraction"] == pytest.approx(0.3)
+        assert row["mean_expert_agreement"] == pytest.approx((0.3 + 0.3 + 1.0) / 3)
+        assert bool(row["same_coverage_all_annotators"])
+
+    def test_subject_and_session_are_recovered_from_the_six_digit_name(
+        self, tmp_path, config
+    ):
+        """"<3-digit subject><3-digit session>", which is what makes 18 records 15 subjects."""
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        assert list(df.index) == ["200001", "200002", "201001"]
+        assert list(df["subject_id"]) == ["200", "200", "201"]
+        assert list(df["session_index"]) == [1, 2, 1]
+        assert df["subject_id"].nunique() == 2
+        # Demographics come from subject-info.csv, which is keyed by RECORDING, so
+        # the repeated subject's two rows carry the same values — the redundancy the
+        # loader uses to check the grouping.
+        assert list(df["sex"]) == ["F", "F", "M"]
+        assert list(df["age"]) == [30, 30, 44]
+        assert df.loc["201001", "bmi"] == pytest.approx(80 / 1.8**2)
+        assert bool(df.loc["201001", "smoker"])
+        assert not bool(df.loc["200001", "smoker"])
+
+    def test_inconsistent_demographics_under_one_prefix_warn(self, tmp_path, config, caplog):
+        """If the naming convention did not hold, the fold grouping would be wrong."""
+        root = self._tree(tmp_path)
+        (root / "subject-info.csv").write_text(
+            "ID;Gender;Age;Height;Weight;Smoker\n"
+            "200001;F;30;170;65;0\n"
+            "200002;M;71;190;95;1\n"   # same prefix, a different person
+            "201001;M;44;180;80;1\n"
+        )
+        with caplog.at_level("WARNING"):
+            load_labels(config, data_path=root)
+        assert "may not be the subject identifier" in caplog.text
+
+    def test_the_accelerometer_records_get_no_rows_but_are_pointed_at(
+        self, tmp_path, config
+    ):
+        """RECORDS lists ACC and ECG; only the ECG records are ECGBench records."""
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        assert len(df) == 3
+        assert list(df["signal_path"]) == [
+            "200001/200001_ECG", "200002/200002_ECG", "201001/201001_ECG"
+        ]
+        assert list(df["acc_path"]) == [
+            "200001/200001_ACC", "200002/200002_ACC", "201001/201001_ACC"
+        ]
+
+    def test_saturation_is_counted_and_the_invalid_marker_is_not_a_sample(
+        self, tmp_path, config
+    ):
+        """``amplitude_outlier`` is a no-op here, so ``clipped_fraction`` is the check.
+
+        Every record in the release attains both 16-bit rails, so the configured
+        bound cannot exclude anything. -32768 is WFDB's invalid marker rather than a
+        sample: it becomes NaN and would fail ``nan_values``, and it occurs nowhere
+        in the release.
+        """
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        row = df.loc["200001"]
+        assert row["clipped_samples"] == 4          # two at each rail
+        assert row["clipped_fraction"] == pytest.approx(0.004)
+        assert row["n_invalid_samples"] == 0
+        # Unity gain, zero baseline: the rails are +/-32.767655 mV.
+        assert row["min_mv"] == pytest.approx(-32.767655, abs=1e-6)
+        assert row["max_mv"] == pytest.approx(32.767655, abs=1e-6)
+        # A different gain and baseline give a different, asymmetric span for the
+        # same ADC codes — which is why the configured bound is a union.
+        other = df.loc["201001"]
+        assert other["adc_gain"] == 1.996
+        assert other["adc_baseline"] == -12200
+        assert other["min_mv"] == pytest.approx(-10.304108, abs=1e-6)
+        assert other["max_mv"] == pytest.approx(22.528557, abs=1e-6)
+        assert other["signal_units"] == "uV"
+
+    def test_the_invalid_marker_is_excluded_from_the_extremes(self, tmp_path, config):
+        """If a re-release introduces -32768 it must not become the minimum."""
+        import numpy as np
+
+        from ecgbench.labels.butqdb import scan_signal
+
+        root = self._tree(tmp_path)
+        samples = np.arange(self.N, dtype="<i2")
+        samples[0] = -32768        # the marker
+        samples[1] = -32767        # the real rail
+        (root / "200001" / "200001_ECG.dat").write_bytes(samples.tobytes())
+        scanned = scan_signal(root, "200001")
+        assert scanned["n_invalid_samples"] == 1
+        assert scanned["clipped_samples"] == 1
+        assert scanned["min_mv"] == pytest.approx(-32.767655, abs=1e-6)
+
+    def test_stratify_class_is_the_class_three_burden(self, tmp_path, config):
+        """10% of annotated time unusable is `class3_high`; 0% is `class3_low`.
+
+        The threshold is not tuned: in the release, twelve records sit at
+        0.00%-0.38% and six at 2.8%-50.0%, so any cut in between gives the same
+        partition. See ``attach_stratify_class``.
+        """
+        from ecgbench.labels.butqdb import CLASS3_HIGH_THRESHOLD
+
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        assert CLASS3_HIGH_THRESHOLD == 0.01
+        assert df.loc["200001", "consensus_class3_fraction"] == pytest.approx(0.1)
+        assert df.loc["200001", "stratify_class"] == "class3_high"
+        assert df.loc["200002", "stratify_class"] == "class3_low"
+        assert df.loc["201001", "stratify_class"] == "class3_low"
+
+    def test_a_missing_records_file_says_where_to_get_the_data(self, tmp_path, config):
+        with pytest.raises(LabelSourceMissingError, match="physionet.org/content/butqdb"):
+            load_labels(config, data_path=tmp_path)
+
+    def test_a_missing_subject_info_file_says_what_it_holds(self, tmp_path, config):
+        root = self._tree(tmp_path)
+        (root / "subject-info.csv").unlink()
+        with pytest.raises(LabelSourceMissingError, match="only demographics"):
+            load_labels(config, data_path=root)
+
+    def test_a_missing_annotation_file_names_it(self, tmp_path, config):
+        from ecgbench.labels.butqdb import load_quality_intervals
+
+        root = self._tree(tmp_path)
+        (root / "200001" / "200001_ANN.csv").unlink()
+        with pytest.raises(LabelSourceMissingError, match="200001_ANN.csv"):
+            load_quality_intervals(root, "200001")
+
+    def test_the_index_is_the_configs_record_id_column(self, tmp_path, config):
+        df = load_labels(config, data_path=self._tree(tmp_path))
+        assert df.index.name == config.record_id_column
+        assert config.label_column in df.columns

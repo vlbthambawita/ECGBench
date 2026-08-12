@@ -1764,6 +1764,31 @@ class TestPerRecordLeadLayouts:
         assert {tuple(load_config(s).lead_names) for s in slugs} == {("ECG1", "ECG2")}
         assert load_config("mitdb").lead_names == ["MLII", "V1"]
 
+    def test_butqdb_declares_the_single_channel_its_headers_name(self):
+        """BUT QDB's 18 headers all name one channel, "ECG", and no anatomy.
+
+        A chest-worn Bittium Faros 180 under free-living conditions; the release
+        says "single-lead" and states no electrode placement, so the name is a
+        channel position like afdb's and nsrdb's rather than a derivation. With one
+        channel and one layout, ``leads=[...]`` has nothing to choose between — but
+        the name still has to be declared, because ``ECGDataset(leads=...)`` is
+        unusable without it.
+
+        The 100 Hz three-axis accelerometer shipped alongside every recording is
+        deliberately not a lead and not a declared rate: it is a separate WFDB
+        record (``<id>_ACC``, channels ACCx/ACCy/ACCz in milli-g) and not an ECG.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("butqdb")
+        assert config.lead_names == ["ECG"]
+        assert config.leads == 1
+        assert config.record_lead_layouts is None
+        assert config.alternate_lead_names is None
+        assert not {"MLII", "V1", "II", "ECG1", "ECG2"} & set(config.lead_names)
+        assert not {"ACCx", "ACCy", "ACCz"} & set(config.lead_names)
+        assert config.sampling_rates == [1000]
+
     def test_edb_declares_fifteen_layouts_and_no_lead_common_to_every_record(self):
         """The most varied lead layout in the catalogue, and the weakest ``lead_names``.
 

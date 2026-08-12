@@ -338,6 +338,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `szdb` | **`ECG` — one channel, and the third here that is not called `I`.** All 7 headers name the single channel `ECG`, and the paper says only "continuous single-lead ECG signals" — no electrode placement anywhere, so it is a channel position. Two quirks specific to this release: the 7 superseded `.hea-` copies describe it as `column 1` instead, so `lead_names` had to come from the current headers; and the **ADC gain differs between records** — 25 adu/mV in five, 10 in `sz05` and `sz06` — which moves the 8-bit rail from [−4.0, +6.2] mV to [−10.0, +15.5] mV |
 | `ecgiddb` | **`ECG I`, `ECG I filtered` — two channels holding ONE lead.** Identical in all 310 headers, raw first. Both are Lead I from limb clamps; channel 1 is the author's own offline preprocessing of channel 0 (level-9 `db8` wavelet baseline removal, adaptive 50 Hz bandstop, 5th-order Butterworth lowpass at 40 Hz), and it is zero-phase, so the two are sample-aligned. `config.leads` is 2 because that is the tensor shape; the catalogue says 1 electrode pair. Select `leads=["ECG I"]` or a model gets the same lead twice — the same trap as `wctecgdb`, which ships every one of its 37 channels raw *and* filtered |
 | `tollet` | **`ECG` — one channel, and the electrode is not in the name.** A record here is one *electrode* of one sitting, not one sitting: the seat carries four dry pads that differ only in surface texture (flat, sinusoidal, pyramidal, trapezoidal) and record the same thigh-to-thigh derivation at once, and ECGBench splits each file into four single-lead records. So the texture varies from record to record and cannot be a lead name — it is `labels["electrode_texture"]`, and `leads=` has nothing to select. The signal path names the column instead: `ECG_EXP/15_1.txt:A2`. **238 of the 580 records are pads that never made contact**, which is what `clean` (342) excludes |
+| `butqdb` | **`ECG` — one channel, and the fourth here that is not called `I`.** All 18 headers name the single chest-worn Faros 180 channel `ECG` and the release states no electrode placement, so it is a channel position. The 3-axis accelerometer that ships with every recording is a **separate WFDB record** (`<id>_ACC`, `ACCx`/`ACCy`/`ACCz` at 100 Hz in milli-g), not a lead and not a declared sampling rate — `labels["acc_path"]` points at it. This is also the release where **gain and baseline both differ between records** (0.99998–1.996 adu/µV, baseline −18,289 to +11,462), so every record has a different physical span and all 18 attain both 16-bit rails |
 
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -998,6 +999,29 @@ the four channels of a sitting are the same beats, so group on `source_record` b
 counting, as the subject-grouped folds already do. Its `signal_unit_scale` is
 **negative** (`-3.0`), being the amplifier's full-scale span in mV with the front
 end's inversion folded in. See `examples/load_tollet.py`.
+
+`butqdb` is the only dataset here whose **ground truth is a label per sample**, and
+the fold CSVs cannot carry it. 18 single-lead recordings of 24.0–38.7 h from 15 people
+wearing a Bittium Faros 180 under free-living conditions, in which three ECG experts
+graded the **signal quality** sample by sample into three classes — every waveform
+measurable, QRS detectable but nothing finer, and unusable — with their consensus
+shipped alongside. The per-record columns from `labels=True` are summaries; the label
+itself comes from `ecgbench.labels.butqdb.quality_vector(path, record_id, start=,
+length=)`, which takes the same `(start, length)` pair as `window=` and returns an
+`int8` class per sample. Four things to know. **Only 20.8% of the recorded time is
+graded and 88.6% of that is three of the 18 records**, and the two standard 20-minute
+segments sit at *identical* offsets in the other 15 — samples 28,800,000 and
+57,600,000, i.e. 8 h and 16 h in — so `window=(0, n)` returns unlabelled signal for 15
+of 18 records however small `n` is; `annotated_blocks()` gives the bounds. **The
+experts agree on only 69.4% of graded samples** and one is systematically stricter, so
+any accuracy against the consensus is bounded by that; the consensus itself is a
+majority vote of the three, which the release does not state and ECGBench measured
+(99.99913% of samples where a majority exists). **`amplitude_outlier` cannot fire** —
+all 18 records attain both 16-bit rails, so the bound is their union — and
+`clipped_fraction` measures saturation instead. And **`clean` is all 18 records by
+design**: this is the one dataset here whose subject *is* signal quality, so excluding
+noisy recordings would destroy it; filter on `consensus_class3_fraction` instead. See
+`examples/load_butqdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
