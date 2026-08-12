@@ -11704,3 +11704,335 @@ class TestBUTQDBLabels:
         df = load_labels(config, data_path=self._tree(tmp_path))
         assert df.index.name == config.record_id_column
         assert config.label_column in df.columns
+
+
+class TestVitalDBArrhythmiaLabels:
+    """Beat and rhythm annotations over VitalDB's cases — no waveforms, so no config."""
+
+    #: Written the way 480 of the 482 shipped files are.
+    NORMAL_CASE = 1001
+    #: Ships a `caseid` column, no `bad_signal_quality_label`, and its boundary
+    #: markers inside `beat_type`.
+    ODD_CASE = 2453
+    #: Emits the last two columns in the opposite order.
+    SWAPPED_CASE = 3828
+
+    def _tree(self, tmp_path):
+        """A stand-in for the release root, carrying the real schema quirks."""
+        from ecgbench.labels.vitaldb_arrhythmia import ANNOTATION_DIR
+
+        root = tmp_path / "vitaldb-arrhythmia"
+        (root / ANNOTATION_DIR).mkdir(parents=True)
+
+        # Two cases from the SAME patient, plus one from another: the grouping
+        # trap that makes case-level folds leak.
+        pd.DataFrame(
+            [
+                {
+                    "case_id": self.NORMAL_CASE, "analysis_start_time_sec": 100.0,
+                    "analysis_end_time_sec": 110.0, "analyzed_duration_sec": 10.0,
+                    "total_beats": 6, "rhythm_classes": "N, Noise", "subjectid": 7,
+                    "age": "70", "sex": "M",
+                },
+                {
+                    "case_id": self.ODD_CASE, "analysis_start_time_sec": 200.0,
+                    "analysis_end_time_sec": 206.0, "analyzed_duration_sec": 6.0,
+                    "total_beats": 6, "rhythm_classes": "N", "subjectid": 7,
+                    "age": ">89", "sex": "F",
+                },
+                {
+                    "case_id": self.SWAPPED_CASE, "analysis_start_time_sec": 300.0,
+                    "analysis_end_time_sec": 303.0, "analyzed_duration_sec": 3.0,
+                    "total_beats": 3, "rhythm_classes": "N, VT", "subjectid": 9,
+                    "age": "55", "sex": "M",
+                },
+            ]
+        ).to_csv(root / "metadata.csv", index=False)
+
+        def write(case_id, frame):
+            frame.to_csv(root / ANNOTATION_DIR / f"Annotation_file_{case_id}.csv", index=False)
+
+        # Normal layout: a repeated timestamp, a NaN rhythm gap, Noise rows with
+        # no beat_type, and a Start1/End1 pair riding on real beat rows.
+        write(self.NORMAL_CASE, pd.DataFrame([
+            {"time_second": 100.0, "beat_type": "N", "rhythm_label": "N",
+             "bad_signal_quality": False, "bad_signal_quality_label": None},
+            {"time_second": 101.0, "beat_type": "V", "rhythm_label": None,
+             "bad_signal_quality": False, "bad_signal_quality_label": None},
+            {"time_second": 101.0, "beat_type": "S", "rhythm_label": "N",
+             "bad_signal_quality": False, "bad_signal_quality_label": None},
+            {"time_second": 103.0, "beat_type": "P", "rhythm_label": "N",
+             "bad_signal_quality": True, "bad_signal_quality_label": "Start1"},
+            {"time_second": 105.0, "beat_type": None, "rhythm_label": "Noise",
+             "bad_signal_quality": True, "bad_signal_quality_label": None},
+            {"time_second": 107.0, "beat_type": "N", "rhythm_label": "N",
+             "bad_signal_quality": True, "bad_signal_quality_label": "End1"},
+        ]))
+
+        # Odd layout: `caseid` column, no label column, Start/End in beat_type.
+        write(self.ODD_CASE, pd.DataFrame([
+            {"caseid": self.ODD_CASE, "beat_type": "N", "time_second": 200.0,
+             "rhythm_label": "N", "bad_signal_quality": False},
+            {"caseid": None, "beat_type": "Start", "time_second": 201.0,
+             "rhythm_label": "N", "bad_signal_quality": True},
+            {"caseid": self.ODD_CASE, "beat_type": "N", "time_second": 202.0,
+             "rhythm_label": "N", "bad_signal_quality": True},
+            {"caseid": None, "beat_type": "End", "time_second": 203.0,
+             "rhythm_label": "N", "bad_signal_quality": True},
+            {"caseid": None, "beat_type": "Start", "time_second": 204.0,
+             "rhythm_label": "N", "bad_signal_quality": True},
+            {"caseid": self.ODD_CASE, "beat_type": "N", "time_second": 205.0,
+             "rhythm_label": "N", "bad_signal_quality": True},
+        ]))
+
+        # Swapped column order — identical content, written the other way round.
+        write(self.SWAPPED_CASE, pd.DataFrame([
+            {"time_second": 300.0, "beat_type": "N", "rhythm_label": "N",
+             "bad_signal_quality_label": None, "bad_signal_quality": False},
+            {"time_second": 301.0, "beat_type": "V", "rhythm_label": "VT",
+             "bad_signal_quality_label": None, "bad_signal_quality": False},
+            {"time_second": 302.0, "beat_type": "V", "rhythm_label": "VT",
+             "bad_signal_quality_label": None, "bad_signal_quality": False},
+        ]))
+        return root
+
+    # ----------------------------------------------------------------- cases
+
+    def test_cases_are_indexed_by_case_id_and_carry_the_patient(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_cases
+
+        cases = load_cases(self._tree(tmp_path))
+        assert cases.index.name == "case_id"
+        assert len(cases) == 3
+        # Two of the three cases are the same patient: the grouping key.
+        assert cases["subjectid"].nunique() == 2
+
+    def test_rhythm_classes_are_split_into_a_list_not_matched_as_a_substring(self, tmp_path):
+        """'N' is a substring of 'Noise', so str.contains gets 250 real cases wrong."""
+        from ecgbench.labels.vitaldb_arrhythmia import load_cases
+
+        cases = load_cases(self._tree(tmp_path))
+        assert cases.loc[self.NORMAL_CASE, "rhythm_class_list"] == ["N", "Noise"]
+        assert cases.loc[self.NORMAL_CASE, "rhythm_class_names"] == [
+            "Normal Sinus Rhythm",
+            "Noise",
+        ]
+
+    def test_the_censored_age_becomes_nan_and_is_flagged(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_cases
+
+        cases = load_cases(self._tree(tmp_path))
+        assert bool(cases.loc[self.ODD_CASE, "age_censored"]) is True
+        assert pd.isna(cases.loc[self.ODD_CASE, "age_years"])
+        assert bool(cases.loc[self.NORMAL_CASE, "age_censored"]) is False
+        assert cases.loc[self.NORMAL_CASE, "age_years"] == 70
+
+    # -------------------------------------------------------- schema quirks
+
+    def test_all_three_shipped_layouts_normalise_to_one_schema(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import ANNOTATION_COLUMNS, load_annotations
+
+        root = self._tree(tmp_path)
+        expected = [*ANNOTATION_COLUMNS, "is_beat", "beat_type_name", "rhythm_label_name"]
+        for case_id in (self.NORMAL_CASE, self.ODD_CASE, self.SWAPPED_CASE):
+            assert list(load_annotations(root, case_id).columns) == expected
+
+    def test_the_odd_case_boundary_markers_move_out_of_beat_type(self, tmp_path):
+        """Case 2453 writes Start/End into beat_type; a raw read invents two beat classes."""
+        from ecgbench.labels.vitaldb_arrhythmia import load_annotations
+
+        odd = load_annotations(self._tree(tmp_path), self.ODD_CASE)
+        assert not odd["beat_type"].isin(["Start", "End"]).any()
+        # Numbered in file order, the way every other case numbers its markers.
+        assert odd["bad_signal_quality_label"].dropna().tolist() == ["Start1", "End1", "Start2"]
+        # Marker rows annotate no beat.
+        assert int(odd["is_beat"].sum()) == 3
+        assert "caseid" not in odd.columns
+
+    def test_the_swapped_column_order_is_read_by_name(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_annotations
+
+        swapped = load_annotations(self._tree(tmp_path), self.SWAPPED_CASE)
+        # Positional reading would put the label column in bad_signal_quality.
+        assert swapped["bad_signal_quality"].tolist() == [False, False, False]
+        assert swapped["bad_signal_quality_label"].isna().all()
+
+    def test_an_annotation_file_missing_a_column_is_refused(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import ANNOTATION_DIR, load_annotations
+
+        root = self._tree(tmp_path)
+        path = root / ANNOTATION_DIR / f"Annotation_file_{self.SWAPPED_CASE}.csv"
+        pd.read_csv(path).drop(columns=["rhythm_label"]).to_csv(path, index=False)
+        with pytest.raises(ValueError, match="rhythm_label"):
+            load_annotations(root, self.SWAPPED_CASE)
+
+    # ------------------------------------------------------------ beat rows
+
+    def test_rows_without_a_beat_type_are_not_beats(self, tmp_path):
+        """total_beats counts rows; Noise rows and markers annotate no heartbeat."""
+        from ecgbench.labels.vitaldb_arrhythmia import load_beats
+
+        beats = load_beats(self._tree(tmp_path))
+        assert len(beats) == 15
+        assert int(beats["is_beat"].sum()) == 11
+        assert int(beats["case_id"].nunique()) == 3
+        noise = beats[beats["rhythm_label"] == "Noise"]
+        assert len(noise) == 1 and not noise["is_beat"].any()
+
+    def test_beats_only_drops_exactly_the_non_beat_rows(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_beats
+
+        root = self._tree(tmp_path)
+        assert len(load_beats(root, beats_only=True)) == 11
+
+    def test_the_undocumented_p_beat_is_kept_as_written(self, tmp_path):
+        """The paper names four beat classes; a fifth occurs and is not folded into U."""
+        from ecgbench.labels.vitaldb_arrhythmia import BEAT_TYPES, load_beats
+
+        beats = load_beats(self._tree(tmp_path))
+        p_beats = beats[beats["beat_type"] == "P"]
+        assert len(p_beats) == 1
+        assert p_beats["beat_type_name"].iloc[0] == BEAT_TYPES["P"]
+        assert "undocumented" in BEAT_TYPES["P"]
+
+    def test_a_repeated_timestamp_is_preserved_rather_than_deduplicated(self, tmp_path):
+        """(case_id, time_second) is not unique in 111 of the 482 shipped cases."""
+        from ecgbench.labels.vitaldb_arrhythmia import load_beats
+
+        beats = load_beats(self._tree(tmp_path), case_ids=[self.NORMAL_CASE])
+        assert int(beats.duplicated(["case_id", "time_second"]).sum()) == 1
+
+    def test_a_rhythm_gap_stays_nan_and_is_never_filled(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_annotations
+
+        annotations = load_annotations(self._tree(tmp_path), self.NORMAL_CASE)
+        assert annotations["rhythm_label"].isna().sum() == 1
+        assert annotations["rhythm_label_name"].isna().sum() == 1
+
+    # ------------------------------------------------------------- segments
+
+    def test_rhythm_segments_collapse_consecutive_runs(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import rhythm_segments
+
+        segments = rhythm_segments(self._tree(tmp_path), self.SWAPPED_CASE)
+        assert segments["rhythm_label"].tolist() == ["N", "VT"]
+        assert segments["n_beats"].tolist() == [1, 2]
+        assert segments.loc[1, "duration_second"] == pytest.approx(1.0)
+
+    def test_a_rhythm_gap_becomes_its_own_segment(self, tmp_path):
+        """NaN != NaN, so a naive run-length pass makes every gap row its own run."""
+        from ecgbench.labels.vitaldb_arrhythmia import rhythm_segments
+
+        segments = rhythm_segments(self._tree(tmp_path), self.NORMAL_CASE)
+        assert segments["rhythm_label"].isna().sum() == 1
+        # The two N runs either side of the gap are not merged across it.
+        assert segments["rhythm_label"].fillna("<gap>").tolist() == [
+            "N",
+            "<gap>",
+            "N",
+            "Noise",
+            "N",
+        ]
+
+    def test_segment_durations_partition_the_annotated_span(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import case_window, rhythm_segments
+
+        root = self._tree(tmp_path)
+        segments = rhythm_segments(root, self.SWAPPED_CASE)
+        start, end = case_window(root, self.SWAPPED_CASE)
+        assert segments["duration_second"].sum() <= (end - start)
+
+    # -------------------------------------------------------- bad intervals
+
+    def test_bad_signal_markers_decode_into_intervals(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import bad_signal_intervals
+
+        intervals = bad_signal_intervals(self._tree(tmp_path), self.NORMAL_CASE)
+        assert len(intervals) == 1
+        assert intervals.loc[0, "start_second"] == 103.0
+        assert intervals.loc[0, "end_second"] == 107.0
+        assert bool(intervals.loc[0, "closed"]) is True
+
+    def test_an_unterminated_interval_is_closed_and_flagged_not_dropped(self, tmp_path, caplog):
+        """17 of 482 cases give a Start with no End; dropping it hides bad signal."""
+        import logging
+
+        from ecgbench.labels.vitaldb_arrhythmia import bad_signal_intervals
+
+        root = self._tree(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            intervals = bad_signal_intervals(root, self.ODD_CASE)
+        assert intervals["closed"].tolist() == [True, False]
+        assert intervals.loc[1, "end_second"] == 205.0
+        assert "no End2" in caplog.text
+
+    def test_an_unknown_marker_is_refused_rather_than_ignored(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import ANNOTATION_DIR, bad_signal_intervals
+
+        root = self._tree(tmp_path)
+        path = root / ANNOTATION_DIR / f"Annotation_file_{self.NORMAL_CASE}.csv"
+        frame = pd.read_csv(path)
+        frame.loc[3, "bad_signal_quality_label"] = "Middle1"
+        frame.to_csv(path, index=False)
+        with pytest.raises(ValueError, match="neither StartN nor"):
+            bad_signal_intervals(root, self.NORMAL_CASE)
+
+    # ------------------------------------------------------------- summary
+
+    def test_the_summary_counts_beats_rather_than_trusting_total_beats(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_vitaldb_arrhythmia
+
+        summary = load_vitaldb_arrhythmia(self._tree(tmp_path))
+        assert summary.loc[self.NORMAL_CASE, "total_beats"] == 6
+        assert summary.loc[self.NORMAL_CASE, "n_rows"] == 6
+        assert summary.loc[self.NORMAL_CASE, "n_beats"] == 5      # one Noise row
+        assert summary.loc[self.ODD_CASE, "n_beats"] == 3         # three markers
+        assert summary.loc[self.NORMAL_CASE, "beats_P"] == 1
+
+    def test_the_window_is_an_offset_into_the_whole_surgery(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import case_window
+
+        assert case_window(self._tree(tmp_path), self.SWAPPED_CASE) == (300.0, 303.0)
+
+    def test_an_unknown_case_id_is_named(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import case_window
+
+        with pytest.raises(KeyError, match="99999"):
+            case_window(self._tree(tmp_path), 99999)
+
+    # ----------------------------------------------------------- integration
+
+    def test_a_missing_metadata_file_says_where_to_get_the_data(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_cases
+
+        with pytest.raises(
+            LabelSourceMissingError, match="physionet.org/content/vitaldb-arrhythmia"
+        ):
+            load_cases(tmp_path)
+
+    def test_a_missing_annotation_file_names_the_case(self, tmp_path):
+        from ecgbench.labels.vitaldb_arrhythmia import load_annotations
+
+        with pytest.raises(LabelSourceMissingError, match="case 12345"):
+            load_annotations(self._tree(tmp_path), 12345)
+
+    def test_there_is_deliberately_no_vitaldb_arrhythmia_config(self):
+        """The release ships no signal files, so there is nothing to validate or split."""
+        from ecgbench.config import list_available_configs
+
+        assert "vitaldb_arrhythmia" not in list_available_configs()
+        assert "vitaldb_arrhythmia_database" not in list_available_configs()
+
+    def test_it_is_not_registered_as_a_config_slug_loader(self):
+        """_custom_loaders maps config slugs to loaders, and this dataset has no config."""
+        from ecgbench.labels import _custom_loaders
+
+        assert "vitaldb_arrhythmia" not in _custom_loaders()
+
+    def test_the_rhythm_vocabulary_covers_every_shipped_label(self):
+        from ecgbench.labels.vitaldb_arrhythmia import NOISE_LABEL, RHYTHM_LABELS
+
+        # Ten rhythms plus Noise, which is a signal-quality verdict, not a rhythm.
+        assert len(RHYTHM_LABELS) == 11
+        assert NOISE_LABEL in RHYTHM_LABELS
+        assert len(set(RHYTHM_LABELS) - {NOISE_LABEL}) == 10

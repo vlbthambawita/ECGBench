@@ -1174,6 +1174,40 @@ Its `-1` "never happened" codes and `0` ages are converted to `NaN` on load —
 being sentinels rather than blanks, they make every column look fully populated.
 See `examples/load_eye_tracking_ecg.py` and the dataset page.
 
+### Datasets whose waveforms live somewhere else
+
+The **VitalDB Arrhythmia Database** is a third shape: real recordings, real
+annotations, but the two are distributed separately. PhysioNet ships only the
+labels — 482 per-case CSVs of anesthesiologist-validated beat and rhythm
+annotations for intraoperative Lead II — while the signals stay in the public
+[VitalDB](https://vitaldb.net/) project and are fetched by `case_id` over the
+network. Both halves are open, so this is a packaging split rather than an
+access restriction, but there is still no signal file for `signal_format` to
+name or for `validate_dataset` to read, so it gets **no config and no splits**.
+
+```python
+from ecgbench.labels.vitaldb_arrhythmia import load_beats, load_cases, rhythm_segments
+
+root = "/data/vitaldb-arrhythmia/1.0.0/"
+
+cases = load_cases(root)
+len(cases), cases["subjectid"].nunique()          # 482 cases, 473 patients
+
+beats = load_beats(root, beats_only=True)         # 658,874 beats, not the 676,250
+                                                  # rows `total_beats` counts
+rhythm_segments(root, 1018)                       # runs collapsed, durations that add up
+
+# import vitaldb
+# ecg = vitaldb.load_case(1018, ['SNUADC/ECG_II'], 1/500)['SNUADC/ECG_II']
+```
+
+Two traps worth knowing before you split it: `case_id` is not the patient (nine
+cases are repeat patients, so group on `subjectid`), and `time_second` is an
+offset into the *whole surgery* — annotations cover one ~20 min window starting
+as late as 33,628 s in, so slicing the waveform from 0 gets you no labels. The
+loader also normalises three different shipped column layouts. See
+`examples/load_vitaldb_arrhythmia.py` and the dataset page.
+
 ### Restricted and credentialed datasets
 
 Most datasets' fold CSVs are published to the [HuggingFace
