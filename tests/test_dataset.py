@@ -1167,11 +1167,12 @@ class TestAlternateLeadLayouts:
 
         from .conftest import NINE_LEAD_LAYOUT, TWELVE_LEAD_LAYOUT
 
+        lead_names = kwargs.pop("lead_names", list(TWELVE_LEAD_LAYOUT))
         config = replace(
             config,
             signal_format="wfdb",
-            leads=12,
-            lead_names=list(TWELVE_LEAD_LAYOUT),
+            leads=len(lead_names),
+            lead_names=list(lead_names),
             alternate_lead_names=kwargs.pop(
                 "alternate_lead_names", {9: list(NINE_LEAD_LAYOUT)}
             ),
@@ -1275,6 +1276,98 @@ class TestAlternateLeadLayouts:
         )
         with pytest.raises(ValueError, match="too few for the requested"):
             ds[2]["signal"]
+
+    def test_a_lead_only_an_alternate_layout_holds_is_not_a_typo(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """``lead_names`` is not always the widest layout, and V2 must stay askable.
+
+        ZZU-pECG and stdb both declare the *superset* as ``lead_names``, so
+        validating a ``leads=`` request against it alone happened to work. The
+        smartwatch dataset is the other way round: its predominant layout is the
+        single ``II`` channel of 720 watch records and its alternate is the 12-lead
+        order of the 195 reference records. Validating against ``lead_names`` made
+        ``leads=["V4"]`` a typo there, so the reference device's chest leads could
+        not be selected by name at all — the one thing the field exists to make
+        safe. The request is now checked against the union of every declared
+        layout. Inverted here to reproduce that shape.
+        """
+        from .conftest import (
+            CANONICAL_LEAD_INDEX,
+            NINE_LEAD_LAYOUT,
+            TWELVE_LEAD_LAYOUT,
+        )
+
+        ds = self._ds(
+            tmp_mixed_lead_dataset,
+            sample_config,
+            lead_names=list(NINE_LEAD_LAYOUT),
+            alternate_lead_names={12: list(TWELVE_LEAD_LAYOUT)},
+            leads=["V2"],
+        )
+        # rec_0 stores 12 leads and really does have a V2.
+        assert ds[0]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V2"], abs=1e-3
+        )
+        # rec_2 stores the 9-lead layout, which has no V2 — refuse, naming the
+        # record, rather than return position 7 (which holds V3).
+        with pytest.raises(ValueError, match="more than one lead layout"):
+            ds[2]["signal"]
+
+    def test_a_lead_in_the_declared_layout_is_not_reindexed_through_the_union(
+        self, tmp_mixed_lead_dataset, sample_config
+    ):
+        """The union is for validation only; a record resolves against its own layout.
+
+        With ``lead_names`` as the 9-lead layout, the union puts V2 at a position
+        past the end of a 9-lead record. A record in the declared layout must
+        therefore be resolved against ``lead_names`` rather than handed the union
+        index, or ``leads=["V5"]`` returns the wrong physical lead.
+        """
+        from .conftest import (
+            CANONICAL_LEAD_INDEX,
+            NINE_LEAD_LAYOUT,
+            TWELVE_LEAD_LAYOUT,
+        )
+
+        ds = self._ds(
+            tmp_mixed_lead_dataset,
+            sample_config,
+            lead_names=list(NINE_LEAD_LAYOUT),
+            alternate_lead_names={12: list(TWELVE_LEAD_LAYOUT)},
+            leads=["V5"],
+        )
+        # V5 is position 8 of the declared 9-lead layout and position 10 of the
+        # alternate. Both must return the physical V5.
+        assert ds[2]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V5"], abs=1e-3
+        )
+        assert ds[0]["signal"][0, 0].item() == pytest.approx(
+            CANONICAL_LEAD_INDEX["V5"], abs=1e-3
+        )
+
+    def test_ecg_capable_smartwatches_declares_the_reference_devices_12_leads(self):
+        """One release, two layouts, and the predominant one is the *smaller*.
+
+        720 of its 915 records are smartwatch recordings storing a single channel;
+        the other 195 are the Philips TC30 reference storing all twelve. Without
+        the alternate, ``leads=["V4"]`` would resolve against a one-name list.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("ecg_capable_smartwatches")
+        assert config.lead_names == ["II"]
+        assert config.alternate_lead_names is not None
+        twelve = config.alternate_lead_names[12]
+        assert len(twelve) == 12
+        assert twelve[:6] == ["I", "II", "III", "aVR", "aVL", "aVF"]
+        assert twelve[6:] == ["V1", "V2", "V3", "V4", "V5", "V6"]
+        # THE HEADERS SAY "II" AND THE WATCHES RECORD LEAD I: the simulator's
+        # right-arm output went to the crown and its left-arm output to the
+        # caseback, which is LA - RA. lead_names follows the files because that is
+        # what leads= resolves against, so leads=["II"] crosses a genuine lead II
+        # with an arm-to-arm lead I. The labels' `derivation` is the fix.
+        assert "II" in twelve
 
     def test_zzu_pecg_declares_the_layout_its_reduced_records_use(self):
         """The shipped config must carry the map, or the guard never engages."""

@@ -12449,3 +12449,253 @@ class TestPICSDBLabels:
         # record_lead_layouts in the config exists for.
         assert df.loc["infant1_ecg", "lead_name"] == "ECG"
         assert df.loc["infant2_ecg", "lead_name"] == "II"
+
+
+class TestECGCapableSmartwatchesLabels:
+    """A patient simulator read by five instruments: the label is the knob setting.
+
+    Three structural facts this class pins, all of them things the release states
+    badly or not at all. The ground truth exists **only in the directory names**,
+    so the setting parser is the whole label pipeline. Fitbit spells its sixteen
+    ST directories in uppercase where the other four devices use lowercase, so a
+    verbatim setting key would describe one simulator condition as two and put it
+    in two different folds. And every Samsung record ends in WFDB's invalid-sample
+    marker, which is what removes the whole device from the ``clean`` version.
+    """
+
+    LEADS_12 = ["I", "II", "III", "aVR", "aVL", "aVF",
+                "V1", "V2", "V3", "V4", "V5", "V6"]
+
+    def _record(self, root, relative, n_leads=1, n=100, fs=500, trailing_invalid=False):
+        """Write one WFDB record at ``root/relative``, optionally NaN-tailed.
+
+        ``trailing_invalid`` writes digital -32768 into the final sample, which is
+        exactly what the 179 Samsung records carry and what ``wfdb`` returns as
+        NaN — the reason ``clean`` holds no Samsung record.
+        """
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        names = self.LEADS_12 if n_leads == 12 else ["II"]
+        # Distinct per lead and per sample, so a shifted or crossed read cannot pass.
+        d_signal = np.tile(np.arange(n, dtype=np.int64)[:, None], (1, n_leads))
+        d_signal = d_signal + np.arange(n_leads)[None, :] * 1000
+        if trailing_invalid:
+            d_signal[-1, :] = -32768
+        wfdb.wrsamp(
+            path.name,
+            fs=fs,
+            units=["mV"] * n_leads,
+            sig_name=names,
+            d_signal=d_signal.astype(np.int64),
+            fmt=["16"] * n_leads,
+            adc_gain=[2000.0] * n_leads,
+            baseline=[0] * n_leads,
+            write_dir=str(path.parent),
+        )
+
+    @pytest.fixture
+    def tree(self, tmp_path):
+        """A miniature of the release: five devices, four families, Fitbit uppercase."""
+        # The reference stores 12 leads at 500 Hz; the watches store one, at their
+        # own rates, which is the whole shape of the release.
+        devices = {
+            "philips_tc30": (12, 500),
+            "applewatch_serie8": (1, 512),
+            "samsunggalaxy6": (1, 500),
+            "fitbitsense2": (1, 250),
+            "withingsscanwatch": (1, 300),
+        }
+        for device, (n_leads, fs) in devices.items():
+            # Fitbit is the odd one: uppercase ST directories AND record names.
+            st = "ST-m3" if device == "fitbitsense2" else "st-m3"
+            for setting_dir, name in (
+                ("amp_test/amp1500", "amp1500"),
+                ("freq_test/f220", "f220"),
+                (f"st-segment/{st}", st),
+                ("sqr-2hz", "sqr-2hz"),
+            ):
+                for replicate in range(2):
+                    self._record(
+                        tmp_path,
+                        f"{device}/{setting_dir}/{name}_{replicate}",
+                        n_leads=n_leads,
+                        fs=fs,
+                        trailing_invalid=(device == "samsunggalaxy6"),
+                    )
+        return tmp_path
+
+    def _config(self):
+        from ecgbench.config import load_config
+
+        return load_config("ecg_capable_smartwatches")
+
+    def test_the_setting_parser_decodes_each_family_and_leaves_the_others_none(self):
+        """One nominal column per family; the other two must stay None, not zero.
+
+        A zero would be a number a user could train on, and there is no meaningful
+        ST offset for a heart-rate sweep.
+        """
+        from ecgbench.labels.ecg_capable_smartwatches import parse_setting
+
+        assert parse_setting("amp1500") == {
+            "family": "amp_test", "nominal_rate_bpm": None,
+            "nominal_r_amplitude_uv": 1500, "nominal_st_offset_uv": None,
+        }
+        assert parse_setting("f30")["nominal_rate_bpm"] == 30
+        assert parse_setting("f300")["nominal_rate_bpm"] == 300
+        # st-m8 is -800 uV and st-p8 is +800 uV, so the index is hundreds of
+        # microvolts and the sign comes from the m/p. There is no zero setting.
+        assert parse_setting("st-m8")["nominal_st_offset_uv"] == -800
+        assert parse_setting("st-p1")["nominal_st_offset_uv"] == 100
+        assert parse_setting("sqr-2hz") == {
+            "family": "sqr-2hz", "nominal_rate_bpm": None,
+            "nominal_r_amplitude_uv": None, "nominal_st_offset_uv": None,
+        }
+        with pytest.raises(ValueError, match="Unrecognised simulator setting"):
+            parse_setting("st-x3")
+
+    def test_fitbits_uppercase_st_directory_is_the_same_setting_as_everyone_elses(
+        self, tree
+    ):
+        """The lowercasing that stops one condition becoming two groups.
+
+        Fitbit stores ``st-segment/ST-m3/ST-m3_0`` and the other four devices
+        ``st-segment/st-m3/st-m3_0``. Taken verbatim those are different group
+        keys, so the same simulator condition would straddle a fold boundary —
+        which is the one thing the grouping exists to prevent.
+        """
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        st = df[df["family"] == "st-segment"]
+        assert set(st["setting_id"]) == {"st-m3"}, "one condition, one group key"
+        assert st["device"].nunique() == 5
+        # The directory's own spelling is kept, so the release's defect stays visible.
+        assert set(st.loc[st["device"] == "fitbitsense2", "setting_dir"]) == {"ST-m3"}
+        assert set(st.loc[st["device"] == "philips_tc30", "setting_dir"]) == {"st-m3"}
+
+    def test_every_samsung_record_carries_a_single_trailing_invalid_sample(self, tree):
+        """Why ``clean`` holds no Samsung record, stated in the labels.
+
+        Digital -32768 is WFDB's invalid marker for format 16 and ``wfdb`` returns
+        it as NaN. ``check_nan_values`` has no threshold, so one sample fails the
+        whole record — and it is the *last* one, so a window that stops short of it
+        reads the record cleanly.
+        """
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        samsung = df[df["device"] == "samsunggalaxy6"]
+        assert len(samsung) == 8
+        assert samsung["trailing_invalid_sample"].all()
+        assert (samsung["nan_samples"] == 1).all()
+        # And nothing else in the release has one.
+        assert not df[df["device"] != "samsunggalaxy6"]["trailing_invalid_sample"].any()
+        assert df[df["device"] != "samsunggalaxy6"]["nan_samples"].sum() == 0
+
+    def test_the_record_id_carries_the_device_because_names_repeat_across_them(
+        self, tree
+    ):
+        """Every device has an ``amp1500_0``; the bare name identifies five records."""
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        assert not df.index.has_duplicates
+        assert "philips_tc30_amp1500_0" in df.index
+        assert "withingsscanwatch_sqr-2hz_1" in df.index
+        assert df.index.name == "record_id"
+        # The path is the record stem relative to the dataset root, so
+        # data_path / signal_path is what wfdb wants.
+        assert (
+            df.loc["philips_tc30_amp1500_0", "signal_path"]
+            == "philips_tc30/amp_test/amp1500/amp1500_0"
+        )
+
+    def test_the_reference_stores_twelve_leads_and_the_watches_one(self, tree):
+        """Two layouts and four rates, which is what alternate_lead_names covers."""
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        assert df.loc["philips_tc30_f220_0", "n_leads"] == 12
+        assert df.loc["philips_tc30_f220_0", "lead_names_stored"].startswith("I|II|III|")
+        assert df.loc["applewatch_serie8_f220_0", "n_leads"] == 1
+        # THE HEADERS SAY "II" AND THE WATCHES RECORD LEAD I — the release's own
+        # Methods describe an arm-to-arm derivation. `derivation` is what makes
+        # that filterable, since the lead name cannot.
+        assert df.loc["applewatch_serie8_f220_0", "lead_names_stored"] == "II"
+        assert df.loc["applewatch_serie8_f220_0", "derivation"] == "lead I (LA-RA)"
+        assert df.loc["philips_tc30_f220_0", "derivation"] == "standard 12-lead"
+        rates = df.groupby("device")["sampling_rate"].max().to_dict()
+        assert rates == {
+            "applewatch_serie8": 512, "fitbitsense2": 250, "philips_tc30": 500,
+            "samsunggalaxy6": 500, "withingsscanwatch": 300,
+        }
+
+    def test_the_device_model_comes_from_the_release_prose_not_the_directory(
+        self, tree
+    ):
+        """``applewatch_serie8`` is a Series 9, and the release says so twice.
+
+        The abstract and the Data Description both name the Apple Watch Series 9,
+        and the latter maps the directory to it explicitly; the directory name and
+        every header comment say "Serie 8". The directory name is kept so paths
+        stay traceable, and the model is the release's own answer.
+        """
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        row = df.loc["applewatch_serie8_f220_0"]
+        assert row["device"] == "applewatch_serie8"
+        assert row["device_model"] == "Apple Watch Series 9"
+        assert df.loc["philips_tc30_f220_0", "device_role"] == "reference"
+        assert row["device_role"] == "smartwatch"
+
+    def test_the_records_index_is_checked_but_not_trusted_for_paths(self, tree, caplog):
+        """75 of the release's own RECORDS lines name a directory that does not exist.
+
+        They differ from the tree only in case, so on a case-sensitive filesystem
+        building paths from RECORDS yields records that all fail corrupt_header.
+        The mismatch has to be reported as an upstream case defect rather than as
+        missing data, or the reader goes looking for a bad download.
+        """
+        import logging
+
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        listed = sorted(
+            str(p.relative_to(tree).with_suffix("")) for p in tree.rglob("*.hea")
+        )
+        # Mis-case the Withings entries exactly the way the release does.
+        (tree / "RECORDS").write_text(
+            "\n".join(
+                name.replace("withingsscanwatch/", "WithingsScanwatch/")
+                for name in listed
+            )
+            + "\n"
+        )
+        with caplog.at_level(logging.WARNING):
+            df = load_labels(tree, self._config())
+
+        assert len(df) == len(listed), "paths come from disk, not from RECORDS"
+        assert "differ from the tree only in case" in caplog.text
+        assert "have no header on disk" not in caplog.text
+
+    def test_the_stratification_class_is_the_experiment_family(self, tree):
+        from ecgbench.labels.ecg_capable_smartwatches import load_labels
+
+        df = load_labels(tree, self._config())
+        assert set(df["stratify_class"]) == {
+            "amp_test", "freq_test", "st-segment", "sqr-2hz"
+        }
+        assert (df["stratify_class"] == df["family"]).all()
+
+    def test_a_missing_device_directory_is_named_rather_than_silently_empty(
+        self, tmp_path
+    ):
+        from ecgbench.labels.ecg_capable_smartwatches import scan_records
+
+        with pytest.raises(FileNotFoundError, match="one directory per device"):
+            scan_records(tmp_path, self._config())

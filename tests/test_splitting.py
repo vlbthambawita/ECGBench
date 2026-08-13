@@ -6538,3 +6538,153 @@ class TestBUTQDBSplitter:
         from ecgbench.splitting.strategies.butqdb import BUTQDBSplitter
 
         assert isinstance(get_splitter("butqdb"), BUTQDBSplitter)
+
+
+class TestECGCapableSmartwatchesSplitter:
+    """Folds group on the simulator setting, because there is no patient.
+
+    Two things decide the partition and both are easy to get wrong. The five
+    repetitions of a setting are near-duplicates of each other **and** the same
+    setting recorded by a different device is nearly as similar, because the five
+    instruments read one simulator output at the same instant — so the group has
+    to be the setting across all five devices, not ``(device, setting)``. And
+    Fitbit's uppercase ST directories have to collapse into the same group key as
+    everyone else's, or one condition straddles a fold boundary.
+    """
+
+    @pytest.fixture
+    def config(self):
+        from ecgbench.config import load_config
+
+        return load_config("ecg_capable_smartwatches")
+
+    @pytest.fixture
+    def metadata(self):
+        """A frame shaped like the generated CSV: 5 devices x 6 settings x 3 reps."""
+        devices = [
+            "philips_tc30", "applewatch_serie8", "samsunggalaxy6",
+            "fitbitsense2", "withingsscanwatch",
+        ]
+        settings = [
+            ("amp_test", "amp1500"), ("amp_test", "amp2000"),
+            ("freq_test", "f220"), ("freq_test", "f240"),
+            ("st-segment", "st-m3"), ("sqr-2hz", "sqr-2hz"),
+        ]
+        rows = []
+        for device in devices:
+            for family, setting in settings:
+                for replicate in range(3):
+                    rows.append({
+                        "record_id": f"{device}_{setting}_{replicate}",
+                        "device": device,
+                        "setting_id": setting,
+                        "family": family,
+                        "stratify_class": family,
+                        "trailing_invalid_sample": device == "samsunggalaxy6",
+                        "signal_path": f"{device}/{family}/{setting}/{setting}_{replicate}",
+                    })
+        return pd.DataFrame(rows)
+
+    def test_a_setting_never_spans_a_fold_across_any_device(self, config, metadata):
+        """The measurement behind the design, enforced.
+
+        The same setting on a *different* device correlates at a median of 0.803
+        against a 0.953 same-device self-control, so grouping on
+        ``(device, setting)`` would leak. Grouping on the setting alone puts all
+        fifteen recordings of a condition — three repetitions on each of five
+        instruments — in one fold.
+        """
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.ecg_capable_smartwatches import (
+            ECGCapableSmartwatchesSplitter,
+        )
+
+        splitter = ECGCapableSmartwatchesSplitter()
+        labels = splitter.get_stratification_labels(metadata, config)
+        result = split_dataset(metadata, labels, config, n_folds=3)
+
+        placed = pd.concat(
+            [frame.assign(fold=fold) for fold, frame in result.folds.items()]
+        )
+        assert len(placed) == len(metadata)
+        spans = placed.groupby("setting_id")["fold"].nunique()
+        assert (spans == 1).all(), f"settings split across folds: {spans[spans > 1]}"
+        # And each fold that holds a setting holds every device's copy of it.
+        for setting, frame in placed.groupby("setting_id"):
+            assert frame["device"].nunique() == 5
+
+    def test_the_group_column_is_the_setting_and_is_not_called_a_patient(self, config):
+        """``patient_id_column`` points at ``setting_id``; nothing here is a person.
+
+        The subject of every recording is a METRON PS-440 simulator. The column is
+        named for what it is so a reader of the exported fold CSV cannot mistake
+        it, and the split is still grouped, which is what matters.
+        """
+        assert config.patient_id_column == "setting_id"
+        assert "patient" not in config.patient_id_column
+
+    def test_stratification_is_the_family_and_warns_when_one_cannot_reach_every_fold(
+        self, config, metadata, caplog
+    ):
+        """``amp_test`` has 4 settings and ``sqr-2hz`` has 1, against 10 folds.
+
+        A stratification class needs ``n_folds`` groups to appear in every fold, so
+        those two cannot — at any fold count above four. sklearn says nothing about
+        this, so the splitter has to.
+        """
+        import logging
+
+        from ecgbench.splitting.strategies.ecg_capable_smartwatches import (
+            ECGCapableSmartwatchesSplitter,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            labels = ECGCapableSmartwatchesSplitter().get_stratification_labels(
+                metadata, config
+            )
+        assert labels.name == "experiment_family"
+        assert set(labels) == {"amp_test", "freq_test", "st-segment", "sqr-2hz"}
+        assert "fewer simulator settings than the 10 folds" in caplog.text
+        assert "sqr-2hz" in caplog.text
+
+    def test_a_frame_without_the_label_loaders_column_is_refused(self, config):
+        from ecgbench.splitting.strategies.ecg_capable_smartwatches import (
+            ECGCapableSmartwatchesSplitter,
+        )
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            ECGCapableSmartwatchesSplitter().get_stratification_labels(
+                pd.DataFrame({"record_id": ["philips_tc30_f220_0"]}), config
+            )
+
+    def test_the_cache_reproduces_the_scan_exactly_including_dtypes(
+        self, config, metadata, tmp_path
+    ):
+        """The tollet trap: the cached read must not re-type the group column.
+
+        ``StratifiedGroupKFold`` orders its groups by value, so a first run
+        grouping on strings and a later one grouping on something pandas inferred
+        differently would partition identical data differently and stamp different
+        ``fold_digest`` values into ``manifest.json``.
+        """
+        from ecgbench.splitting.strategies.ecg_capable_smartwatches import (
+            ECGCapableSmartwatchesSplitter,
+        )
+
+        metadata.to_csv(tmp_path / config.metadata_csv, index=False)
+        cached = ECGCapableSmartwatchesSplitter().load_metadata(tmp_path, config)
+        for column in ("record_id", "setting_id", "signal_path"):
+            # String, however the installed pandas spells that — object in pandas 2,
+            # StringDtype in pandas 3. What matters is that nothing was coerced.
+            assert pd.api.types.is_string_dtype(cached[column])
+            assert cached[column].tolist() == metadata[column].tolist()
+
+    def test_the_splitter_is_registered_and_not_the_generic_fallback(self):
+        from ecgbench.splitting import get_splitter
+        from ecgbench.splitting.strategies.ecg_capable_smartwatches import (
+            ECGCapableSmartwatchesSplitter,
+        )
+
+        assert isinstance(
+            get_splitter("ecg_capable_smartwatches"), ECGCapableSmartwatchesSplitter
+        )

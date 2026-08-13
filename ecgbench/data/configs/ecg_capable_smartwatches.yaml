@@ -1,0 +1,415 @@
+# ECGBench Config: Electrocardiogram-Capable Smartwatches
+# =======================================================
+# https://physionet.org/content/ecg-capable-smartwatches/1.0.0/
+#
+# 915 recordings of a METRON PS-440 patient simulator, taken simultaneously by a
+# reference 12-lead hospital electrocardiograph (Philips TC30) and by four consumer
+# smartwatches — Apple Watch Series 9, Samsung Galaxy Watch 6, Fitbit Sense 2 and
+# Withings ScanWatch — under the IEC 60601-2-25:2011 accuracy protocol. It is the
+# only dataset in ECGBench with NO HUMAN SUBJECT AT ALL: the release's Ethics
+# section reads "Data collected from synthetic sources", and the ground truth is
+# not a diagnosis but the knob the simulator was set to.
+#
+# 36 simulator settings in four families, each recorded five times on each of the
+# five devices: heart rate 30-300 bpm (15 settings), R-wave amplitude 500-2000 µV
+# (4), ST-segment offset -800 to +800 µV in 100 µV steps (16), and a 2 Hz square
+# wave (1). The labels are those nominal values; measuring how far each device
+# departs from them is the question the release exists to answer, so nothing here
+# estimates them from the signal on a user's behalf.
+#
+# ALL 1,833 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt, so
+# everything below is an upstream property rather than download damage.
+#
+# NINE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE SMARTWATCH RECORDS ARE LEAD I AND THEIR HEADERS SAY "II". The Methods
+#    state that the simulator's R output (right arm) went to the watch crown and
+#    its L output (left arm) to the caseback, and that the watches' own exports are
+#    "formatted as single-lead (Lead I) electrocardiograms". LA minus RA is lead I.
+#    All 720 smartwatch headers nonetheless name the channel "II". lead_names below
+#    follows the FILES, because that is what leads= resolves against — so
+#    ECGDataset(leads=["II"]) returns the Philips' genuine lead II for 195 records
+#    and an arm-to-arm lead I for the other 720, with no error. The labels'
+#    `derivation` column exists to make that filterable. This is the one thing in
+#    this dataset that can silently corrupt a cross-device comparison.
+#
+# 2. THE REFERENCE DEVICE IS 12-LEAD; ONLY THE WATCHES ARE SINGLE-LEAD. 195 Philips
+#    records store 12 channels, the other 720 store one, so leads: 1 below is the
+#    PREDOMINANT layout and the 12-lead one is declared in alternate_lead_names.
+#    A dataset mixing 1- and 12-lead records cannot be batched without leads=; see
+#    the zzu_pecg note in CLAUDE.md, which is the same problem.
+#
+# 3. EVERY SAMSUNG RECORD ENDS IN AN INVALID SAMPLE, SO `clean` CONTAINS NO SAMSUNG
+#    RECORD AT ALL. All 179 Samsung records are 15,001 samples where 15,000 is
+#    30.000 s at 500 Hz, and that extra final sample is digital -32768 — WFDB's
+#    invalid-sample marker for format 16 — which wfdb returns as NaN.
+#    check_nan_values has no threshold, so all 179 fail it and `clean` holds 736
+#    records from four devices. The signal before it is intact: window=(0, 15000)
+#    reads a Samsung record with no NaN. Nothing else in the release contains one.
+#    This is the sddb situation one format up (see the memory of format-212 -2048).
+#
+# 4. "ALL EXPERIMENTS IN QUINTUPLICATE" IS FALSE FOR 20 RECORDS. 36 settings x 5
+#    devices x 5 repetitions is 900; the release ships 915. Seventeen settings have
+#    a SIXTH repetition — every Philips freq_test setting, plus Fitbit's f80 and
+#    ST-m6 — and two have only FOUR: Samsung's st-p8 and Fitbit's ST-p8. No two
+#    records in the release hold an identical signal, so the sixth repetitions are
+#    genuine acquisitions and are kept; `is_extra_replicate` flags them.
+#
+# 5. FITBIT SPELLS ITS ST DIRECTORIES IN UPPERCASE, AND EVERY FITBIT HEADER NAMES
+#    THE WRONG DEVICE. Fitbit stores st-segment/ST-m1/ST-m1_0 where the other four
+#    devices store st-segment/st-m1/st-m1_0, so a setting key taken verbatim would
+#    describe 32 ST conditions instead of 16 and put one simulator condition in two
+#    different folds. `setting_id` is lowercased for exactly that reason.
+#    Separately, all 181 Fitbit headers carry the comment "Withings Scanwatch
+#    reading METRON PS-440 patient simulator" — a copy-paste error; the records are
+#    250 Hz against Withings' 300 Hz and share no signal with them.
+#
+# 6. `RECORDS` NAMES 75 FILES THAT DO NOT EXIST. The shipped index lists Withings'
+#    freq_test records under "WithingsScanwatch/" while the directory is
+#    "withingsscanwatch/", so 75 of its 915 lines resolve to nothing on a
+#    case-sensitive filesystem and building paths from it produces 75 records that
+#    all fail corrupt_header. The splitter enumerates headers from disk and reports
+#    the case-only mismatches as such.
+#
+# 7. THE APPLE DIRECTORY SAYS SERIES 8 AND THE RELEASE SAYS SERIES 9. The abstract
+#    and the Data Description both name the Apple Watch Series 9, and the latter
+#    maps "applewatch_serie8" to it explicitly; the directory and all 180 header
+#    comments say "Serie 8". `device` keeps the directory name so paths stay
+#    traceable and `device_model` carries the release's prose answer.
+#
+# 8. EVERY RECORD WAS RESCALED TO FILL INT16, SO THE HEADER GAIN IS PER RECORD.
+#    914 of 915 reach digital +32767 and the same number reach -32767 or -32768;
+#    gains run 15,082 to 207,386 adu/mV and differ record by record. Physical
+#    millivolts come back correctly from wfdb — signal_unit_scale stays 1.0 — but
+#    16-bit resolution is a per-record quantity, and a record sitting at the rail
+#    is NOT clipping: that is where its own extremes were mapped. The single
+#    exception is withingsscanwatch/st-segment/st-p1/st-p1_1, whose maximum code
+#    is 32,766.
+#
+# 9. LENGTH AND RATE BOTH VARY BY DEVICE, so a window in samples is not a window in
+#    time. Philips 5,500 at 500 Hz (11.0 s — not the 10 s the Methods state), Apple
+#    15,360 at 512 Hz except amp1000_0 at 13,968, Samsung 15,001 at 500 Hz, Fitbit
+#    7,500 at 250 Hz, Withings 9,000 at 300 Hz except six freq_test records at
+#    8,999. expected_samples is therefore empty, and window=(0, 5500) — 11.0 s of
+#    Philips, 22.0 s of Fitbit — is the largest window that fits every record.
+#
+# THE SPLIT GROUPS ON THE SIMULATOR SETTING, NOT ON A PATIENT, because there is no
+# patient. patient_id_column points at `setting_id` and is named for what it is.
+# The five repetitions of a setting on one device correlate at a median of 0.95, and
+# the same setting on a DIFFERENT device at 0.803 against a 0.953 self-control — the
+# five instruments recorded the same simulator output simultaneously — so the group
+# has to be the setting across all five devices. See the splitter module for the
+# measurements and for the two groupings that were rejected.
+
+name: "Electrocardiogram-Capable Smartwatches: Assessing Their Clinical Accuracy and Application"
+slug: "ecg_capable_smartwatches"
+version: "1.0.0"
+url: "https://physionet.org/content/ecg-capable-smartwatches/1.0.0/"
+# Null because the source is restricted-access AND because the splitter generates
+# metadata_csv — either alone would be enough to require it.
+download_url: null
+license: "PhysioNet Restricted Health Data License 1.5.0"
+description: >
+  915 electrocardiograms of a METRON PS-440 patient simulator, recorded
+  simultaneously by a Philips TC30 hospital electrocardiograph used as the clinical
+  reference and by four ECG-capable consumer smartwatches — Apple Watch Series 9,
+  Samsung Galaxy Watch 6, Fitbit Sense 2 and Withings ScanWatch — following the
+  accuracy protocol of IEC 60601-2-25:2011. The simulator was stepped through 36
+  calibrated settings in four families: heart rate from 30 to 300 bpm in 15 steps,
+  R-wave amplitude at 500, 1000, 1500 and 2000 µV, ST-segment elevation and
+  depression from -800 to +800 µV in 100 µV steps, and a 2 Hz square wave, each
+  recorded five times on every device. The watches were held on an adjustable
+  stand with the simulator's right-arm output wired to the crown and its left-arm
+  output to the caseback, giving an arm-to-arm lead I; the electrocardiograph was
+  connected with standard 12-lead cables and captured all twelve derivations.
+  No person was recorded: every waveform is synthetic, which makes this the one
+  release in ECGBench whose ground truth is an instrument setting known exactly
+  rather than a clinical label, and therefore the natural place to measure what a
+  wrist-worn device does to amplitude, rate and ST morphology.
+citation: >
+  Recas, J., Buelga Suárez, M., González-Cabeza, S., Sanz-Guerrero, M.,
+  Diaz-Vicente, M., Rebolleda, A., Piñuel Moreno, L., & Alonso Salinas, G. L.
+  (2025). Electrocardiogram-Capable Smartwatches: Assessing Their Clinical
+  Accuracy and Application (version 1.0.0). PhysioNet.
+  https://doi.org/10.13026/7018-y383. The associated paper was pending revision at
+  release: Buelga Suárez ML, Recas J, González-Cabeza S, Sanz-Guerrero M,
+  Diaz-Vicente M, Rebolleda Sánchez A, Piñuel L, Alonso Salinas GL. "Performance
+  Evaluation of Smartwatches: Can They Match Clinical Standards for ECG Analysis?"
+  PhysioNet additionally asks for: Goldberger AL, Amaral LAN, Glass L, Hausdorff
+  JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank,
+  PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/7018-y383"
+
+creators:
+  - type: Person
+    name: "Joaquin Recas"
+    url: "https://physionet.org/content/ecg-capable-smartwatches/1.0.0/"
+  - type: Person
+    name: "Mauro Buelga Suárez"
+    url: "https://physionet.org/content/ecg-capable-smartwatches/1.0.0/"
+  - type: Organization
+    name: "Complutense University of Madrid"
+    url: "https://www.ucm.es/"
+  - type: Organization
+    name: "Instituto Ramón y Cajal de Investigación Sanitaria (IRYCIS)"
+    url: "https://www.irycis.org/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# 1.0, and point 8 above is the reason to say so explicitly rather than by default:
+# every header declares a real per-record gain (15,082 to 207,386 adu/mV) and units
+# of mV, because each record was rescaled to fill the 16-bit range. wfdb applies
+# that gain, so millivolts arrive correctly and any scale factor here would break
+# them. This is NOT the afdb/chfdb case of a `0` gain falling back to wfdb's
+# 200 adu/mV default.
+signal_unit_scale: 1.0
+# The PREDOMINANT layout: 720 of the 915 records store one channel. The 195 Philips
+# reference records store 12, which is declared below. See point 2.
+leads: 1
+# WHAT THE FILES SAY, NOT WHAT THE LEAD IS. All 720 smartwatch headers name their
+# single channel "II"; the Methods and the watches' own exports say the derivation
+# is lead I (left arm minus right arm). ECGBench follows the files here because
+# leads= resolves against this list and against each record's header, and silently
+# renaming a channel would make ECGDataset disagree with wfdb. The cost is stated in
+# point 1: leads=["II"] crosses a genuine lead II (Philips) with an arm-to-arm lead
+# I (the four watches). Filter on the labels' `derivation` or on `device` first.
+lead_names: ["II"]
+# The Philips TC30 reference layout, in the order its headers store it — the
+# standard order, verified against all 195 headers. Declaring it makes
+# ECGDataset(leads=[...]) re-resolve the requested NAMES against whichever layout
+# the loaded record holds, and raise for a record whose layout lacks a requested
+# lead rather than returning whatever sits at that index. Without it, leads=["V1"]
+# would resolve to index 6 and return nothing meaningful for the 720 single-lead
+# records; with it, they raise.
+alternate_lead_names:
+  12: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+# Nominal: the MEDIAN. Length is not uniform and neither is the rate — 11.0 s
+# (Philips, 5,500 samples at 500 Hz) to 30.002 s (Samsung, 15,001 at 500 Hz). See
+# point 9; the shortest record in SAMPLES is 5,500, which is the ceiling on any
+# window=.
+duration_seconds: 30.0
+# Each record exists at exactly ONE rate, fixed by the device that made it, so this
+# is a per-record PROPERTY rather than a choice of representation — the same shape
+# as picsdb and challenge2021. All four are listed for documentation; there is a
+# single path column keyed on the nominal 500 Hz below, so
+# ECGDataset(sampling_rate=250) raises rather than silently returning the Fitbit
+# subset. To select by rate, filter the labels' `sampling_rate` column, or on
+# `device`, which determines it.
+sampling_rates: [250, 300, 500, 512]
+default_sampling_rate: 500
+
+# --- Folds ---
+# Ten, the project default, and the fold count is not what constrains this dataset.
+# A stratification class needs n_folds GROUPS to reach every fold; the 36 groups
+# are simulator settings, and amp_test has 4 of them while sqr-2hz has 1, so those
+# two families reach 4 folds and 1 fold respectively at ANY count above four. Ten
+# keeps fold sizes at 77-102 records and every device at 15-22 per fold. The
+# consequence for the default 8/1/1 mapping: fold 10, the default `test` split,
+# holds freq_test and st-segment records only. Use split=None with fold_numbers for
+# amplitude or square-wave work.
+n_folds: 10
+
+# --- File Structure ---
+# No metadata file ships in any form — the release is five device directories, a
+# README, a RECORDS index and 915 WFDB pairs. Which device, which simulator setting
+# and which repetition a record is exist only in its directory names; the trailing
+# invalid sample of point 3 exists only in the samples.
+# ECGCapableSmartwatchesSplitter builds this CSV on first run via
+# ecgbench.labels.ecg_capable_smartwatches, which decodes all 915 records once. The
+# validation engine re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+# "<device>_<record name>": philips_tc30_amp1000_0, fitbitsense2_ST-m6_5,
+# withingsscanwatch_sqr-2hz_3. The device prefix is required, not decoration —
+# record names repeat across all five devices (every one has an amp1000_0), so the
+# bare name identifies five different recordings. No device name prefixes another,
+# and the loader checks uniqueness rather than arguing it.
+record_id_column: "record_id"
+# False, and checked rather than assumed: every record_id starts with a device name
+# and every setting_id with a letter, so neither is ever all-digits and the CSV
+# round trip cannot coerce them. export_splits verifies this.
+zero_padded_identifiers: false
+# NOT A PATIENT. There is no patient: the subject of every recording is a METRON
+# PS-440 simulator. This column holds the 36 simulator settings — amp1500, f220,
+# st-m3, sqr-2hz — and it is named `setting_id` so nothing downstream reads it as a
+# person. It is what engine.py hands StratifiedGroupKFold, and grouping on it is
+# what stops a setting's near-identical repetitions (median correlation 0.95) and
+# its four sibling device recordings (0.803) from straddling a fold boundary. The
+# splitter module has the measurements and the rejected alternatives.
+patient_id_column: "setting_id"
+
+# One column for the whole dataset, keyed on the nominal rate. Each record carries
+# its own rate in its WFDB header and wfdb reads it, so nothing needs a per-rate
+# column — see the sampling_rates note above.
+signal_path_columns:
+  500: "signal_path"  # record stem under the dataset root, e.g.
+                      # "philips_tc30/amp_test/amp1000/amp1000_0"
+
+# --- Labels ---
+# The simulator setting, lowercased: 36 values across four families. This is the
+# dataset's ground truth — the condition the record was made at — and it is also
+# patient_id_column, because the setting is simultaneously the label and the
+# grouping unit. That coincidence is the honest shape of the release and it has a
+# consequence worth stating: a setting lies wholly inside one fold, so `setting_id`
+# cannot be trained as a 36-way classification target across folds. Train on the
+# NUMERIC labels instead — nominal_rate_bpm, nominal_r_amplitude_uv,
+# nominal_st_offset_uv — which is what a held-out setting is for.
+label_column: "setting_id"
+label_format: "single"
+
+stratification:
+  # Custom: ECGCapableSmartwatchesSplitter takes `stratify_class` from the label
+  # loader, which sets it to the experiment family — st-segment (399 records, 16
+  # settings), freq_test (391/15), amp_test (100/4), sqr-2hz (25/1).
+  #
+  # MEASURED, not assumed, over the shipped files at random_state=42. Against a
+  # constant label, family holds fold sizes at 77-102 (constant: 76-102) and gets
+  # st-segment into all ten folds and amp_test into four; a constant leaves folds 2
+  # and 9 with neither an st-segment nor an amp_test record. A binary st-vs-rest cut
+  # ties family on those counts and says less. Device is deliberately absent and
+  # could not be included: it is not constant within a group, and every setting was
+  # recorded on all five devices, so any partition of settings balances them by
+  # construction (15-22 records per device per fold, measured).
+  # See ecgbench.labels.ecg_capable_smartwatches.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+# None. Neither the release nor the paper assigns records to train or test.
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # The predominant layout's lead count. Declared for completeness; no function in
+  # CHECK_REGISTRY reads it (see the gotcha in CLAUDE.md), which is just as well
+  # here, since 195 records legitimately store 12.
+  expected_leads: 1
+  # DELIBERATELY EMPTY, like ptbdb, picsdb, tollet and challenge2021. Length varies
+  # legitimately by device and within two of them — 5,500 to 15,360 samples, point
+  # 9 — and the two rates that share a key would collide anyway: 500 Hz means 5,500
+  # samples for Philips and 15,001 for Samsung. Omitting a rate DISABLES the check
+  # rather than making it fire; truncated_signal stays in the list below so a
+  # future re-release with uniform lengths needs one line here.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # A TRIPWIRE FOR A MIS-SCALED COPY, NOT A HARDWARE RAIL AND NOT A PHYSIOLOGIC
+  # RANGE. There is no converter rail to compute here: every record was rescaled to
+  # fill int16 (point 8), so its extremes are wherever its own signal happened to
+  # be mapped. The widest samples in the release are -2.8280 mV
+  # (withingsscanwatch/amp_test/amp1500/amp1500_3) and +2.5850 mV
+  # (philips_tc30/amp_test/amp2000/amp2000_2), and ±3.0 sits just outside both with
+  # room to spare, so the check fires on nothing in the canonical release while
+  # still catching a copy read in microvolts by three orders of magnitude. It is
+  # deliberately NOT pinned to the attained extremes: that would make
+  # amplitude_outlier a checksum of one particular download, which manifest.json
+  # already is, and would drop a record over a rounding difference. No float32
+  # slack is needed for the same reason — the bounds are not attained.
+  amplitude_range_mv: [-3.0, 3.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ecg_capable_smartwatches.py decodes the simulator
+# setting out of the directory names, maps each device directory to the model the
+# release's prose names (they disagree for Apple, point 7), and reads every record
+# once to record its rate, length, range and trailing invalid sample. There is no
+# source CSV to point at — the directory tree and the headers are the source.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Distribution ---
+publish_fold_csvs: false
+no_publish_reason: >
+  This release is restricted-access under the PhysioNet Restricted Health Data
+  License 1.5.0, whose clause 3 forbids sharing access to the data with anyone
+  else, so ECGBench does not republish its identifiers even though no human was
+  ever recorded and the record names are simulator settings rather than people. The
+  licence travelling with the data governs, as it does for ikem. Regenerate the
+  identical split from your own copy with:
+  ecgbench splits --dataset ecg_capable_smartwatches --data-path /path/to/ecg-capable-smartwatches/1.0.0/
+  then confirm it is the canonical partition with
+  ecgbench.manifest.verify_splits("ecg_capable_smartwatches", "output/ecg_capable_smartwatches").
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "smartwatch"
+    - "wearable"
+    - "consumer device validation"
+    - "patient simulator"
+    - "synthetic"
+    - "single-lead"
+    - "12-lead"
+    - "ST-segment"
+    - "heart rate"
+    - "R-wave amplitude"
+    - "IEC 60601-2-25"
+    - "device accuracy"
+    - "PhysioNet"
+  rai_data_collection: >
+    No human subject was recorded. A METRON PS-440 patient simulator was programmed
+    to emit calibrated ECG waveforms and its output was recorded simultaneously by a
+    Philips TC30 hospital electrocardiograph, serving as the clinical reference, and
+    by four ECG-capable consumer smartwatches: Apple Watch Series 9, Samsung Galaxy
+    Watch 6, Fitbit Sense 2 and Withings ScanWatch. The protocol follows IEC
+    60601-2-25:2011, which specifies accuracy requirements for electrocardiographic
+    devices, and the electrocardiograph's calibration was verified against ±5% or
+    ±40 µV before each test. The simulator was stepped through 36 settings: heart
+    rate at 30, 40 and then every 20 bpm to 300 bpm; R-wave amplitude at 500, 1000,
+    1500 and 2000 µV; ST-segment offset from -800 to +800 µV in 100 µV steps, with
+    no zero-offset control; and a 2 Hz square wave. Each setting was recorded five
+    times on each device, giving 900 intended records; the release ships 915,
+    because seventeen settings carry a sixth repetition and two carry only four.
+    Each watch was mounted on an adjustable stand and wired with two 1.5 mm DIN
+    Holter cables, the simulator's right-arm output to the crown or digital button
+    and its left-arm output to the caseback, so a watch recorded an arm-to-arm
+    derivation; the electrocardiograph was connected with standard 12-lead cables
+    and captured all twelve. Signals were converted to WFDB with 16-bit samples,
+    each record independently rescaled to fill the converter range, at each device's
+    own rate — 500 Hz for the Philips and Samsung, 512 Hz for the Apple, 300 Hz for
+    the Withings and 250 Hz for the Fitbit — and run 11.0 to 30.0 seconds. The
+    graphical PDF exports each watch also produced are not part of the release.
+  rai_data_biases: >
+    This is a bench measurement of five instruments, not a cohort, and nothing
+    derived from it describes people. Every waveform originates from one patient
+    simulator driving one signal path, so there is no anatomical variation, no
+    electrode-placement variation, no motion, no baseline wander from breathing, no
+    skin impedance and no arrhythmia beyond what the simulator's rate and ST knobs
+    produce — a model trained here has never seen a human heart, and a device that
+    performs well on a stand may perform quite differently on a wrist. The design
+    is also unbalanced across the phenomena it probes: 16 of the 36 settings vary
+    the ST segment and 15 vary rate, but only 4 vary R-wave amplitude and exactly
+    one produces the square wave, so amplitude fidelity is sampled at four points
+    and the square-wave response at one. The ST ladder is a 100 µV step, which makes
+    neighbouring settings nearly identical (median correlation 0.805 between
+    adjacent offsets on the same device), so held-out ST performance measures
+    interpolation rather than generalisation. The five instruments are not
+    interchangeable in a way that matters for splitting or for evaluation: they
+    record at four different sampling rates and different lengths, the reference
+    device stores twelve leads where the watches store one, every Samsung record
+    carries a trailing invalid sample that puts the whole device outside the `clean`
+    version, and the release's own Usage Notes report that the Samsung's rate
+    estimates degrade above 100 bpm while the Withings shows high variability in
+    R-wave and J-point measurement. Any conclusion drawn from four devices of one
+    generation each, tested once in one laboratory, is a statement about those
+    five units and not about the product lines.
+  rai_personal_sensitive_info: >
+    None, and unusually this is a statement about the data rather than about
+    de-identification: the release's Ethics section reads "Data collected from
+    synthetic sources", every waveform was emitted by a METRON PS-440 patient
+    simulator, and no person was connected to any device at any point. There are no
+    subjects, no demographics, no dates, no timestamps and no clinical text; the
+    headers carry a single comment line naming the recording device, and the record
+    names are simulator settings. ECGBench nonetheless does not republish this
+    dataset's fold tables. The release is restricted-access under the PhysioNet
+    Restricted Health Data License 1.5.0, whose clause 3 forbids sharing access to
+    the data with anyone else, and the licence text travelling with the data governs
+    whatever the data turns out to contain — the same rule ECGBench applied to
+    ikem. The split is distributed as a reproducible recipe instead, and the
+    reference manifest holds only checksums, counts and a fold digest.

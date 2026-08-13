@@ -3079,3 +3079,105 @@ def test_picsdb_amplitude_bounds_clear_every_records_own_rail_in_float32():
     assert positive == 40.914978027343750
     assert positive < 40.914979325  # the float64 value
     assert positive <= high
+
+
+def test_load_ecg_capable_smartwatches_config():
+    """Four smartwatches and a 12-lead reference, all reading a patient simulator."""
+    config = load_config("ecg_capable_smartwatches")
+    assert config.slug == "ecg_capable_smartwatches"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # 1.0, and worth pinning: every header declares a real per-record gain
+    # (15,082 to 207,386 adu/mV) because each record was independently rescaled to
+    # fill int16, so wfdb returns millivolts and any factor here would break them.
+    assert config.signal_unit_scale == 1.0
+    assert config.signal_units == "mV"
+    # THE PREDOMINANT layout, and the one thing here that can silently corrupt a
+    # cross-device comparison: 720 of the 915 records are smartwatch recordings of
+    # an arm-to-arm derivation — lead I — whose headers all name the channel "II".
+    # lead_names follows the FILES because that is what leads= resolves against.
+    assert config.leads == 1
+    assert config.lead_names == ["II"]
+    assert len(config.lead_names) == config.leads
+    # The other 195 records are the Philips TC30 reference, which stores all twelve
+    # derivations in the standard order. Declaring it is what makes leads=["V4"]
+    # expressible at all and what makes it RAISE for a single-lead record instead
+    # of returning that record's only channel.
+    assert config.alternate_lead_names == {
+        12: ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    }
+    assert config.record_lead_layouts is None
+    # One rate per device — 250 (Fitbit), 300 (Withings), 500 (Philips, Samsung),
+    # 512 (Apple) — so rate is a per-record property, not a choice of
+    # representation. A single path column, keyed on the nominal 500.
+    assert config.sampling_rates == [250, 300, 500, 512]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    # No metadata file ships in any form: the release is five device directories,
+    # a README, a RECORDS index and 915 WFDB pairs.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_id"
+    # NOT A PATIENT — there is no patient. The subject of every recording is a
+    # METRON PS-440 simulator, and the grouping unit is its 36 settings.
+    assert config.patient_id_column == "setting_id"
+    assert config.label_column == "setting_id"
+    assert config.label_format == "single"
+    assert config.n_folds == 10
+    # Record ids start with a device name and settings with a letter, so neither is
+    # ever all-digits and the CSV round trip cannot coerce them.
+    assert config.zero_padded_identifiers is False
+    assert config.identifier_dtypes() == {}
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    assert config.validation is not None
+    # DELIBERATELY EMPTY: length varies 5,500 to 15,360 samples, and the two
+    # devices sharing 500 Hz disagree (5,500 for Philips, 15,001 for Samsung), so
+    # no single value per rate could be right.
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    assert "nan_values" in config.validation.checks
+    # A tripwire for a mis-scaled copy, not a hardware rail: there is none, since
+    # every record was rescaled to fill int16. The widest samples in the release
+    # are -2.8280 and +2.5850 mV, so the bounds are not attained and need no
+    # float32 slack.
+    assert config.validation.amplitude_range_mv == (-3.0, 3.0)
+    # Restricted access: the fold CSVs are not published, and the reason has to
+    # carry the regeneration command because it is what the user is shown instead.
+    assert config.publish_fold_csvs is False
+    assert "ecgbench splits --dataset ecg_capable_smartwatches" in config.no_publish_reason
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_id"
+
+
+def test_ecg_capable_smartwatches_ships_a_reference_manifest():
+    """A dataset whose splits are not published must ship one, or nobody can check.
+
+    The manifest is the whole substitute for the Hub here: seed, counts, input
+    checksum and a digest over the record-to-fold mapping, so a user regenerating
+    locally can prove they reproduced the canonical partition rather than merely a
+    plausible one.
+    """
+    import json
+    from pathlib import Path
+
+    import ecgbench
+
+    path = Path(ecgbench.__file__).parent / "data" / "manifests" / "ecg_capable_smartwatches.json"
+    assert path.exists()
+    manifest = json.loads(path.read_text())
+    assert manifest["dataset"] == "ecg_capable_smartwatches"
+    assert manifest["publish_fold_csvs"] is False
+    assert manifest["split"]["random_state"] == 42
+    assert manifest["split"]["n_folds"] == 10
+    assert manifest["split"]["patient_id_column"] == "setting_id"
+    assert manifest["split"]["grouped_by_patient"] is True
+    # 915 shipped records; 179 Samsung records fail nan_values on their trailing
+    # invalid sample, so `clean` is the other four devices.
+    assert manifest["records"] == {"original": 915, "clean": 736}
+    assert manifest["fold_digest"]["original"] != manifest["fold_digest"]["clean"]
+    # Identifiers must never reach a manifest — it is checksums and counts only.
+    assert "records" not in manifest.get("inputs", {})
+    assert set(manifest["inputs"]) == {"ecgbench_metadata.csv"}

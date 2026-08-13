@@ -340,9 +340,10 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `tollet` | **`ECG` — one channel, and the electrode is not in the name.** A record here is one *electrode* of one sitting, not one sitting: the seat carries four dry pads that differ only in surface texture (flat, sinusoidal, pyramidal, trapezoidal) and record the same thigh-to-thigh derivation at once, and ECGBench splits each file into four single-lead records. So the texture varies from record to record and cannot be a lead name — it is `labels["electrode_texture"]`, and `leads=` has nothing to select. The signal path names the column instead: `ECG_EXP/15_1.txt:A2`. **238 of the 580 records are pads that never made contact**, which is what `clean` (342) excludes |
 | `butqdb` | **`ECG` — one channel, and the fourth here that is not called `I`.** All 18 headers name the single chest-worn Faros 180 channel `ECG` and the release states no electrode placement, so it is a channel position. The 3-axis accelerometer that ships with every recording is a **separate WFDB record** (`<id>_ACC`, `ACCx`/`ACCy`/`ACCz` at 100 Hz in milli-g), not a lead and not a declared sampling rate — `labels["acc_path"]` points at it. This is also the release where **gain and baseline both differ between records** (0.99998–1.996 adu/µV, baseline −18,289 to +11,462), so every record has a different physical span and all 18 attain both 16-bit rails |
 
+| `ecg_capable_smartwatches` | **`II` in all 720 smartwatch records — and every one of them is lead I.** The release's own Methods wire the simulator's right-arm output to the watch crown and its left-arm output to the caseback, and describe the watches' exports as "single-lead (Lead I)"; LA − RA *is* lead I. `lead_names` follows the files anyway, because that is what `leads=` resolves against and renaming a channel would make ECGBench disagree with `wfdb` — so `leads=["II"]` returns a genuine lead II for the 195 Philips reference records and an arm-to-arm lead I for the other 720, with no error. Filter on `labels["derivation"]` first. This is also the one release whose **predominant layout is the smaller one**: the reference stores all twelve derivations and is declared in `alternate_lead_names: {12: [...]}`. See below |
 | `picsdb` | **One channel, and the ten headers disagree what to call it: `II` in seven records, `ECG` in `infant1` and `infant5`, `I` in `infant10`.** The `mitdb` problem at a lead count of one — `alternate_lead_names` is keyed by lead *count*, and the count never varies — so `record_lead_layouts` carries all three and `ECGDataset` reads each record's own header. `leads=["II"]` therefore returns a signal for seven records and **raises for three**, which is the honest answer: the release says only "a single channel of a 3-lead electrocardiogram" and nothing states that the `ECG` channel is lead II. Gain and baseline both differ per record (800.4–1420.8 adu/mV, baseline −141 to +25,427), so each has its own converter rail and `amplitude_range_mv` is the union of ten, [−40.9604, +40.915] mV |
 
-**Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
+**Three datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
 the full one — it drops V2, V4 and V6, so stored position 7 is V2 in one and V3 in the
 other. A single `lead_names` list would therefore return the wrong physical lead for
@@ -366,8 +367,26 @@ returns the wrong physical lead. Declaring `alternate_lead_names: {1: ["ECG1"]}`
 buys the error message instead — `leads=["ECG2"]` refuses against a named layout for
 those ten records rather than falling into the generic too-few-leads path.
 
+`ecg_capable_smartwatches` is the third, and the one that shows why the request is
+validated against the **union** of the layouts rather than against `lead_names`. Its
+predominant layout is the single `II` channel of 720 smartwatch records, and its
+alternate is the 12-lead order of the 195 Philips reference records — the opposite way
+round from the two above, where `lead_names` happens to be the widest layout. Checking
+a request against `lead_names` alone would make `leads=["V4"]` a typo for the whole
+dataset, so the reference device's chest leads could not be selected by name at all:
+
+```python
+# Resolves against each record's own layout: the reference's true V4, and a
+# refusal for a watch record rather than its only channel.
+ds = ECGDataset("ecg_capable_smartwatches", split="test", data_path="...",
+                metadata_source="local", leads=["V4"], window=(0, 5500))
+ds[philips]   # torch.Size([1, 5500])
+ds[watch]     # ValueError: Record 'applewatch_serie8_f80_0' stores 1 lead(s)
+              # (['II']), and this dataset uses more than one lead layout. ...
+```
+
 A dataset that declares no `alternate_lead_names` — every other one — is asserting a
-single layout, and behaves exactly as before. Note that batching either of these
+single layout, and behaves exactly as before. Note that batching any of these
 needs `leads=` as well as `window=`: a batch mixing layouts cannot be stacked, and
 for `stdb` that is `RuntimeError: stack expects each tensor to be equal size, but
 got [2, 10800] at entry 0 and [1, 10800] at entry 2`.
@@ -1260,13 +1279,17 @@ split. For an openly licensed source that is uncontroversial. For a
 **credentialed or restricted** source those identifiers are still data derived
 under a use agreement — or material a licence forbids redistributing — and the
 ECGBench Hub repository is public and ungated, so ECGBench does not publish them.
-Three datasets are in this category: `mimic_iv_ecg`, whose 800,035 `study_id`s and
+Four datasets are in this category: `mimic_iv_ecg`, whose 800,035 `study_id`s and
 161,352 `subject_id`s stay with the people who signed the PhysioNet DUA;
 `echonext`, under the PhysioNet *Restricted* Health Data License whose clause 3
-forbids sharing access to the data at all; and `ikem`, which ships a `LICENSE` file
+forbids sharing access to the data at all; `ikem`, which ships a `LICENSE` file
 that is verbatim **CC BY-NC-ND 4.0** — the NoDerivatives term makes republishing a
 derived fold table legally unclear, so it is the first dataset here withheld by
-licence rather than by an access agreement.
+licence rather than by an access agreement; and `ecg_capable_smartwatches`, which
+is under the same Restricted licence as `echonext` and is withheld even though **no
+human was ever recorded** — every waveform is a patient simulator's and the
+identifiers are its settings. The licence travelling with the data governs whatever
+the data turns out to contain, which is the same rule applied to `ikem`.
 
 Such a dataset declares this in its config, and the tooling enforces it in both
 directions — `ecgbench upload` refuses to publish it, and `ECGDataset` raises

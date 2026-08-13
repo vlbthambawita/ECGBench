@@ -11,10 +11,13 @@ import ast
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from ecgbench.config import DatasetConfig
 
 try:
     import torch
@@ -660,6 +663,32 @@ def _layout_union(layouts: list[list[str]]) -> list[str]:
     return list(seen.values())
 
 
+def _declarable_lead_names(config: DatasetConfig) -> list[str] | None:
+    """Every lead name a ``leads=`` request may legitimately name for this dataset.
+
+    Used only to reject a typo at construction time. For a single-layout dataset
+    that is ``lead_names`` and nothing else. For a multi-layout one it has to be
+    the **union** of the layouts, because a name present in some of them is
+    legitimate and gets resolved per record later by :meth:`_lead_index_for`.
+
+    Both multi-layout fields feed it, and ``alternate_lead_names`` has to because
+    ``lead_names`` is not always the widest layout. It happens to be for
+    ``zzu_pecg`` (12 leads, alternate 9) and ``stdb`` (2 channels, alternate 1),
+    where the union is exactly ``lead_names`` and this changes nothing — but
+    ``ecg_capable_smartwatches`` is the other way round: its predominant layout is
+    the single ``II`` channel of 720 smartwatch records and the alternate is the
+    12-lead order of the 195 reference records. Validating against ``lead_names``
+    alone made ``leads=["V4"]`` a typo for that dataset, so the reference device's
+    chest leads could not be selected by name at all — which is the one thing the
+    field exists to make safe.
+    """
+    if config.record_lead_layouts:
+        return _layout_union(config.record_lead_layouts)
+    if config.alternate_lead_names and config.lead_names:
+        return _layout_union([config.lead_names, *config.alternate_lead_names.values()])
+    return config.lead_names
+
+
 def _stored_lead_names(record_path: str, signal_format: str, slug: str) -> list[str]:
     """The lead names *this* record stores, read from its own header.
 
@@ -823,11 +852,7 @@ class ECGDataset(_TorchDataset):
             # layout is a typo and fails here — and the indices are re-resolved
             # per record at read time. _lead_index is then only a "selection is
             # active" marker; _lead_index_for never returns it.
-            available = (
-                _layout_union(self.config.record_lead_layouts)
-                if self.config.record_lead_layouts
-                else self.config.lead_names
-            )
+            available = _declarable_lead_names(self.config)
             self._lead_index, names = _resolve_leads(leads, available, self.config.slug)
             self._requested_leads = list(leads)
             # The resolved *names* are the same whatever layout a record uses —
@@ -898,14 +923,23 @@ class ECGDataset(_TorchDataset):
         alternates = self.config.alternate_lead_names or {}
         if not alternates or self._declared_n_leads is None:
             return self._lead_index
-        if n_stored == self._declared_n_leads:
-            return self._lead_index
 
         cached = self._alt_lead_index.get(n_stored)
         if cached is not None:
             return cached
 
-        layout = alternates.get(n_stored)
+        # The declared count resolves against lead_names rather than short-circuiting
+        # to _lead_index, because _lead_index was resolved against the UNION of the
+        # layouts (see _declarable_lead_names) and so may hold a position that only
+        # an alternate layout has. Returning it for a record in the declared layout
+        # would then hand back the wrong physical lead — or, when the union is wider
+        # than the record, an out-of-range index. Where lead_names IS the union, as
+        # for zzu_pecg and stdb, this recomputes the identical indices.
+        layout = (
+            self.config.lead_names
+            if n_stored == self._declared_n_leads
+            else alternates.get(n_stored)
+        )
         if layout is None:
             raise ValueError(
                 f"Record {record_id!r} stores {n_stored} leads, but "
@@ -916,7 +950,18 @@ class ECGDataset(_TorchDataset):
                 "by name refuses to assume one — add the layout to the YAML."
             )
         assert self._requested_leads is not None
-        index, _ = _resolve_leads(self._requested_leads, layout, self.config.slug)
+        try:
+            index, _ = _resolve_leads(self._requested_leads, layout, self.config.slug)
+        except ValueError as e:
+            # The request named a lead some other layout has and this one does not —
+            # ecg_capable_smartwatches' leads=["V4"] against a single-lead smartwatch
+            # record. Refuse, naming the record, rather than hand back whichever lead
+            # sits at that index.
+            name = record_id.item() if hasattr(record_id, "item") else record_id
+            raise ValueError(
+                f"Record {name!r} stores {n_stored} lead(s) ({list(layout)}), and "
+                f"this dataset uses more than one lead layout. {e}"
+            ) from e
         self._alt_lead_index[n_stored] = index
         return index
 

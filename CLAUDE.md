@@ -112,6 +112,8 @@ Single `ECGDataset` class loading any dataset via config. `metadata_source="hf"`
 
 **`leads=` is resolved per record when a dataset has more than one lead layout.** `config.lead_names` is a single order, which is right for every dataset but one: `zzu_pecg` stores 12 leads for 12,334 records and 9 for the other 1,856, dropping V2/V4/V6, so stored position 7 is V2 in one layout and V3 in the other — an index-based selection returns the wrong physical lead for 13% of the release with no error. The optional `alternate_lead_names: {n_stored: [names]}` config field carries the second layout, and `ECGDataset._lead_index_for()` re-resolves the requested *names* against whatever layout the loaded record actually has (results cached per lead count). A dataset that declares **no** alternates is asserting one layout and keeps the previous behaviour exactly, including the "too few leads" error; once alternates are declared, a lead count matching none of them raises rather than guessing. Batching such a dataset needs `leads=` as well as `window=` — `ecg_collate_fn` stacks signals with torch's `default_collate`, so a batch mixing 9- and 12-lead records raises `RuntimeError`.
 
+**`lead_names` is not always the widest layout, so the `leads=` request is validated against the *union* of the declared layouts** (`_declarable_lead_names`), not against `lead_names`. It happens to be the widest for `zzu_pecg` (12, alternate 9) and `stdb` (2, alternate 1), where the union changes nothing. `ecg_capable_smartwatches` is the other way round: its predominant layout is the single `II` channel of 720 smartwatch records and its alternate is the 12-lead order of the 195 reference records, so validating against `lead_names` alone made `leads=["V4"]` a typo for the whole dataset and the reference device's chest leads unselectable by name. Because `_lead_index` is then a position in the union, `_lead_index_for()` re-resolves *every* record against its own layout — including one in the declared layout — rather than short-circuiting; where `lead_names` is the union that recomputes the identical indices.
+
 **Fold selection has two modes.** `fold_numbers` with a named `split` reads `<split>/fold_<N>.csv`, so the folds must belong to that split (1-8 train, 9 val, 10 test). `split=None` requires `fold_numbers` and instead filters the master `folds.csv` by fold alone — the only way to express custom cross-validation — and then `sample["split"]` reports each record's own `default_split` rather than one name.
 
 ### Public API (`ecgbench/__init__.py`)
@@ -161,13 +163,17 @@ annotation-only datasets" in `ADD_DATASET_TODO.md`.
 `DatasetConfig.publish_fold_csvs` (default `True`) decides whether a dataset's fold
 CSVs go to the public HuggingFace repo. Fold CSVs are identifiers only, but for a
 **credentialed or restricted** source those identifiers are still data derived under a
-use agreement, and the repo is public and ungated. Three datasets set it `False`:
-`mimic_iv_ecg` (PhysioNet credentialed DUA), `echonext` (PhysioNet Restricted licence)
-and `ikem` — the last withheld by **licence** rather than access, because its shipped
-LICENSE is verbatim CC BY-NC-ND 4.0 and NoDerivatives makes a published fold table
-legally unclear. Note Zenodo's metadata for IKEM says only `other-at`; the licence text
-travelling with the data governs, and the catalogue entry previously said CC BY 4.0,
-which was wrong.
+use agreement, and the repo is public and ungated. Four datasets set it `False`:
+`mimic_iv_ecg` (PhysioNet credentialed DUA), `echonext` (PhysioNet Restricted licence),
+`ikem` and `ecg_capable_smartwatches`. `ikem` is withheld by **licence** rather than
+access, because its shipped LICENSE is verbatim CC BY-NC-ND 4.0 and NoDerivatives makes
+a published fold table legally unclear. Note Zenodo's metadata for IKEM says only
+`other-at`; the licence text travelling with the data governs, and the catalogue entry
+previously said CC BY 4.0, which was wrong. `ecg_capable_smartwatches` is the case that
+shows the rule is about the licence and not about the content: it is under the same
+Restricted licence as `echonext`, but **no human was ever recorded** — every waveform is
+a METRON PS-440 patient simulator's and the identifiers are its settings. It is withheld
+anyway, on the same reasoning as `ikem`.
 
 The policy is enforced in both directions, not left to whoever runs the command:
 `cli/upload.py` raises `PermissionError` before any network call, and

@@ -14,6 +14,7 @@ from . import (  # noqa: F401
     code_test,
     cpsc_2018,
     ecg_arrhythmia,
+    ecg_capable_smartwatches,
     ecgcipa,
     ecgdmmld,
     ecgiddb,

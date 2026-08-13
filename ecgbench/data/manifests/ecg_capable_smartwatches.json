@@ -1,0 +1,31 @@
+{
+  "dataset": "ecg_capable_smartwatches",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "digest_version": 1,
+  "publish_fold_csvs": false,
+  "split": {
+    "n_folds": 10,
+    "random_state": 42,
+    "record_id_column": "record_id",
+    "patient_id_column": "setting_id",
+    "grouped_by_patient": true
+  },
+  "inputs": {
+    "ecgbench_metadata.csv": {
+      "present": true,
+      "sha256": "abc7bd47873200e9e0b3abedd1cadc246a28fc12eaa7f1a4cc8a6ffdff475ad1",
+      "bytes": 266657,
+      "rows": 915
+    }
+  },
+  "records": {
+    "original": 915,
+    "clean": 736
+  },
+  "fold_digest": {
+    "original": "d99253086ea9e7fa62ed24fcf450086fd07c19d7bf4f85f379cb58fc60b5b558",
+    "clean": "ef6838494950add4053161352e5245481c8c1e78a5ba6c2e558b282ecac4c1fa"
+  },
+  "command": "ecgbench splits --dataset ecg_capable_smartwatches --data-path /path/to/ecg_capable_smartwatches/"
+}
