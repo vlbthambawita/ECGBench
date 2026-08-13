@@ -340,6 +340,8 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `tollet` | **`ECG` — one channel, and the electrode is not in the name.** A record here is one *electrode* of one sitting, not one sitting: the seat carries four dry pads that differ only in surface texture (flat, sinusoidal, pyramidal, trapezoidal) and record the same thigh-to-thigh derivation at once, and ECGBench splits each file into four single-lead records. So the texture varies from record to record and cannot be a lead name — it is `labels["electrode_texture"]`, and `leads=` has nothing to select. The signal path names the column instead: `ECG_EXP/15_1.txt:A2`. **238 of the 580 records are pads that never made contact**, which is what `clean` (342) excludes |
 | `butqdb` | **`ECG` — one channel, and the fourth here that is not called `I`.** All 18 headers name the single chest-worn Faros 180 channel `ECG` and the release states no electrode placement, so it is a channel position. The 3-axis accelerometer that ships with every recording is a **separate WFDB record** (`<id>_ACC`, `ACCx`/`ACCy`/`ACCz` at 100 Hz in milli-g), not a lead and not a declared sampling rate — `labels["acc_path"]` points at it. This is also the release where **gain and baseline both differ between records** (0.99998–1.996 adu/µV, baseline −18,289 to +11,462), so every record has a different physical span and all 18 attain both 16-bit rails |
 
+| `picsdb` | **One channel, and the ten headers disagree what to call it: `II` in seven records, `ECG` in `infant1` and `infant5`, `I` in `infant10`.** The `mitdb` problem at a lead count of one — `alternate_lead_names` is keyed by lead *count*, and the count never varies — so `record_lead_layouts` carries all three and `ECGDataset` reads each record's own header. `leads=["II"]` therefore returns a signal for seven records and **raises for three**, which is the honest answer: the release says only "a single channel of a 3-lead electrocardiogram" and nothing states that the `ECG` channel is lead II. Gain and baseline both differ per record (800.4–1420.8 adu/mV, baseline −141 to +25,427), so each has its own converter rail and `amplitude_range_mv` is the union of ten, [−40.9604, +40.915] mV |
+
 **Two datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
 the full one — it drops V2, V4 and V6, so stored position 7 is V2 in one and V3 in the
@@ -370,7 +372,7 @@ needs `leads=` as well as `window=`: a batch mixing layouts cannot be stacked, a
 for `stdb` that is `RuntimeError: stack expects each tensor to be equal size, but
 got [2, 10800] at entry 0 and [1, 10800] at entry 2`.
 
-**And three datasets vary the lead *names* at a constant lead count**, which a
+**And four datasets vary the lead *names* at a constant lead count**, which a
 count-keyed map cannot express at all. Every one of `mitdb`'s 48 records stores
 exactly 2 leads, but only 40 store `MLII, V1`: two each store `MLII, V5`, `MLII, V2`
 and `V5, V2`, one stores `MLII, V4`, and record 114 stores `V5, MLII` — the
@@ -454,6 +456,25 @@ This dataset therefore **cannot be batched whole by any `leads=` value**: no lea
 universal, and a batch mixing 2- and 3-signal records raises in `default_collate`
 regardless. Filter on `n_leads`/`lead_names` from `ecgbench.labels.ltstdb` first, or
 use `batch_size=1`. See `examples/load_ltstdb.py`.
+
+`picsdb` is the fifth, and it takes the idea to its limit: **every one of its 10
+records stores exactly one channel, and the headers disagree what that channel is.**
+Seven call it `II`, `infant1` and `infant5` call it `ECG`, and `infant10` calls it `I`.
+A count-keyed map has nothing to key on when the count is 1 throughout, so the three
+layouts go in `record_lead_layouts` and `leads=["II"]` resolves against each record's
+own header.
+
+```python
+ds = ECGDataset("picsdb", split="train", data_path="...",
+                window=(0, 15_000), leads=["II"])
+ds[i]   # infant2, infant4, infant7, infant8, infant9: (1, 15000)
+        # infant1, infant5, infant10: ValueError -- their headers say 'ECG' or 'I'
+```
+
+Refusing is the point. The release says only "a single channel of a 3-lead
+electrocardiogram" and never states that the `ECG` channel is lead II, so returning it
+under that name would let it be stacked with real lead II from other datasets. Omit
+`leads=` to take whatever channel each record holds.
 
 `record_lead_layouts` is wfdb-only, because no other format names its leads per
 record. Datasets that do not declare it are unaffected.
@@ -1022,6 +1043,26 @@ all 18 records attain both 16-bit rails, so the bound is their union — and
 design**: this is the one dataset here whose subject *is* signal quality, so excluding
 noisy recordings would destroy it; filter on `consensus_class3_fraction` instead. See
 `examples/load_butqdb.py`.
+
+`picsdb` is the only **neonatal** dataset here, and the only one where a window in
+samples is a different span of time depending on the record. Ten bedside NICU
+recordings of ten preterm infants of 29–34 weeks post-conceptional age, 20.3–70.3 h
+each and 439.8 h in all. Four things to know. **Two of the ten records sample at 250
+Hz** — `infant1` and `infant5`, the "compound" recordings — and the other eight at 500,
+so `window=(0, 15_000)` is 30 s of one record and 60 s of another; rate is a per-record
+property, `sampling_rate` is a label column, and `ECGDataset(sampling_rate=250)` raises
+rather than returning a mixed-rate subset. **The ground truth is an event time, not a
+class**: every infant is a preterm infant in one unit, so `cohort_label` is constant,
+and what the database is for is the 622 manually validated bradycardia onsets and
+3,797,503 verified R peaks — reached through `bradycardia_onsets()` and `rpeaks()`,
+which take the same `window=`. **The onset sits one sample *after* the R peak opening
+the first RR > 0.6 s** in 493 of 622 cases and exactly on it in 32, so
+`np.isin(onsets, rpeaks)` finds almost nothing and looks like an off-by-one bug;
+`verify_bradycardia_onsets()` re-measures it. And **all 10 records pass every check
+while carrying signal nothing can flag**: each holds 239–3,147 s in perfectly constant
+runs (24 minutes in one stretch for `infant5`), `infant5` and `infant1` are clipped at
+the converter rail for 1,691 s and 642 s, and R-peak annotation covers 94.0–99.9% of
+each record — `infant10`'s last 2.13 h carry none. See `examples/load_picsdb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

@@ -1,0 +1,337 @@
+# ECGBench Config: Preterm Infant Cardio-Respiratory Signals Database (PICS)
+# ==========================================================================
+# https://physionet.org/content/picsdb/1.0.0/
+#
+# 10 single-channel ECG recordings — 439.8 hours, 20.3 h to 70.3 h each — made at
+# the bedside in the University of Massachusetts Memorial Healthcare NICU from ten
+# preterm infants of 29 3/7 to 34 2/7 weeks post-conceptional age. It is the only
+# neonatal dataset in ECGBench, and the youngest cohort in the catalogue by
+# decades: these hearts run at 130-167 bpm, so a "normal" RR interval here is
+# 0.36-0.46 s and the entire adult HRV literature's parameter choices are wrong.
+#
+# The product is an EVENT TIME, not a diagnosis. Every infant is a preterm infant
+# in the same unit, so the record-level label is one constant; what the database
+# exists for is the 622 manually validated BRADYCARDIA ONSETS in the .atr files
+# and the 3,797,503 manually verified R PEAKS in the .qrsc files. Reach them with
+# ecgbench.labels.picsdb.bradycardia_onsets() and rpeaks(), which take the same
+# (start, length) window ECGDataset does.
+#
+# ALL 73 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt, so
+# everything below is an upstream property rather than download damage.
+#
+# SIX THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. TWO OF THE TEN RECORDS SAMPLE AT 250 Hz, SO A WINDOW IN SAMPLES IS NOT A
+#    WINDOW IN TIME. infant1 and infant5 are the "compound" recordings the release
+#    describes and run at 250 Hz; the other eight run at 500 Hz. window=(0, 15000)
+#    is 30 s of infant2 and 60 s of infant5. Rate is a per-record PROPERTY, not a
+#    choice of representation — see sampling_rates below — and it is exposed as a
+#    per-record label column so a user can filter on it.
+#
+# 2. THE BRADYCARDIA ONSET MARKS THE R PEAK OPENING THE FIRST LONG RR INTERVAL,
+#    ONE SAMPLE LATE. The release defines a bradycardia as HR < 100 bpm
+#    (RR > 0.6 s) sustained over at least two beats (> 1.2 s), aggregating
+#    successive events inside a 3-minute window. Measured against the .qrsc peaks:
+#    526 of the 622 onsets sit within TWO SAMPLES of the beat opening the first
+#    RR > 0.6 s, 493 of them exactly one sample after it, and all 622 within 10 s.
+#    Only 32 coincide exactly with a .qrsc sample, so `np.isin(onsets, rpeaks)`
+#    finds almost nothing and looks like a misalignment bug. Re-measure with
+#    ecgbench.labels.picsdb.verify_bradycardia_onsets().
+#
+# 3. EVERY RECORD CLIPS AT THE 16-BIT RAIL, AND TWO DO IT FOR TENS OF MINUTES.
+#    All ten touch both +/-32767. For eight it is 1-15 samples; infant5 sits at the
+#    negative rail for 422,773 samples (1,691 s, 0.96% of the record) and infant1
+#    for 160,567 (642 s, 0.39%), at -40.96 mV — nothing an infant heart did. That
+#    is what amplitude_range_mv has to cover, and why it is +/-41 mV rather than a
+#    physiologic bound. WFDB's invalid marker (-32768) appears NOWHERE, so no
+#    record produces NaN.
+#
+# 4. THERE ARE LONG STRETCHES OF PERFECTLY CONSTANT SIGNAL, AND NO CHECK SEES
+#    THEM. Each record carries 239 s to 3,147 s in constant runs of a second or
+#    more; the longest single run is 1,456 s — 24 minutes — in infant5. ECGBench's
+#    flat_line check tests variance over the WHOLE record, which a 20-70 hour
+#    recording passes trivially, so all 10 records are valid and `clean` equals
+#    `original`. Read flat_secs / flat_fraction / longest_flat_secs from the labels
+#    before choosing a window; the validation report cannot tell you this.
+#
+# 5. R-PEAK ANNOTATION DOES NOT COVER THE WHOLE RECORDING. Coverage runs 94.0% to
+#    99.9%. infant10 has a 7,667 s (2.13 h) UNANNOTATED TAIL and 49 internal gaps
+#    over 10 s; infant5 opens with 1,631 s of unannotated signal and infant2 with
+#    409 s. An empty rpeaks() return means "not annotated here", not "no beats".
+#
+# 6. THE RESPIRATION SIGNAL IS A COMPANION RECORD, NOT A LEAD. Each infant also
+#    has an infantN_resp record — 50 Hz for nine of them, 500 Hz for infant1 — with
+#    algorithmically extracted peaks the authors explicitly did NOT manually vet,
+#    unlike the R peaks and the bradycardia onsets. It is not an ECG, so ECGBench
+#    neither splits nor validates it; resp_path in the labels points at it. Its
+#    length does not always match the ECG's: infant5's respiration record runs 1.0 h
+#    LONGER than its ECG.
+#
+# NO DEMOGRAPHICS SHIP PER RECORD. The release states the cohort — post-conceptional
+# age 29 3/7 to 34 2/7 weeks (mean 31 1/7), study weight 843-2,100 g (mean 1,468) —
+# without saying which infant is which, so no age or weight is attached to any row.
+
+name: "Preterm Infant Cardio-Respiratory Signals Database"
+slug: "picsdb"
+version: "1.0.0"
+url: "https://physionet.org/content/picsdb/1.0.0/"
+download_url: null  # PICSDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  Ten simultaneous ECG and respiration recordings — 439.8 hours of ECG, 20.3 h to
+  70.3 h per infant — collected at the bedside from Philips IntelliVue MP70
+  monitors in the neonatal intensive care unit of the University of Massachusetts
+  Memorial Healthcare. The infants were 29 3/7 to 34 2/7 weeks post-conceptional
+  age (mean 31 1/7) and 843 to 2,100 g at study (mean 1,468), all spontaneously
+  breathing room air, none with congenital or perinatal CNS infection,
+  intraventricular haemorrhage of grade II or above, or hypoxic-ischaemic
+  encephalopathy. A single ECG channel was recorded at 500 Hz for eight infants
+  and as a 250 Hz compound signal for the other two; respiration was measured with
+  inductance bands around the chest wall and abdomen, at 50 Hz for nine infants and
+  500 Hz for one, synchronised to the ECG by the VueLogger acquisition software.
+  The database was published to support prediction of bradycardia, and its ground
+  truth is 622 manually validated bradycardia onsets — heart rate below 100 bpm for
+  at least two beats — alongside 3,797,503 R peaks located by a modified
+  Pan-Tompkins detector and visually inspected for artefact. The respiration peaks
+  were extracted algorithmically and, unlike the other two layers, were never
+  manually vetted.
+citation: >
+  Gee AH, Barbieri R, Paydarfar D, Indic P. Predicting Bradycardia in Preterm
+  Infants Using Point Process Analysis of Heart Rate. IEEE Transactions on
+  Biomedical Engineering 64(9):2300-2308 (2017).
+  PhysioNet additionally asks for: Goldberger AL, Amaral LAN, Glass L, Hausdorff
+  JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank,
+  PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C2QQ2M"
+
+creators:
+  - type: Organization
+    name: "University of Massachusetts Memorial Healthcare / University of Massachusetts Medical School"
+    url: "https://physionet.org/content/picsdb/1.0.0/"
+
+# --- Signal Properties ---
+signal_format: "wfdb"
+# Every header declares a real per-record gain — 800.4159 to 1420.7631 adu/mV, a
+# different value in nine of the ten — and units of mV, so wfdb returns millivolts
+# and nothing needs scaling. This is NOT the afdb/chfdb case of a `0` gain falling
+# back to wfdb's 200 adu/mV default.
+signal_unit_scale: 1.0
+leads: 1
+# The PREDOMINANT name, not the only one: seven headers say "II", infant1 and
+# infant5 say "ECG", and infant10 says "I" — see record_lead_layouts. Every record
+# stores exactly ONE channel, so this is a naming difference rather than a layout
+# difference, and taking any of the three at face value for the whole release
+# would be wrong for at least three records.
+lead_names: ["II"]
+# All three single-channel layouts in the release, counted from the 10 headers:
+#   II   7 records (infant2, 3, 4, 6, 7, 8, 9)
+#   ECG  2          (infant1, infant5 — the 250 Hz compound recordings)
+#   I    1          (infant10)
+# Declaring these makes ECGDataset(leads=...) read each record's own header and
+# resolve the requested NAME against it, and raise for a record whose header does
+# not use that name rather than handing back the one channel there is. So
+# leads=["II"] gives seven records and raises on the other three, which is the
+# honest answer: the release states only "a single channel of a 3-lead ECG" and
+# nothing anywhere says the "ECG" channel is lead II. Omit leads= to take whatever
+# channel each record holds.
+record_lead_layouts:
+  - ["II"]
+  - ["ECG"]
+  - ["I"]
+# Nominal: the MEDIAN length in seconds. Records are NOT uniform and not close to
+# it — 73,209 s (20.34 h, infant7) to 253,138 s (70.32 h, infant9). The SHORTEST
+# record in SAMPLES is infant7's 36,604,500, which is the ceiling on any window=.
+duration_seconds: 166302
+# WARNING: like challenge2021, each record exists at exactly ONE rate — 500 Hz for
+# eight records, 250 Hz for infant1 and infant5 — so sampling rate is a per-record
+# PROPERTY rather than a choice of representation. Both are listed for
+# documentation; there is a single path column keyed on the nominal 500 Hz (see
+# signal_path_columns), so ECGDataset(sampling_rate=250) raises rather than
+# silently handing back a mixed-rate dataset. To select by rate, filter on the
+# per-record `sampling_rate` label column.
+sampling_rates: [250, 500]
+default_sampling_rate: 500
+
+# --- Folds ---
+# Ten, the default: 10 records from 10 infants make exactly ten folds of one
+# infant each, which is leave-one-infant-out. Unlike szdb this needs no override —
+# but note what it means for the default split mapping, which is train = folds
+# 1-8 (8 infants), val = fold 9 (1 infant), test = fold 10 (1 infant). One infant
+# is not an evaluation set; use split=None with fold_numbers=[...] for real
+# cross-validation.
+n_folds: 10
+
+# --- File Structure ---
+# No metadata file ships in any form. RECORDS, ANNOTATORS, the headers and the
+# annotation files are the whole of it. PICSDBSplitter builds this CSV on first run
+# via ecgbench.labels.picsdb, which reads all 1.58 billion samples once to measure
+# the clipping and constant runs of points 3 and 4. The validation engine re-reads
+# it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "infant1_ecg" ...
+# "infant10_ecg", which are not all-digit, so pandas keeps them as strings and the
+# CSV round trip cannot destroy anything. export_splits verifies this.
+zero_padded_identifiers: false
+# SET, though it is 1:1 here — one ECG record per infant, ten of each. It is
+# declared rather than left null so the split is grouped, which costs nothing
+# today and keeps the partition correct if a re-release ever adds a second
+# recording for an infant. Values are "infant1" ... "infant10", derived from the
+# record name; the release ships no separate subject column, but unlike szdb the
+# name states the subject unambiguously so nothing is reconstructed.
+patient_id_column: "subject_id"
+
+# One column for the whole dataset, keyed on the nominal rate. Records carry their
+# own rate in the WFDB header and wfdb reads it, so nothing needs a per-rate column
+# — see the sampling_rates note above.
+signal_path_columns:
+  500: "signal_path"  # bare record stem, e.g. "infant1_ecg" — the tree is flat
+
+# --- Labels ---
+# One value for all 10 records: the cohort the release describes, not something
+# derived from the files. It is here so a user combining this database with an
+# adult or term-infant cohort has a record-level class to join on, and it is ALSO
+# the stratification label, which is explained in the block below.
+label_column: "cohort_label"
+label_format: "single"
+
+stratification:
+  # Custom, and the label is a CONSTANT. Ten records from ten infants over ten
+  # folds puts exactly one infant in each fold whatever the label says, so there is
+  # nothing left to balance — and every non-constant axis raises before it can be
+  # tried, because StratifiedGroupKFold needs every class to hold at least n_folds
+  # records and ten records admit only one such class. Measured rather than
+  # asserted: a median cut on bradycardia rate (0.85-1.83 per hour) gives 5/5 and
+  # raises "n_splits=10 cannot be greater than the number of members in each
+  # class"; sampling rate gives 8/2 and raises; lead name gives 7/2/1 and raises.
+  #
+  # A constant is legitimate only because the split is grouped: it reduces
+  # StratifiedGroupKFold to a plain partition of the ten infants. Do not read the
+  # fold layout as balanced on anything. See
+  # ecgbench.labels.picsdb.attach_stratify_class.
+  method: "custom_function"
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 1
+  # DELIBERATELY EMPTY, like afdb, chfdb, nsrdb, ptbdb, szdb and challenge2021:
+  # length varies legitimately and enormously — 20.34 h to 70.32 h, a factor of
+  # 3.5 — so any single threshold would drop sound records as truncated. Omitting
+  # the rate DISABLES the check rather than making it fire; `truncated_signal`
+  # stays in the list below only so a future re-release with uniform lengths needs
+  # one line here.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # THE UNION OF TEN DIFFERENT RAILS, because gain and baseline differ per record.
+  # Samples are 16-bit and every record reaches both +/-32767, so its rail in
+  # millivolts is (+/-32767 - baseline) / gain — which ranges over
+  # [-40.9603, +40.9150] across the ten. The bound is the widest of them, so no
+  # record can fail for a rail its own header declares. It is NOT a physiologic
+  # range and must not be read as one: what the check still catches is a mis-scaled
+  # copy, which would exceed this by orders of magnitude on the first record.
+  #
+  # FLOAT32 SLACK IS NEEDED ON THE LOWER BOUND, and this is the chfdb trap exactly.
+  # `_load_signal` casts to float32 and compares against the float64 bound from
+  # this file. infant7's rail is -40.960303237 in float64 but -40.960304260 in
+  # float32 — it rounds AWAY from zero — so a bound of -40.9603 would exclude the
+  # very record it was computed from, and the reported figure would read
+  # "min_-40.96" and look like a genuine outlier. -40.9604 gives it a
+  # ten-thousandth of a millivolt of room. The upper bound needs none: infant10's
+  # 40.914979325 becomes 40.914978027 in float32, which rounds TOWARD zero and so
+  # cannot trip a bound of 40.915.
+  amplitude_range_mv: [-40.9604, 40.915]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/picsdb.py scans the headers, counts converter
+# clipping and constant runs over all 1.58 billion samples, reads the 622
+# bradycardia onsets out of the .atr files and the 3,797,503 R peaks out of the
+# .qrsc files, summarises whole-record HRV and R-peak coverage, and reports the
+# companion respiration record. It also exposes bradycardia_onsets(), rpeaks() and
+# respiration_peaks(), which align to ECGDataset's window=. There is no source CSV
+# to point at — the headers and the annotation files are the source.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "neonatal"
+    - "preterm infant"
+    - "NICU"
+    - "bradycardia"
+    - "apnea of prematurity"
+    - "heart rate variability"
+    - "R peaks"
+    - "respiration"
+    - "single-lead"
+    - "long-term"
+    - "PhysioNet"
+  rai_data_collection: >
+    Ten preterm infants were studied in the neonatal intensive care unit of the
+    University of Massachusetts Memorial Healthcare. They were 29 3/7 to 34 2/7
+    weeks post-conceptional age (mean 31 1/7) and 843 to 2,100 g at study (mean
+    1,468); all were spontaneously breathing room air, and infants with congenital
+    or perinatal CNS infection, intraventricular haemorrhage of grade II or above,
+    or hypoxic-ischaemic encephalopathy were excluded. A single ECG channel was
+    taken from the bedside Philips IntelliVue MP70 monitor at 500 Hz for eight
+    infants and as a 250 Hz compound signal for two, and respiration from
+    inductance bands around the chest wall and abdomen at 50 Hz for nine infants
+    and 500 Hz for one, the two synchronised by VueLogger acquisition software
+    developed at Harvard's Wyss Institute. Recordings run 20.3 to 70.3 hours per
+    infant, 439.8 hours in total, stored as 16-bit WFDB with a per-record gain of
+    800 to 1,421 adu/mV. R peaks were located with a modified Pan-Tompkins
+    detector and visually inspected to remove artefact; bradycardia onsets — heart
+    rate below 100 bpm, equivalently RR longer than 0.6 s, sustained over at least
+    two beats, with successive events inside a 3-minute window aggregated — were
+    manually validated, and number 622. Respiration peaks were extracted
+    algorithmically and were not manually vetted.
+  rai_data_biases: >
+    This is ten infants from one neonatal unit, and nothing derived from it
+    generalises. There is no negative class and no control cohort: every recording
+    is a preterm infant of 29 to 34 weeks post-conceptional age in the same NICU,
+    so the record-level label is a constant and the only learnable target is an
+    event within a recording. The cohort is narrow by design — spontaneously
+    breathing in room air, no significant intraventricular haemorrhage, no
+    hypoxic-ischaemic encephalopathy — so nothing here speaks to ventilated
+    infants, to extremely low gestational age, or to term neonates, let alone to
+    adults; heart rates of 130 to 167 bpm mean that adult HRV parameters and
+    adult-trained detectors are simply mis-specified on this data. No sex,
+    ethnicity, individual gestational age, individual weight, medication or outcome
+    is released per record, so no subgroup analysis is possible and none of the
+    stated cohort ranges can be attached to a recording. Signal quality is uneven
+    and unannotated: every record clips at the converter rail, two of them for 642
+    s and 1,691 s, each record holds between 4 and 52 minutes of perfectly constant
+    signal, and R-peak annotation covers only 94.0% to 99.9% of the recorded time —
+    infant10's final 2.13 hours carry none at all — so a randomly chosen window may
+    contain no usable signal and no reference. Two records were digitised at half
+    the rate of the other eight. The bradycardia definition is a fixed
+    rate-and-duration threshold with 3-minute aggregation rather than a clinical
+    adjudication, so event counts (28 to 97 per infant) are a property of that rule
+    as much as of the infants.
+  rai_personal_sensitive_info: >
+    De-identified, and unusually bare: the headers carry no comment lines at all,
+    so there is no age, no sex, no clinical description, no start date and no start
+    time — the only per-record fields are the record name, the sampling rate, the
+    gain, the baseline and the signal length. Record names are the sequential
+    labels infant1 to infant10, and ECGBench's subject_id values are those same
+    names; they correspond to no hospital identifier. The release states the
+    cohort's post-conceptional age range and study weight range without attaching
+    either to a recording, so nothing here narrows an individual infant. The
+    subjects are nonetheless a small and distinctive group — ten preterm infants
+    admitted to one named NICU — and the recordings are continuous multi-day
+    physiological monitoring of identifiable individuals at the time they were
+    made, which is worth stating plainly even though the released files carry no
+    dates to anchor them to.

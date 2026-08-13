@@ -497,6 +497,34 @@ class TestShippedLeadNames:
         assert ["V5", "V2"] in config.record_lead_layouts
         assert ["V5", "MLII"] in config.record_lead_layouts
 
+    def test_picsdb_names_its_single_channel_three_different_ways(self):
+        """One channel per record, and the ten headers do not agree what it is.
+
+        The mitdb problem at a lead count of one: seven records call the single
+        channel ``II``, infant1 and infant5 (the 250 Hz "compound" recordings) call
+        it ``ECG``, and infant10 calls it ``I``. ``alternate_lead_names`` cannot
+        express that — it is keyed by lead *count*, and the count is 1 throughout —
+        so ``record_lead_layouts`` carries it and ``leads=["II"]`` is resolved
+        against each record's own header.
+
+        The consequence is deliberate and worth pinning: ``leads=["II"]`` RAISES
+        for three of the ten records rather than handing back the one channel there
+        is. The release says only "a single channel of a 3-lead ECG" and nothing
+        states that the ``ECG`` channel is lead II, so returning it under that name
+        would let it be stacked with real lead II from other datasets.
+        """
+        from ecgbench.config import load_config
+
+        config = load_config("picsdb")
+        assert config.leads == 1
+        assert config.lead_names == ["II"]  # the predominant name, 7 of 10
+        assert len(config.lead_names) == config.leads
+        assert config.record_lead_layouts == [["II"], ["ECG"], ["I"]]
+        # Every layout is one channel — this is a naming difference, not a layout
+        # difference, which is precisely what a count-keyed map cannot see.
+        assert {len(layout) for layout in config.record_lead_layouts} == {1}
+        assert config.alternate_lead_names is None
+
     def test_staffiii_stores_nine_leads_with_the_precordials_first(self):
         """STAFF III inverts the limb-then-chest order every other dataset uses.
 

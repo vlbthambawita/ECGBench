@@ -130,6 +130,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         ningbo_iva,
         norwegian_athlete_ecg,
         nsrdb,
+        picsdb,
         ptbdb,
         ptbxl,
         qtdb,
@@ -190,6 +191,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "ikem": ikem.load_labels,
         "sami_trop": sami_trop.load_labels,
         "zzu_pecg": zzu_pecg.load_labels,
+        "picsdb": picsdb.load_labels,
     }
 
 

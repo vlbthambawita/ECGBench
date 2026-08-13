@@ -12036,3 +12036,416 @@ class TestVitalDBArrhythmiaLabels:
         assert len(RHYTHM_LABELS) == 11
         assert NOISE_LABEL in RHYTHM_LABELS
         assert len(set(RHYTHM_LABELS) - {NOISE_LABEL}) == 10
+
+
+class TestPICSDBLabels:
+    """Preterm infants: an event time as ground truth, and two traps around it.
+
+    This release has no record-level class at all — ten preterm infants from one
+    NICU — so what these tests pin is the two things a user has to get right to
+    use the events. The bradycardia onset does **not** land on a `.qrsc` R peak,
+    and two of the ten records sample at half the rate of the other eight, so a
+    window in samples is a different span of time depending on the record.
+    """
+
+    def _record(
+        self,
+        tmp_path,
+        name,
+        d_signal,
+        fs=500,
+        gain=800.0,
+        baseline=0,
+        lead="II",
+        brady=(),
+        peaks=(),
+    ):
+        """Write one WFDB record with its .atr onsets and .qrsc R peaks."""
+        wfdb = pytest.importorskip("wfdb")
+        import numpy as np
+
+        wfdb.wrsamp(
+            name,
+            fs=fs,
+            units=["mV"],
+            sig_name=[lead],
+            d_signal=np.asarray(d_signal, dtype=np.int16).reshape(-1, 1),
+            fmt=["16"],
+            adc_gain=[float(gain)],
+            baseline=[int(baseline)],
+            write_dir=str(tmp_path),
+        )
+        for extension, samples, symbol in (
+            ("atr", brady, "["),
+            ("qrsc", peaks, "N"),
+        ):
+            if len(samples) == 0:
+                continue
+            wfdb.wrann(
+                name,
+                extension,
+                sample=np.asarray(samples, dtype=np.int64),
+                symbol=[symbol] * len(samples),
+                fs=fs,
+                write_dir=str(tmp_path),
+            )
+
+    def _tree(self, tmp_path, records, with_resp=True):
+        """A dataset root: ECG records, companion respiration records, RECORDS."""
+        import numpy as np
+
+        wfdb = pytest.importorskip("wfdb")
+        names = []
+        for spec in records:
+            name = spec["name"]
+            self._record(tmp_path, **spec)
+            names.append(name)
+            if not with_resp:
+                continue
+            resp = name.removesuffix("_ecg") + "_resp"
+            self._record(
+                tmp_path,
+                resp,
+                np.arange(1000, dtype=np.int16),
+                fs=50,
+                lead="RESP",
+            )
+            wfdb.wrann(
+                resp, "resp",
+                sample=np.arange(5, dtype=np.int64) * 100 + 10,
+                symbol=["N"] * 5, fs=50, write_dir=str(tmp_path),
+            )
+            names.append(resp)
+        (tmp_path / "RECORDS").write_text("\n".join(names) + "\n", encoding="utf-8")
+        return tmp_path
+
+    def test_labels_come_from_headers_and_annotation_files(self):
+        from ecgbench.config import load_config
+
+        spec = load_config("picsdb").labels
+        assert spec is not None and spec.available
+        assert spec.source_csv is None  # there is no table of any kind in this release
+        assert spec.join_column == "record_name"
+
+    def test_the_two_annotators_are_atr_and_qrsc_and_neither_is_a_beat_layer(self):
+        """`.atr` here is an EVENT file, not the beat reference every MIT-BIH one is.
+
+        The shipped ANNOTATORS file spells it out: `.atr` is "Reference ECG
+        bradycardia onset locations" and `.qrsc` is "Reference ECG r peaks". So the
+        R peaks — the thing a reader reaches for `.atr` expecting — are in the
+        *other* file, and reading `.atr` as beats would give 622 "beats" across
+        439.8 hours.
+        """
+        from ecgbench.labels import picsdb
+
+        assert picsdb.BRADYCARDIA_ANNOTATOR == "atr"
+        assert picsdb.RPEAK_ANNOTATOR == "qrsc"
+        assert picsdb.RESPIRATION_ANNOTATOR == "resp"
+
+    def test_only_the_ecg_records_get_a_row_and_they_sort_numerically(self, tmp_path):
+        """RECORDS lists 20 names; the 10 respiration records are not ECG.
+
+        Sorting matters as much as filtering: the fold assignment is a pure
+        function of row order, and string order would put infant10 second. That
+        would change ``fold_digest`` for identical data.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import _records_file
+
+        root = self._tree(
+            tmp_path,
+            [
+                {"name": f"infant{i}_ecg", "d_signal": np.zeros(500, dtype=np.int16)}
+                for i in (1, 2, 10)
+            ],
+        )
+        assert _records_file(root) == ["infant1_ecg", "infant2_ecg", "infant10_ecg"]
+
+    def test_a_missing_records_file_names_the_release_and_the_tree_shape(self, tmp_path):
+        from ecgbench.labels import LabelSourceMissingError
+        from ecgbench.labels.picsdb import _records_file
+
+        with pytest.raises(LabelSourceMissingError) as excinfo:
+            _records_file(tmp_path)
+        message = str(excinfo.value)
+        assert "RECORDS" in message
+        assert "infant1_ecg.hea" in message
+        assert "physionet.org/content/picsdb" in message
+
+    def test_bradycardia_onsets_and_rpeaks_rebase_onto_the_window(self, tmp_path):
+        """Both helpers take ECGDataset's ``window=`` and return indices into it.
+
+        An onset outside the window must disappear rather than come back negative,
+        which is the whole point of clipping here — an index of -3 into a tensor is
+        a silent read from the far end.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import bradycardia_onsets, rpeaks
+
+        root = self._tree(
+            tmp_path,
+            [{
+                "name": "infant1_ecg",
+                "d_signal": np.zeros(10_000, dtype=np.int16),
+                "brady": [100, 5_000, 9_000],
+                "peaks": [90, 4_990, 8_990],
+            }],
+        )
+
+        assert bradycardia_onsets(root, "infant1_ecg").tolist() == [100, 5_000, 9_000]
+        assert bradycardia_onsets(root, "infant1_ecg", 4_000, 2_000).tolist() == [1_000]
+        assert rpeaks(root, "infant1_ecg", 4_000, 2_000).tolist() == [990]
+        # length=None reads to the end, as it does in ECGDataset.
+        assert bradycardia_onsets(root, "infant1_ecg", 5_000).tolist() == [0, 4_000]
+
+    def test_the_onset_does_not_land_on_an_rpeak_and_the_module_says_so(self, tmp_path):
+        """493 of 622 onsets sit exactly one sample *after* the opening R peak.
+
+        Which means ``np.isin(onsets, rpeaks)`` returns almost nothing on the real
+        release and looks like an off-by-one bug in ECGBench rather than a property
+        of the annotation. ``verify_bradycardia_onsets`` is what re-measures it, so
+        it has to report the offset rather than a yes/no.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import verify_bradycardia_onsets
+
+        fs = 500
+        # Beats every 0.4 s, then one 0.8 s gap — a bradycardia by the release's
+        # definition — with the onset one sample after the beat that opens it.
+        peaks = list(np.arange(10) * 200) + [2_200, 2_400, 2_600]
+        opener = 1_800  # the beat starting the 0.8 s interval to 2,200
+        root = self._tree(
+            tmp_path,
+            [{
+                "name": "infant1_ecg",
+                "d_signal": np.zeros(4_000, dtype=np.int16),
+                "brady": [opener + 1],
+                "peaks": peaks,
+            }],
+        )
+
+        row = verify_bradycardia_onsets(root).set_index("record_name").loc["infant1_ecg"]
+        assert row["n_bradycardias"] == 1
+        assert row["n_one_sample_after_rpeak"] == 1
+        assert row["n_on_an_rpeak"] == 0
+        assert row["n_within_2_samples"] == 1
+        assert row["median_offset_samples"] == 1.0
+        assert row["max_offset_secs"] == pytest.approx(1 / fs)
+
+    def test_converter_clipping_and_constant_runs_are_measured_from_the_samples(
+        self, tmp_path
+    ):
+        """Neither is in a header, and no ECGBench check can see either.
+
+        ``flat_line`` tests variance over the whole record, so a 24-minute constant
+        run inside a 48-hour recording passes it — which is exactly what infant5
+        does. ``amplitude_outlier`` only sees the extremes, and the extremes here
+        *are* the rail. So these columns are the only report of it.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import scan_signal
+
+        fs, gain, baseline = 500, 800.0, 20.0
+        signal = np.arange(10_000, dtype=np.int16) % 97  # varying, so variance is real
+        signal[1_000:2_000] = -32767  # 2 s pinned at the negative rail
+        signal[5_000:6_500] = 7  # 3 s of dead signal well inside range
+        root = self._tree(
+            tmp_path,
+            [{
+                "name": "infant1_ecg", "d_signal": signal,
+                "fs": fs, "gain": gain, "baseline": baseline,
+            }],
+        )
+
+        stats = scan_signal(root, "infant1_ecg")
+        assert stats["n_rail_samples"] == 1_000
+        assert stats["rail_secs"] == pytest.approx(2.0)
+        assert stats["rail_fraction"] == pytest.approx(0.1)
+        # The rail in millivolts is (rail - baseline) / gain, and BOTH differ per
+        # record in this release — which is why amplitude_range_mv is a union.
+        assert stats["rail_low_mv"] == pytest.approx((-32767 - baseline) / gain)
+        assert stats["rail_high_mv"] == pytest.approx((32767 - baseline) / gain)
+        assert stats["min_mv"] == pytest.approx((-32767 - baseline) / gain)
+        # 1,000 rail samples + 1,500 dead samples, both runs >= 1 s.
+        assert stats["flat_secs"] == pytest.approx(5.0)
+        assert stats["longest_flat_secs"] == pytest.approx(3.0)
+        assert stats["longest_flat_value_adu"] == 7
+        # WFDB's invalid marker would become NaN and fail nan_values; no shipped
+        # record has one, and this is how a re-release that did would show up.
+        assert stats["n_invalid_samples"] == 0
+
+    def test_a_constant_run_spanning_a_chunk_boundary_is_not_split_in_two(
+        self, tmp_path, monkeypatch
+    ):
+        """The scan is chunked, and the longest real run is 728,100 samples.
+
+        No sensible chunk size contains that, so the run has to be carried across
+        the boundary. Split in two, a 24-minute dead stretch would be reported as
+        two 12-minute ones — still flagged, but the ``longest_flat_secs`` a user
+        checks would be half what it is.
+        """
+        import numpy as np
+
+        from ecgbench.labels import picsdb
+
+        signal = np.arange(6_000, dtype=np.int16) % 89
+        signal[1_000:4_000] = -5  # 6 s at 500 Hz, straddling every small chunk
+        root = self._tree(
+            tmp_path,
+            [{"name": "infant1_ecg", "d_signal": signal, "fs": 500}],
+        )
+
+        monkeypatch.setattr(picsdb, "_SCAN_CHUNK", 512)
+        chunked = picsdb.scan_signal(root, "infant1_ecg")
+        monkeypatch.setattr(picsdb, "_SCAN_CHUNK", 8_000_000)
+        whole = picsdb.scan_signal(root, "infant1_ecg")
+
+        assert chunked["longest_flat_secs"] == pytest.approx(6.0)
+        assert chunked["longest_flat_secs"] == whole["longest_flat_secs"]
+        assert chunked["flat_secs"] == whole["flat_secs"]
+        assert chunked["longest_flat_value_adu"] == -5
+
+    def test_rpeak_coverage_is_reported_because_it_is_not_complete(self, tmp_path):
+        """infant10's last 2.13 h carry no R peaks, and nothing in the header says so.
+
+        An empty ``rpeaks()`` return there means "not annotated here", not "no
+        beats", so a supervised window has to be checked against these columns.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import summarise_annotations
+
+        fs = 500
+        # Beats every 0.4 s for the first 4 s, then nothing for the last 6 s.
+        peaks = list(np.arange(1_000, 3_000, 200))
+        root = self._tree(
+            tmp_path,
+            [{
+                "name": "infant1_ecg",
+                "d_signal": np.zeros(5_000, dtype=np.int16),
+                "peaks": peaks,
+                "brady": [1_500],
+            }],
+        )
+
+        row = summarise_annotations(root, "infant1_ecg", 5_000, fs)
+        assert row["n_rpeaks"] == len(peaks)
+        assert row["annotated_head_secs"] == pytest.approx(2.0)
+        assert row["annotated_tail_secs"] == pytest.approx(4.4)
+        assert row["annotated_fraction"] == pytest.approx(1 - (2.0 + 4.4) / 10.0)
+        assert row["n_bradycardias"] == 1
+        assert row["bradycardia_onsets_secs"] == "3.000"
+        assert row["mean_hr_bpm"] == pytest.approx(150.0)
+
+    def test_the_respiration_record_is_reported_but_never_gets_a_row(self, tmp_path):
+        """It is not an ECG, so it is neither validated nor split — only pointed at.
+
+        Its peaks are also the one annotation layer in this release the authors say
+        was **not** manually vetted, unlike the R peaks and the onsets.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import scan_records, summarise_respiration
+
+        root = self._tree(
+            tmp_path,
+            [{
+                "name": "infant1_ecg",
+                "d_signal": np.arange(2_000, dtype=np.int16) % 71,
+                "peaks": list(np.arange(0, 2_000, 200)),
+            }],
+        )
+
+        resp = summarise_respiration(root, "infant1_ecg")
+        assert resp["resp_path"] == "infant1_resp"
+        assert resp["resp_sampling_rate"] == 50
+        assert resp["n_resp_peaks"] == 5
+
+        df = scan_records(root)
+        assert list(df["record_name"]) == ["infant1_ecg"]
+        assert df.loc[0, "resp_path"] == "infant1_resp"
+
+    def test_the_subject_id_comes_from_the_record_name_and_is_one_to_one(self, tmp_path):
+        """Unlike szdb, nothing is reconstructed here — the name states the infant.
+
+        It is set rather than left null so the split is grouped, which costs nothing
+        at 1:1 and keeps the partition correct if a re-release adds a second
+        recording for an infant.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [
+                {"name": f"infant{i}_ecg", "d_signal": np.arange(1_000, dtype=np.int16) % 53}
+                for i in (1, 10)
+            ],
+        )
+        df = scan_records(root).set_index("record_name")
+        assert df.loc["infant1_ecg", "subject_id"] == "infant1"
+        assert df.loc["infant10_ecg", "subject_id"] == "infant10"
+        assert df["subject_id"].nunique() == len(df)
+
+    def test_the_stratification_label_is_a_constant_and_says_why(self):
+        """Ten records over ten folds admits exactly one class.
+
+        ``StratifiedGroupKFold`` raises unless a class holds at least ``n_folds``
+        records, so any non-constant axis fails before it can be tried — measured
+        in the docstring for bradycardia rate (5/5), sampling rate (8/2) and lead
+        name (7/2/1). A constant reduces the split to a plain partition of the ten
+        infants, which is leave-one-infant-out.
+        """
+        import pandas as pd
+
+        from ecgbench.labels.picsdb import COHORT_LABEL, attach_stratify_class
+
+        df = pd.DataFrame(
+            {
+                "record_name": [f"infant{i}_ecg" for i in range(1, 11)],
+                "subject_id": [f"infant{i}" for i in range(1, 11)],
+                "bradycardias_per_hour": [0.85, 1.14, 1.15, 1.38, 1.41,
+                                          1.48, 1.64, 1.67, 1.69, 1.83],
+            }
+        )
+        out = attach_stratify_class(df)
+        assert out["stratify_class"].nunique() == 1
+        assert out.loc[0, "stratify_class"] == COHORT_LABEL == "preterm_infant"
+        assert "nothing to balance" in attach_stratify_class.__doc__
+
+    def test_a_window_in_samples_is_not_a_window_in_time(self, tmp_path):
+        """Two of the ten records run at 250 Hz, and the column is the only warning.
+
+        ``sampling_rate`` is a per-record property here — ``picsdb.yaml`` keys its
+        single path column on the nominal 500 Hz — so anything converting samples
+        to seconds has to read it per record rather than use one global rate.
+        """
+        import numpy as np
+
+        from ecgbench.labels.picsdb import scan_records
+
+        root = self._tree(
+            tmp_path,
+            [
+                {"name": "infant1_ecg", "d_signal": np.arange(2_500, dtype=np.int16) % 53,
+                 "fs": 250, "lead": "ECG"},
+                {"name": "infant2_ecg", "d_signal": np.arange(5_000, dtype=np.int16) % 53,
+                 "fs": 500, "lead": "II"},
+            ],
+        )
+        df = scan_records(root).set_index("record_name")
+
+        # The same 10 s of recording, twice as many samples in one of them.
+        assert df.loc["infant1_ecg", "sampling_rate"] == 250
+        assert df.loc["infant2_ecg", "sampling_rate"] == 500
+        assert df.loc["infant1_ecg", "duration_secs"] == df.loc["infant2_ecg", "duration_secs"]
+        assert df.loc["infant1_ecg", "n_samples"] != df.loc["infant2_ecg", "n_samples"]
+        # And the single channel is named differently in each, which is what
+        # record_lead_layouts in the config exists for.
+        assert df.loc["infant1_ecg", "lead_name"] == "ECG"
+        assert df.loc["infant2_ecg", "lead_name"] == "II"

@@ -35,6 +35,7 @@ from . import (  # noqa: F401
     ningbo_iva,
     norwegian_athlete_ecg,
     nsrdb,
+    picsdb,
     ptbdb,
     ptbxl,
     qtdb,

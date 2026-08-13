@@ -1191,25 +1191,38 @@ def test_mitdb_declares_every_lead_layout_in_the_release():
     assert config.alternate_lead_names is None
 
 
-def test_only_four_st_and_arrhythmia_releases_declare_per_record_lead_layouts():
+def test_only_five_releases_declare_per_record_lead_layouts():
     """Each one needs the same evidence: layouts counted from the headers.
 
     This is not a style rule. Declaring the field switches ``ECGDataset`` from
     resolving leads once to reading every record's header, so it should appear
-    only where the layout genuinely varies. Four releases in the catalogue
+    only where the layout genuinely varies. Five releases in the catalogue
     qualify, and ``qtdb`` is the most extreme: 20 layouts over 105 records,
     against ``edb``'s 15 over 90, ``ltstdb``'s 12 over 86 and ``mitdb``'s 6 over
-    48. None of the four has a lead present in every record — ``qtdb`` least of
+    48. None of those four has a lead present in every record — ``qtdb`` least of
     all, where the modal layout is the placeholder pair ECG1/ECG2 and covers 57
     records. ``ltstdb`` is the only one whose lead *count* varies too (68 records
     of 2 and 18 of 3), which is why it needs this field rather than the
     count-keyed ``alternate_lead_names``.
+
+    ``picsdb`` is the fifth and the odd one out: **every** record stores exactly
+    one channel, and the ten headers simply disagree what to call it (``II`` in
+    seven, ``ECG`` in two, ``I`` in one). A count-keyed map has nothing to key on
+    when the count never changes, which is the same reason ``mitdb`` needs this
+    field — here taken to its limit.
     """
     declaring = [
         slug for slug in list_available_configs()
         if load_config(slug).record_lead_layouts
     ]
-    assert declaring == ["edb", "ltstdb", "mitdb", "qtdb"]
+    assert declaring == ["edb", "ltstdb", "mitdb", "picsdb", "qtdb"]
+    # The four ST/arrhythmia releases vary the pair; picsdb varies the name of a
+    # single channel, so its layouts are all length 1 and theirs never are.
+    assert all(
+        len(layout) == 1 for layout in load_config("picsdb").record_lead_layouts
+    )
+    for slug in ("edb", "ltstdb", "mitdb", "qtdb"):
+        assert max(len(layout) for layout in load_config(slug).record_lead_layouts) > 1
 
 
 def test_load_afdb_config():
@@ -2965,4 +2978,104 @@ def test_butqdb_amplitude_bound_is_the_union_of_every_records_rail():
     positive = attained(32767, 1.5581, -18289)
     assert positive == 32.768115997314453
     assert positive > 32.768
+    assert positive <= high
+
+
+def test_load_picsdb_config():
+    """Preterm infants: two sampling rates, three names for one channel, one class."""
+    config = load_config("picsdb")
+    assert config.slug == "picsdb"
+    assert config.version == "1.0.0"
+    assert config.signal_format == "wfdb"
+    # Every header declares a REAL per-record gain (800.4159 to 1420.7631 adu/mV)
+    # and units of mV, so wfdb returns millivolts and nothing needs rescaling.
+    # This is NOT the afdb/chfdb case of a `0` gain falling back to wfdb's default.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 1
+    # The PREDOMINANT name over the 10 headers, not the only one — see
+    # test_picsdb_names_its_single_channel_three_different_ways below.
+    assert config.lead_names == ["II"]
+    assert len(config.lead_names) == config.leads
+    # BOTH rates, because rate is a per-record PROPERTY here (250 Hz for infant1
+    # and infant5, 500 Hz for the other eight) — but only one path column, keyed on
+    # the nominal 500, so ECGDataset(sampling_rate=250) raises rather than handing
+    # back a mixed-rate subset. Same shape as challenge2021.
+    assert config.sampling_rates == [250, 500]
+    assert config.default_sampling_rate == 500
+    assert config.signal_path_columns == {500: "signal_path"}
+    assert 250 not in config.signal_path_columns
+    # No metadata file of any kind ships: PICSDBSplitter generates this from the
+    # headers, the .atr onsets and the .qrsc R peaks.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # 1:1 with records, and set rather than null so the split is grouped. Unlike
+    # szdb nothing is reconstructed — the record name states the infant.
+    assert config.patient_id_column == "subject_id"
+    # Ten records from ten infants make ten folds of one infant each, so unlike
+    # szdb this needs no override.
+    assert config.n_folds == 10
+    # ODC-By 1.0 — openly licensed, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Record names are "infant1_ecg".."infant10_ecg" — not all-digit, so the CSV
+    # round-trip cannot strip anything.
+    assert config.zero_padded_identifiers is False
+    assert config.identifier_dtypes() == {}
+    assert config.label_column == "cohort_label"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+    assert config.has_predefined_splits is False
+    # Module-based labels: there is no table in the release to point at.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_name"
+
+
+def test_picsdb_declares_no_expected_samples_because_length_varies_by_a_factor_of_three():
+    """20.34 h to 70.32 h, so any single threshold would drop sound records.
+
+    Omitting the rate DISABLES ``truncated_signal`` rather than making it fire,
+    which is the correct escape hatch for a genuinely variable-length release —
+    the same choice afdb, chfdb, nsrdb, ptbdb, szdb and challenge2021 make.
+    """
+    config = load_config("picsdb")
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    # Still listed, so a re-release with uniform lengths needs one line here.
+    assert "truncated_signal" in config.validation.checks
+
+
+def test_picsdb_amplitude_bounds_clear_every_records_own_rail_in_float32():
+    """The chfdb trap, on the lower bound: float32 rounds infant7's rail outwards.
+
+    Every one of the ten records reaches both 16-bit rails, and gain and baseline
+    differ per record, so the bound is the union of ten different millivolt rails.
+    ``_load_signal`` casts to float32 and compares against the float64 bound from
+    the YAML, so an attained rail that float32 rounds AWAY from zero excludes the
+    very record it was computed from — and the reported figure would read
+    "min_-40.96" and look like a genuine outlier.
+    """
+    import numpy as np
+
+    config = load_config("picsdb")
+    assert config.validation is not None
+    assert config.validation.amplitude_range_mv == (-40.9604, 40.915)
+    low, high = config.validation.amplitude_range_mv
+
+    def attained(adc, gain, baseline):
+        """What _load_signal produces: float64 conversion, then a float32 cast."""
+        return float(np.float32((adc - baseline) / gain))
+
+    # infant7 (gain 1283.8528, baseline 19820) reaches the negative rail, and
+    # float32 rounds it further from zero than float64 has it.
+    negative = attained(-32767, 1283.8528, 19820)
+    assert negative == -40.960304260253906
+    assert negative < -40.960303237  # the float64 value, which is not enough
+    assert negative >= low
+    # infant10 (gain 800.4159, baseline 18) reaches the positive rail, and float32
+    # rounds it TOWARD zero, so no slack is needed on that side.
+    positive = attained(32767, 800.4159, 18)
+    assert positive == 40.914978027343750
+    assert positive < 40.914979325  # the float64 value
     assert positive <= high
