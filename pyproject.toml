@@ -39,7 +39,10 @@ hf = ["huggingface_hub>=0.20.0", "python-dotenv>=1.0.0"]
 # Datasets shipping one HDF5 array per record (sph). Only the hdf5 branch of
 # _load_signal needs it, so it stays out of the base install.
 hdf5 = ["h5py>=3.0.0"]
-all = ["ecgbench[torch,croissant,download,hf,hdf5]"]
+# Datasets whose only metadata table is a pre-2007 binary .xls (ucddb's
+# SubjectDetails.xls). openpyxl cannot read that format and pandas needs xlrd.
+xls = ["xlrd>=2.0.1"]
+all = ["ecgbench[torch,croissant,download,hf,hdf5,xls]"]
 dev = [
     "ecgbench[all]",
     "pytest>=7.0.0",

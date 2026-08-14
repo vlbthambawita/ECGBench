@@ -12699,3 +12699,296 @@ class TestECGCapableSmartwatchesLabels:
 
         with pytest.raises(FileNotFoundError, match="one directory per device"):
             scan_records(tmp_path, self._config())
+
+
+class TestUCDDBLabels:
+    """Two simultaneous recordings of one night, and the clock that connects them.
+
+    What these tests pin is the part of this release nothing upstream states: the
+    respiratory events and sleep epochs are stamped in *polysomnogram* time while
+    the Holter's own timestamps are archive placeholders, so every annotation has
+    to be moved onto the ECG by a recovered offset. Plus the two duplication
+    defects — one documented, one not.
+    """
+
+    #: The real column names of SubjectDetails.xls, in its own order.
+    COLUMNS = [
+        "S/No", "Study Number", "Height (cm)", "Weight (kg)", "Gender",
+        "PSG Start Time", "PSG AHI", "BMI", "Age", "Epworth Sleepiness Score",
+        "Study Duration (hr)", "Sleep Efficiency (%)", "No of data blocks in EDF",
+    ]
+
+    def _tree(self, tmp_path, write_edf_file, records, psg_start="23:00:00"):
+        """records: [(rec, ahi, n_events, n_sleep_epochs)] -> a miniature UCDDB tree."""
+        import numpy as np
+
+        rows = []
+        for index, (rec, ahi, n_events, n_sleep) in enumerate(records):
+            write_edf_file(
+                tmp_path / f"{rec}_lifecard.edf",
+                [(lead * 1000 + np.arange(1280)).astype(np.int16) for lead in range(3)],
+                ["chan 1", "chan 2", "chan 3"], [128] * 3,
+                physical_range=(0.0, 10.0), digital_range=(0.0, 4095.0),
+            )
+            # The polysomnogram is the time reference: its EDF header start time
+            # is what every annotation's time of day is measured against.
+            write_edf_file(
+                tmp_path / f"{rec}.rec",
+                [np.arange(1280, dtype=np.int16), np.arange(80, dtype=np.int16)],
+                ["ECG", "SpO2"], [128, 8],
+                starttime=psg_start.replace(":", "."),
+            )
+            (tmp_path / f"{rec}_stage.txt").write_text(
+                "\n".join(["0"] * 20 + ["3"] * n_sleep) + "\n", encoding="utf-8"
+            )
+            lines = [
+                "                              Respiratory Event List",
+                "        Respiratory Event           Desaturation   Snore Arousal     B/T",
+                " Time       Type   PB/CS  Duration  Low    %Drop                 Rate  Change",
+            ]
+            for i in range(n_events):
+                lines.append(
+                    f"23:{30 + i:02d}:00  HYP-O             16"
+                    "       89.9    4.1     +     -      64.7   -5.7 "
+                )
+            # One periodic-breathing episode, which must NOT count toward the AHI.
+            lines.append(
+                "02:00:00  PB EVENT  PB      14                       -     -              "
+            )
+            (tmp_path / f"{rec}_respevt.txt").write_text(
+                "\r\n".join(lines) + "\r\n\x1a", encoding="utf-8"
+            )
+            rows.append(
+                dict(zip(self.COLUMNS, [
+                    index + 1, rec.upper(), 175, 90.0, "M", psg_start, ahi, 29.4, 50,
+                    10, 1.0, 83, 10,
+                ]))
+            )
+        pd.DataFrame(rows).to_csv(tmp_path / "SubjectDetails.csv", index=False)
+        return tmp_path
+
+    def test_it_reads_demographics_events_and_stages_into_one_frame(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.labels.ucddb import load_labels
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 40, 100)])
+        df = load_labels(root, sample_config)
+
+        assert list(df.index) == ["ucddb002"]
+        row = df.loc["ucddb002"]
+        assert row["psg_ahi"] == 23
+        assert row["age"] == 50 and row["sex"] == "M"
+        # 40 hypopneas plus one periodic-breathing episode: 41 events, 40 counted.
+        assert row["n_resp_events"] == 41
+        assert row["n_apnea_hypopnea"] == 40
+        assert row["n_hypopnea_obstructive"] == 40
+        assert row["n_periodic_breathing"] == 1
+        assert row["n_epochs"] == 120
+        assert row["n_epochs_wake"] == 20 and row["n_epochs_s2"] == 100
+        # 100 epochs x 30 s = 50 min asleep, so 40 events is 48 per hour.
+        assert row["sleep_time_h"] == pytest.approx(50 / 60, abs=1e-3)
+        assert row["ahi_recomputed"] == pytest.approx(48.0)
+
+    def test_periodic_breathing_and_possible_events_stay_out_of_the_index(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """Excluding both is what reproduces the shipped AHI on the real files."""
+        from ecgbench.labels.ucddb import EVENT_TYPES
+
+        assert EVENT_TYPES["PB"] is False
+        assert EVENT_TYPES["POSSIBLE"] is False
+        assert all(EVENT_TYPES[k] for k in EVENT_TYPES if k.startswith(("APNEA", "HYP")))
+
+    def test_the_optional_columns_are_read_by_position_not_by_splitting(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """Desaturation and bradycardia fields are often blank; splitting shifts them.
+
+        A whitespace split would put the SpO2 nadir in `duration_secs` and the
+        arousal flag in `heart_rate_bpm`, which is exactly what it did first time.
+        """
+        from ecgbench.labels.ucddb import parse_respiratory_events
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 2, 100)])
+        events = parse_respiratory_events(root / "ucddb002_respevt.txt")
+
+        first = events.iloc[0]
+        assert first["event_type"] == "HYP-O"
+        assert first["duration_secs"] == 16
+        assert first["spo2_low_pct"] == pytest.approx(89.9)
+        assert first["spo2_drop_pct"] == pytest.approx(4.1)
+        assert first["snore"] == "+"
+        assert first["arousal"] == "-"
+        assert first["heart_rate_bpm"] == pytest.approx(64.7)
+        assert first["heart_rate_change_bpm"] == pytest.approx(-5.7)
+        # The periodic-breathing row carries its marker in the PB/CS column.
+        assert events.iloc[-1]["event_type"] == "PB"
+        assert events.iloc[-1]["pb_cs"] == "PB"
+
+    def test_annotations_are_moved_onto_the_holter_clock(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """The whole point of PSG_OFFSET_SECS: a PSG time is not a Holter time."""
+        from ecgbench.labels.ucddb import PSG_OFFSET_SECS, respiratory_events, sleep_stages
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 3, 100)])
+        offset = PSG_OFFSET_SECS["ucddb002"][0]
+
+        stages = sleep_stages(root, "ucddb002")
+        assert stages.loc[0, "psg_secs"] == 0
+        assert stages.loc[0, "holter_secs"] == offset
+        assert stages.loc[1, "holter_secs"] == offset + 30
+
+        events = respiratory_events(root, "ucddb002")
+        # First event is 23:30:00, the PSG started at 23:00:00 -> 1800 s in.
+        assert events.loc[0, "holter_secs"] == offset + 1800
+
+    def test_an_event_after_midnight_does_not_go_backwards(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """Times of day wrap; every one of these studies starts in the evening."""
+        from ecgbench.labels.ucddb import PSG_OFFSET_SECS, respiratory_events
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 1, 100)])
+        events = respiratory_events(root, "ucddb002")
+        offset = PSG_OFFSET_SECS["ucddb002"][0]
+
+        # The trailing PB row is at 02:00:00, three hours after a 23:00 start.
+        assert events.iloc[-1]["holter_secs"] == offset + 3 * 3600
+        assert (events["holter_secs"] > 0).all()
+
+    def test_the_duplicated_holter_is_flagged_and_carries_no_offset(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """ucddb028's ECG is ucddb014's, so its own annotations cannot be placed on it."""
+        from ecgbench.labels.ucddb import HOLTER_DUPLICATES, PSG_OFFSET_SECS, load_labels
+
+        assert HOLTER_DUPLICATES == {"ucddb028": "ucddb014"}
+        assert "ucddb028" not in PSG_OFFSET_SECS
+
+        root = self._tree(
+            tmp_path, write_edf_file, [("ucddb014", 36, 20, 100), ("ucddb028", 46, 25, 100)]
+        )
+        df = load_labels(root, sample_config)
+
+        assert bool(df.loc["ucddb014", "waveform_matches_subject"]) is True
+        assert bool(df.loc["ucddb028", "waveform_matches_subject"]) is False
+        assert df.loc["ucddb028", "holter_duplicate_of"] == "ucddb014"
+        assert np.isnan(df.loc["ucddb028", "psg_offset_secs"])
+        assert bool(df.loc["ucddb028", "psg_offset_reliable"]) is False
+        # One group, so the shared waveform cannot straddle a fold.
+        assert (
+            df.loc["ucddb014", "recording_group"]
+            == df.loc["ucddb028", "recording_group"]
+            == "ucddb014+ucddb028"
+        )
+
+    def test_ucddb002_is_recorded_as_having_two_distinct_leads(self):
+        """Documented upstream, and verified: its channels 2 and 3 are equal."""
+        from ecgbench.labels.ucddb import DISTINCT_LEAD_COUNTS
+
+        assert DISTINCT_LEAD_COUNTS == {"ucddb002": 2}
+
+    def test_the_two_unreliable_alignments_are_declared_rather_than_hidden(self):
+        """ucddb013 and ucddb023 fail the thresholds; nothing else does."""
+        from ecgbench.labels.ucddb import PSG_OFFSET_SECS, RELIABLE_ALIGNMENT
+
+        unreliable = {
+            record
+            for record, (_, r, spread) in PSG_OFFSET_SECS.items()
+            if r < RELIABLE_ALIGNMENT["min_r"]
+            or spread > RELIABLE_ALIGNMENT["max_spread_secs"]
+        }
+        assert unreliable == {"ucddb013", "ucddb023"}
+        # 24 of the 25 records have an offset at all; ucddb028 is the exception.
+        assert len(PSG_OFFSET_SECS) == 24
+
+    def test_ahi_severity_grades_at_the_clinical_cut_points(self):
+        from ecgbench.labels.ucddb import ahi_severity
+
+        assert ahi_severity(2) == "normal"
+        assert ahi_severity(5) == "mild"
+        assert ahi_severity(14.9) == "mild"
+        assert ahi_severity(15) == "moderate"
+        assert ahi_severity(29.9) == "moderate"
+        assert ahi_severity(30) == "severe"
+        assert ahi_severity(float("nan")) == "unknown"
+
+    def test_stratify_class_is_coarser_than_the_severity_grade(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.labels.ucddb import OSA_AHI_THRESHOLD, load_labels
+
+        root = self._tree(
+            tmp_path, write_edf_file,
+            [("ucddb018", 2, 2, 100), ("ucddb002", 23, 20, 100), ("ucddb003", 51, 40, 100)],
+        )
+        df = load_labels(root, sample_config)
+
+        assert list(df["ahi_severity"]) == ["moderate", "severe", "normal"]
+        assert df.loc["ucddb018", "stratify_class"] == "osa_none_mild"
+        assert df.loc["ucddb002", "stratify_class"] == "osa_moderate_severe"
+        assert OSA_AHI_THRESHOLD == 15.0
+
+    def test_a_missing_source_file_names_itself_and_where_to_get_it(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.labels.ucddb import UCDDBSourceMissingError, load_labels
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 3, 100)])
+        (root / "ucddb002_stage.txt").unlink()
+        with pytest.raises(UCDDBSourceMissingError, match="ucddb002_stage.txt"):
+            load_labels(root, sample_config)
+
+    def test_it_is_registered_so_load_labels_dispatches_to_it(self):
+        from ecgbench.labels import _custom_loaders
+        from ecgbench.labels.ucddb import load_labels
+
+        assert _custom_loaders()["ucddb"] is load_labels
+
+    def test_the_opening_calibration_block_is_declared_per_record(self):
+        """window=(0, n) returns a 1 mV square wave, not an ECG, in every record.
+
+        The block is 67-119 s long and byte-identical across all 25 records over
+        the shortest of it, so a first-N-samples window returns the same array for
+        the whole database. Nothing in the release documents it.
+        """
+        from ecgbench.labels.ucddb import (
+            CALIBRATION_HALF_PERIOD_SAMPLES,
+            CALIBRATION_LEVELS,
+            CALIBRATION_SAMPLES,
+            ECG_STARTS_AT_SAMPLE,
+            PSG_OFFSET_SECS,
+            SAMPLING_RATE,
+        )
+
+        assert len(CALIBRATION_SAMPLES) == 25
+        assert min(CALIBRATION_SAMPLES.values()) == 8576  # ucddb006, 67.0 s
+        assert max(CALIBRATION_SAMPLES.values()) == 15232  # ucddb027, 119.0 s
+        assert ECG_STARTS_AT_SAMPLE == 15232
+        # Every block is a whole number of seconds.
+        assert all(n % SAMPLING_RATE == 0 for n in CALIBRATION_SAMPLES.values())
+        # 410 counts at 0-4095 -> 0-10 mV is the instrument's 1 mV pulse, and the
+        # level changes every 32 samples: a 2 Hz square wave at 128 Hz.
+        low, high = CALIBRATION_LEVELS
+        assert (high - low) * 10 / 4095 == pytest.approx(1.0012, abs=1e-4)
+        assert SAMPLING_RATE / (2 * CALIBRATION_HALF_PERIOD_SAMPLES) == 2.0
+        # The duplicated pair share a waveform, so they must share a block length.
+        assert CALIBRATION_SAMPLES["ucddb014"] == CALIBRATION_SAMPLES["ucddb028"]
+        # Every recovered PSG offset lands well past every calibration block, so a
+        # window cut around a scored event is always in real ECG.
+        assert min(offset for offset, _, _ in PSG_OFFSET_SECS.values()) * SAMPLING_RATE > (
+            ECG_STARTS_AT_SAMPLE
+        )
+
+    def test_the_calibration_length_is_reported_per_record(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.labels.ucddb import CALIBRATION_SAMPLES, load_labels
+
+        root = self._tree(tmp_path, write_edf_file, [("ucddb002", 23, 3, 100)])
+        row = load_labels(root, sample_config).loc["ucddb002"]
+
+        assert row["calibration_samples"] == CALIBRATION_SAMPLES["ucddb002"]
+        assert row["calibration_secs"] == pytest.approx(116.0)

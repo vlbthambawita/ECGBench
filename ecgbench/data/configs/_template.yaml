@@ -20,14 +20,21 @@ creators:
     url: null
 
 # --- Signal Properties ---
-signal_format: "wfdb"             # One of: wfdb, csv, csv_lead_rows, npy, hdf5
+signal_format: "wfdb"             # One of: wfdb, csv, csv_lead_rows, npy, hdf5,
+                                  #         opensignals, edf
                                   #   csv           -> samples in rows, leads in
                                   #                    columns, with a header row
                                   #   csv_lead_rows -> the transpose: leads in rows,
                                   #                    samples in columns, no header
-                                  # (edf/mat not implemented)
+                                  #   edf           -> European Data Format, 16-bit.
+                                  #                    Every channel must share one
+                                  #                    sampling rate; a mixed-rate
+                                  #                    polysomnogram raises.
+                                  # (mat not implemented)
 signal_unit_scale: 1.0            # Multiply raw samples by this to get millivolts.
                                   #   wfdb applies its own header gain -> leave at 1.0
+                                  #   edf applies the header's own physical range,
+                                  #     so an mV file also leaves this at 1.0
                                   #   CSV/array data stored in microvolts -> 0.001
                                   # Get this wrong and amplitude_outlier fires on
                                   # every record (or never fires at all).

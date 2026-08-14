@@ -505,6 +505,152 @@ def tmp_wfdb_signal_dataset(tmp_path) -> Path:
     return tmp_path
 
 
+def write_edf(
+    path: Path,
+    signals: list[np.ndarray],
+    labels: list[str],
+    samples_per_record: list[int],
+    *,
+    physical_range: tuple[float, float] = (-32768.0, 32767.0),
+    digital_range: tuple[float, float] = (-32768.0, 32767.0),
+    units: str = "mV",
+    version: str = "0",
+    starttime: str = "00.00.00",
+    declared_records: int | None = None,
+) -> Path:
+    """Write a 16-bit EDF file. Test-only — ECGBench reads EDF but never writes it.
+
+    ``signals`` are **digital** int16 values, one array per channel; each must be
+    a whole number of data records long at its own ``samples_per_record``, which
+    is how a mixed-rate polysomnogram is built. ``declared_records`` overrides the
+    header's data-record count, for testing a truncated or open-ended file.
+    """
+    n_signals = len(signals)
+    n_records = len(signals[0]) // samples_per_record[0]
+
+    def fixed(text: str, width: int) -> bytes:
+        # latin-1, not ascii: a real BDF file opens with the byte 0xFF, and the
+        # reader has to be testable against one.
+        return f"{text:<{width}}".encode("latin-1")[:width]
+
+    header = b"".join(
+        [
+            fixed(version, 8),
+            fixed("X X X TestSubject", 80),
+            fixed("Startdate 01-JAN-2006", 80),
+            fixed("01.01.06", 8),
+            fixed(starttime, 8),
+            fixed(str(256 * (1 + n_signals)), 8),
+            fixed("", 44),
+            fixed(str(n_records if declared_records is None else declared_records), 8),
+            fixed("1", 8),
+            fixed(str(n_signals), 4),
+        ]
+    )
+    # Every per-signal field is stored channel-major: all the labels, then all the
+    # transducer strings, and so on.
+    for text, width in (
+        (labels, 16),
+        (["" for _ in labels], 80),
+        ([units if label != "EDF Annotations" else "" for label in labels], 8),
+        ([str(physical_range[0])] * n_signals, 8),
+        ([str(physical_range[1])] * n_signals, 8),
+        ([str(digital_range[0])] * n_signals, 8),
+        ([str(digital_range[1])] * n_signals, 8),
+        (["" for _ in labels], 80),
+        ([str(n) for n in samples_per_record], 8),
+        (["" for _ in labels], 32),
+    ):
+        header += b"".join(fixed(value, width) for value in text)
+
+    body = np.concatenate(
+        [
+            np.concatenate(
+                [
+                    np.asarray(
+                        signals[s][r * samples_per_record[s] : (r + 1) * samples_per_record[s]],
+                        dtype="<i2",
+                    )
+                    for s in range(n_signals)
+                ]
+            )
+            for r in range(n_records)
+        ]
+    )
+    path.write_bytes(header + body.tobytes())
+    return path
+
+
+#: Digital values in the EDF fixtures: sample ``i`` of lead ``j`` holds
+#: ``j * 10000 + i``, which stays inside int16 for 3 leads x 5000 samples and,
+#: with a 1:1 physical range, comes back out of the reader unchanged. A window
+#: that is shifted, transposed or truncated therefore cannot pass by accident.
+def edf_fixture_signal(n_leads: int = 3, n_samples: int = 5000) -> list[np.ndarray]:
+    return [
+        (lead * 10_000 + np.arange(n_samples)).astype(np.int16) for lead in range(n_leads)
+    ]
+
+
+@pytest.fixture
+def write_edf_file():
+    """:func:`write_edf`, as a fixture — conftest is not importable as a module."""
+    return write_edf
+
+
+@pytest.fixture
+def edf_signal():
+    """:func:`edf_fixture_signal`, as a fixture."""
+    return edf_fixture_signal
+
+
+@pytest.fixture
+def tmp_edf_signal_dataset(tmp_path) -> Path:
+    """A loadable edf-format dataset: 5 records of 3 x 5000 at 500 Hz, plus a fold tree.
+
+    Modelled on ``ucddb``, the first EDF dataset in the catalogue: three ECG
+    channels sharing one sampling rate, in one file per record.
+    """
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    for r in range(5):
+        rid = f"rec_{r}"
+        write_edf(
+            records / f"{rid}.edf",
+            edf_fixture_signal(),
+            ["chan 1", "chan 2", "chan 3"],
+            [500, 500, 500],
+        )
+        record_ids.append(rid)
+        paths.append(f"records/{rid}.edf")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path
+
+
+@pytest.fixture
+def ucddb_config() -> DatasetConfig:
+    """A ucddb-shaped config for the EDF fixtures. Mirrors the shipped YAML."""
+    return DatasetConfig(
+        name="St. Vincent's / UCD Sleep Apnea Database",
+        slug="ucddb",
+        version="1.0.0",
+        url="https://physionet.org/content/ucddb/1.0.0/",
+        signal_format="edf",
+        signal_unit_scale=1.0,
+        leads=3,
+        lead_names=["V5", "CC5", "V5R"],
+        sampling_rates=[500],
+        default_sampling_rate=500,
+        metadata_csv="ecgbench_metadata.csv",
+        record_id_column="record_id",
+        patient_id_column="recording_group",
+        signal_path_columns={500: "filename"},
+        label_column="ahi_severity",
+        label_format="single",
+    )
+
+
 #: MIT-BIH's layouts, reduced to the four distinct shapes that matter: the
 #: predominant one, record 114's reversal of it, one with no MLII at all, and one
 #: substituting a different chest lead. The first three are ordered so that

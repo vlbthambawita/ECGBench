@@ -125,6 +125,10 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
                 return int(_hdf5_dataset(handle, key, record_path).shape[1])
         except Exception:
             return None
+    if signal_format == "edf":
+        # Costs one header read; the length is n_data_records x samples-per-record
+        # and never needs the payload.
+        return _edf_length(record_path)
     return None
 
 
@@ -422,6 +426,218 @@ def _read_opensignals(
     return signal
 
 
+#: Fixed widths, in bytes, of the per-signal fields in an EDF header, in the
+#: order they appear. Every field is stored channel-major — all 3 labels, then
+#: all 3 transducer strings, and so on — which is why they have to be walked in
+#: order rather than indexed by channel.
+_EDF_SIGNAL_FIELDS: tuple[tuple[str, int], ...] = (
+    ("label", 16),
+    ("transducer", 80),
+    ("dimension", 8),
+    ("physical_min", 8),
+    ("physical_max", 8),
+    ("digital_min", 8),
+    ("digital_max", 8),
+    ("prefilter", 80),
+    ("samples_per_record", 8),
+    ("reserved", 32),
+)
+
+#: Label EDF+ gives its annotation channel. It holds UTF-8 TALs, not samples, so
+#: it is dropped before anything counts channels or compares sampling rates.
+_EDF_ANNOTATION_LABEL = "EDF Annotations"
+
+
+def _read_edf_header(record_path: str) -> dict:
+    """Parse an EDF header into the fields the reader needs.
+
+    EDF is fixed-width ASCII: a 256-byte main header, then 256 bytes per signal
+    holding the calibration. Everything here comes out of those bytes — there is
+    no index and no per-sample metadata, which is what makes a windowed read a
+    plain seek (see :func:`_read_edf`).
+
+    ``n_records`` is taken from the file size rather than from the header field,
+    which EDF allows to be ``-1`` for a recording still being written and which
+    is simply wrong in some published files. The header value, when positive, is
+    an upper bound: a truncated download must not be read past its last complete
+    data record.
+    """
+    with open(record_path, "rb") as handle:
+        main = handle.read(256)
+        if len(main) < 256:
+            raise ValueError(
+                f"EDF record {record_path!r} is {len(main)} bytes; an EDF file starts "
+                "with a 256-byte header."
+            )
+        version = main[:8].decode("ascii", "replace").strip()
+        if version != "0":
+            # BDF (24-bit, "\xffBIOSEMI") and EDF+D would both need different
+            # sample decoding, so say which file and what was found.
+            raise ValueError(
+                f"EDF record {record_path!r} declares version {version!r}; only "
+                "standard 16-bit EDF (version '0') is supported."
+            )
+        try:
+            header_bytes = int(main[184:192])
+            declared_records = int(main[236:244])
+            record_duration = float(main[244:252])
+            n_signals = int(main[252:256])
+        except ValueError as e:
+            raise ValueError(
+                f"EDF header of {record_path!r} has an unparseable numeric field: {e}"
+            ) from None
+
+        raw = handle.read(header_bytes - 256)
+
+    if n_signals < 1:
+        raise ValueError(f"EDF record {record_path!r} declares {n_signals} signals.")
+
+    fields: dict[str, list[str]] = {}
+    offset = 0
+    for name, width in _EDF_SIGNAL_FIELDS:
+        fields[name] = [
+            raw[offset + i * width : offset + (i + 1) * width].decode("ascii", "replace").strip()
+            for i in range(n_signals)
+        ]
+        offset += width * n_signals
+
+    try:
+        samples_per_record = [int(v) for v in fields["samples_per_record"]]
+    except ValueError as e:
+        raise ValueError(
+            f"EDF header of {record_path!r} has an unparseable samples-per-record "
+            f"field: {e}"
+        ) from None
+
+    record_bytes = 2 * sum(samples_per_record)
+    if record_bytes <= 0:
+        raise ValueError(f"EDF record {record_path!r} declares no samples per record.")
+
+    payload = max(Path(record_path).stat().st_size - header_bytes, 0)
+    n_records = payload // record_bytes
+    if declared_records > 0:
+        n_records = min(n_records, declared_records)
+
+    return {
+        "header_bytes": header_bytes,
+        "n_records": int(n_records),
+        "record_duration": record_duration,
+        "record_bytes": record_bytes,
+        "labels": fields["label"],
+        "dimensions": fields["dimension"],
+        "physical_min": fields["physical_min"],
+        "physical_max": fields["physical_max"],
+        "digital_min": fields["digital_min"],
+        "digital_max": fields["digital_max"],
+        "samples_per_record": samples_per_record,
+    }
+
+
+def _edf_signal_channels(header: dict, record_path: str) -> list[int]:
+    """Indices of the channels a read returns: every one but EDF+ annotations.
+
+    Also the place that refuses a **mixed-rate** file. EDF stores one
+    samples-per-record count per channel, so a polysomnogram legitimately holds
+    ECG at 128 Hz beside oximetry at 8 Hz, and there is no single ``(leads,
+    samples)`` array for that. UCDDB ships both shapes: the ``_lifecard.edf``
+    Holter files are uniform at 128 Hz, the ``.rec`` polysomnograms are not.
+    """
+    channels = [
+        i for i, label in enumerate(header["labels"]) if label != _EDF_ANNOTATION_LABEL
+    ]
+    if not channels:
+        raise ValueError(f"EDF record {record_path!r} holds only annotation channels.")
+
+    rates = {header["samples_per_record"][i] for i in channels}
+    if len(rates) > 1:
+        detail = ", ".join(
+            f"{header['labels'][i]!r}={header['samples_per_record'][i]}"
+            for i in channels
+        )
+        raise NotImplementedError(
+            f"EDF record {record_path!r} stores channels at different sampling rates "
+            f"({detail} samples per data record), so it has no single (leads, samples) "
+            "array. Point the config at a uniform-rate file, or extract the channels "
+            "of interest first."
+        )
+    return channels
+
+
+def _edf_length(record_path: str) -> int | None:
+    """Per-channel sample count of an EDF file, or None if it cannot be read."""
+    try:
+        header = _read_edf_header(record_path)
+        channels = _edf_signal_channels(header, record_path)
+    except Exception:
+        return None
+    return header["n_records"] * header["samples_per_record"][channels[0]]
+
+
+def _read_edf(record_path: str, start: int, length: int | None) -> np.ndarray:
+    """Read an EDF file as (leads, samples) in the header's physical units.
+
+    Samples are interleaved by *data record*, not by sample: a 3-channel 128 Hz
+    file stores 128 values of channel 1, then 128 of channel 2, then 128 of
+    channel 3, then the next second. So a window seeks to the first data record
+    it needs and reads only from there — which is what makes UCDDB's 7.5-hour,
+    21 MB records usable one window at a time.
+
+    The physical conversion is EDF's own, ``physical_min`` at ``digital_min``
+    scaling linearly to ``physical_max`` at ``digital_max``. It is applied
+    verbatim, including any baseline the source declared: UCDDB's Holter files
+    say 0-4095 maps to 0-10 mV, so their ECG sits on a ~5 mV pedestal and every
+    EDF reader returns it that way. Centring is a preprocessing choice for the
+    caller, not something this reader should do silently.
+    """
+    header = _read_edf_header(record_path)
+    channels = _edf_signal_channels(header, record_path)
+
+    spr = header["samples_per_record"][channels[0]]
+    available = header["n_records"] * spr
+    sampto = available if length is None else start + length
+    if start < 0 or start >= available or sampto > available:
+        raise _window_error(record_path, start, length, available)
+
+    first = start // spr
+    last = -(-sampto // spr)  # ceil
+    with open(record_path, "rb") as handle:
+        handle.seek(header["header_bytes"] + first * header["record_bytes"])
+        raw = np.frombuffer(
+            handle.read((last - first) * header["record_bytes"]), dtype="<i2"
+        )
+    if raw.size != (last - first) * header["record_bytes"] // 2:
+        raise _window_error(record_path, start, length, available)
+
+    block = raw.reshape(last - first, header["record_bytes"] // 2)
+    offsets = np.cumsum([0] + header["samples_per_record"])
+
+    lo = start - first * spr
+    signal = np.empty((len(channels), sampto - start), dtype=np.float32)
+    for row, channel in enumerate(channels):
+        digital = block[:, offsets[channel] : offsets[channel + 1]].reshape(-1)
+        try:
+            pmin = float(header["physical_min"][channel])
+            pmax = float(header["physical_max"][channel])
+            dmin = float(header["digital_min"][channel])
+            dmax = float(header["digital_max"][channel])
+        except ValueError as e:
+            raise ValueError(
+                f"EDF channel {header['labels'][channel]!r} of {record_path!r} has an "
+                f"unparseable calibration field: {e}"
+            ) from None
+        if dmax == dmin:
+            raise ValueError(
+                f"EDF channel {header['labels'][channel]!r} of {record_path!r} declares "
+                f"digital_min == digital_max ({dmin}), so its samples cannot be scaled."
+            )
+        scale = (pmax - pmin) / (dmax - dmin)
+        signal[row] = digital[lo : lo + signal.shape[1]].astype(np.float32) * np.float32(
+            scale
+        ) + np.float32(pmin - dmin * scale)
+
+    return signal
+
+
 def _load_signal(
     record_path: str,
     signal_format: str,
@@ -529,10 +745,17 @@ def _load_signal(
             signal = _hdf5_signal_view(
                 dataset, row, record_path, slice(start, sampto)
             )
+    elif signal_format == "edf":
+        # European Data Format: fixed-width ASCII header, then int16 samples
+        # interleaved by one-second data record. Samples come back in the units
+        # the header declares, so signal_unit_scale stays 1.0 for an mV file. The
+        # window is a seek to the first data record it needs — the reason a
+        # 7.5-hour overnight Holter record is usable at all.
+        signal = _read_edf(record_path, start, length)
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, edf"
         )
 
     if unit_scale != 1.0:

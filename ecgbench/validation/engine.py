@@ -108,10 +108,18 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
         with h5py.File(path, "r") as handle:
             dataset = _hdf5_dataset(handle, key, record_path)
             signal = _hdf5_signal_view(dataset, row, record_path, slice(None))
+    elif signal_format == "edf":
+        # European Data Format. Window-less like the rest of this function, which
+        # for an overnight Holter means ~40 MB per record in the worker — fine at
+        # ucddb's 25 records, and deliberate: validation always sees the whole
+        # record, however long it is.
+        from ecgbench.dataset import _read_edf
+
+        signal = _read_edf(record_path, 0, None)
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, edf"
         )
 
     if unit_scale != 1.0:

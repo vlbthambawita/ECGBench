@@ -1,0 +1,298 @@
+# ECGBench Config: St. Vincent's / UCD Sleep Apnea Database (UCDDB)
+# ==================================================================
+# https://physionet.org/content/ucddb/1.0.0/
+#
+# 25 full overnight sleep studies from Dublin, each shipping TWO simultaneous
+# recordings of the same night: a 14-channel Jaeger-Toennies polysomnogram
+# (`<rec>.rec`) and a 3-channel Reynolds Lifecard CF Holter ECG
+# (`<rec>_lifecard.edf`). THIS CONFIG IS THE HOLTER — 203.4 hours of V5/CC5/V5R
+# at 128 Hz, 7.52 h to 8.68 h per record. The polysomnogram is a mixed-rate file
+# (8, 64 and 128 Hz channels side by side) with one ECG channel among thirteen
+# other modalities, and the EDF reader refuses it for that reason; its paths are
+# still carried in the metadata for anyone who wants to read it themselves.
+#
+# ALL 102 SHIPPED FILES VERIFY against the release's own SHA256SUMS.txt, so
+# everything below is an upstream property rather than download damage.
+#
+# THE FIRST EDF DATASET IN ECGBENCH. `signal_format: "edf"` was added for it;
+# see ecgbench/dataset.py:_read_edf. Every channel of a file must share one
+# sampling rate, which the Holter files do and the polysomnograms do not.
+#
+# SIX THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE ANNOTATIONS ARE STAMPED IN POLYSOMNOGRAM TIME AND THE HOLTER'S CLOCK IS
+#    A PLACEHOLDER. `_respevt.txt` times of day and `_stage.txt` 30 s epochs line
+#    up with the `.rec` header, whose start time equals SubjectDetails.xls's "PSG
+#    Start Time" in all 25 records. The `_lifecard.edf` headers read 09:01:17 to
+#    09:48:29 on 01.01.06, rising monotonically in filename order about a minute
+#    apart — archive timestamps, and the landing page confirms "The recording
+#    dates and times are not available." Taken at face value that makes 3,428
+#    respiratory events and 20,789 scored epochs unusable with the ECG.
+#    ecgbench.labels.ucddb.PSG_OFFSET_SECS recovers the offset for 24 of the 25
+#    records by cross-correlating heart rate (median-RR at 1 Hz, smoothed over
+#    60 s), 22 of them at r = 0.82-0.98 with all three Holter channels agreeing on
+#    the lag to within 20 s. The Holter was fitted 17 to 132 minutes before the
+#    polysomnogram started. Check `psg_offset_reliable` before trusting it:
+#    ucddb023 is genuinely uncertain and ucddb013's whole-record correlation is
+#    spoiled by an unusable first third.
+#
+# 2. ucddb028's HOLTER FILE IS A COPY OF ucddb014's, AND NOTHING UPSTREAM SAYS SO.
+#    The two `_lifecard.edf` files differ in exactly FOUR BYTES — the start-time
+#    field — and their 20,782,080-byte payloads are bit-identical. Their
+#    polysomnograms, annotations and demographics all differ, so these are two
+#    different men (56, AHI 36; 50, AHI 46) sharing one ECG recording. Confirmed
+#    from an independent direction: ucddb028's Holter aligns to ucddb014's
+#    polysomnogram at offset 3432 s, r = 0.940 — the same offset and correlation
+#    as ucddb014's own Holter — and to its own subject's at r = 0.01.
+#    Consequences: `patient_id_column` is `recording_group`, which merges the pair
+#    so they cannot straddle a fold; and `waveform_matches_subject` is False for
+#    ucddb028, because its AHI of 46 labels a night belonging to a man whose AHI
+#    was 36. Both records are kept — each is an official record with its own
+#    official annotations — but record-level supervised work should drop ucddb028
+#    rather than treat it as a second example.
+#
+# 3. EVERY RECORD OPENS WITH 67 TO 119 SECONDS OF CALIBRATION SQUARE WAVE, AND
+#    NOTHING UPSTREAM SAYS SO. Before the ECG starts, each file carries a two-level
+#    2 Hz square wave at digital 1843/2253 — 1.0012 mV peak to peak, the
+#    instrument's 1 mV calibration pulse — and over the shortest block (67 s) the
+#    samples are BYTE-IDENTICAL across all 25 records and all three channels. So
+#    `window=(0, n)` returns no ECG at all and the same array for every record in
+#    the database. ecgbench.labels.ucddb.ECG_STARTS_AT_SAMPLE (15,232 = 119.0 s) is
+#    the first sample past every record's block; CALIBRATION_SAMPLES has the
+#    per-record length and verify_calibration_block() recomputes both.
+#
+# 4. ucddb002 HAS TWO DISTINCT LEADS, NOT THREE. Channels 2 and 3 are equal at
+#    every one of its 3,525,120 samples. This one IS documented upstream ("only
+#    two distinct ECG signals were recorded; the second ECG signal was also used
+#    as the third signal") and is reported as `n_distinct_leads`. No validation
+#    check can see it — the third lead is a perfectly good ECG, just not a third
+#    one — so all 25 records are valid and `clean` equals `original`.
+#
+# 5. THE ECG SITS ON A ~5 mV PEDESTAL, BY THE FILES' OWN CALIBRATION. See
+#    amplitude_range_mv below.
+#
+# 6. THE LEAD NAMES COME FROM THE LANDING PAGE, NOT FROM THE FILES. Every header
+#    labels its channels "chan 1", "chan 2", "chan 3"; the page says "Three-channel
+#    Holter ECGs (V5, CC5, V5R)". The order is that sentence's order and nothing in
+#    the release confirms it, which is worth knowing before treating
+#    ECGDataset(leads=["V5R"]) as anatomically certain.
+
+name: "St. Vincent's University Hospital / University College Dublin Sleep Apnea Database"
+slug: "ucddb"
+version: "1.0.0"
+url: "https://physionet.org/content/ucddb/1.0.0/"
+download_url: null  # UCDDBSplitter generates metadata_csv, so this must stay null
+license: "ODC-By-1.0"  # Open Data Commons Attribution License v1.0, per the landing page
+description: >
+  25 full overnight polysomnograms with simultaneous three-channel Holter ECG,
+  from adults referred to the Sleep Disorders Clinic at St Vincent's University
+  Hospital, Dublin, for suspected obstructive sleep apnea, central sleep apnea or
+  primary snoring. Subjects were selected at random over six months from September
+  2002 to February 2003 and had to be over 18, free of known cardiac disease and
+  autonomic dysfunction, and not on medication affecting heart rate: 21 men and 4
+  women, aged 50 +/- 10 years (28 to 68), BMI 31.6 +/- 4.0 kg/m2, apnea-hypopnea
+  index 24.1 +/- 20.3 (1.7 to 90.9). The Holter recordings ECGBench splits are
+  V5, CC5 and V5R at 128 Hz from a Reynolds Lifecard CF, 7.52 h to 8.68 h each and
+  203.4 h in all. Each study also ships a 14-channel polysomnogram, 20,789 sleep
+  epochs scored to Rechtschaffen and Kales rules by an experienced sleep
+  technologist, and 3,428 respiratory events (obstructive, central and mixed
+  apneas and hypopneas, plus periodic breathing) annotated by the same scorer with
+  duration, oxygen desaturation, snoring, arousal and heart-rate change.
+citation: >
+  Doherty LS, Kiely JL, Swan V, McNicholas WT. St. Vincent's University Hospital /
+  University College Dublin Sleep Apnea Database. PhysioNet (2007).
+  PhysioNet additionally asks for: Goldberger AL, Amaral LAN, Glass L, Hausdorff
+  JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank,
+  PhysioToolkit, and PhysioNet. Circulation 101(23):e215-e220 (2000).
+doi: "10.13026/C26C7D"
+
+creators:
+  - type: Organization
+    name: "St Vincent's University Hospital Sleep Disorders Clinic / University College Dublin"
+    url: "https://physionet.org/content/ucddb/1.0.0/"
+
+# --- Signal Properties ---
+# European Data Format. The three Holter channels all carry 128 samples per
+# one-second data record, which is what lets them be read as one array; the
+# companion `.rec` polysomnograms mix 8, 64 and 128 Hz and raise instead.
+signal_format: "edf"
+# 1.0, and this is the EDF equivalent of the wfdb case: the reader applies the
+# per-channel physical range the header declares, so samples arrive already in
+# the header's units — "mV" in all 75 Holter channels.
+signal_unit_scale: 1.0
+leads: 3
+# FROM THE LANDING PAGE, NOT THE HEADERS. Every one of the 25 files labels its
+# channels "chan 1", "chan 2", "chan 3" and names no electrode. The page says
+# "Three-channel Holter ECGs (V5, CC5, V5R) were recorded using a Reynolds
+# Lifecard CF system", and this is that sentence's order. Nothing in the release
+# corroborates it. In ucddb002 the third channel is a copy of the second, so its
+# "V5R" is not a third electrode at all.
+lead_names: ["V5", "CC5", "V5R"]
+# Nominal: the MEDIAN length. Records are NOT uniform — 3,463,680 samples
+# (27,060 s, 7.52 h; ucddb014 and ucddb028) to 4,001,280 (31,260 s, 8.68 h;
+# ucddb023). Any window a user applies to the whole database has to fit 27,060 s.
+duration_seconds: 29580
+sampling_rates: [128]
+default_sampling_rate: 128
+
+# --- File Structure ---
+# No usable metadata file ships: SubjectDetails.xls is a 2003-era BIFF spreadsheet
+# with no signal path, and pandas.read_csv cannot open it. UCDDBSplitter builds
+# this CSV on first run via ecgbench.labels.ucddb, which also parses the stage and
+# respiratory-event files and reads the EDF headers. The validation engine
+# re-reads it from disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_name"
+# False, and checked rather than assumed: record names are "ucddb002" ...
+# "ucddb028", which are not all-digit, so pandas keeps them as strings and the CSV
+# round trip cannot destroy the zero. export_splits verifies this.
+zero_padded_identifiers: false
+# RECORDING GROUP, NOT SUBJECT — the most consequential line in this file.
+# ucddb014 and ucddb028 are two different men whose `_lifecard.edf` payloads are
+# bit-identical, so grouping by subject would put one waveform on both sides of
+# the split. This column merges them into "ucddb014+ucddb028" and leaves the other
+# 23 as themselves: 24 groups over 25 records. Named for what it is, because
+# calling it subject_id would assert something false about two of the rows.
+patient_id_column: "recording_group"
+
+signal_path_columns:
+  128: "signal_path"  # "<record>_lifecard.edf" — the tree is flat
+
+# --- Labels ---
+# The clinical severity grade of the shipped apnea-hypopnea index: normal (<5),
+# mild (5-15), moderate (15-30), severe (>=30), giving 1 / 10 / 6 / 8 records.
+# NOT the stratification label — see the block below.
+label_column: "ahi_severity"
+label_format: "single"
+
+stratification:
+  # Custom, and DELIBERATELY COARSER THAN label_column. `ahi_severity` puts a
+  # single subject (ucddb018, AHI 2) in `normal`, and one record cannot be spread
+  # over ten folds — scikit-learn warns and then drops it wherever it lands.
+  # UCDDBSplitter stratifies on `stratify_class` instead, the standard
+  # moderate-or-severe cut at AHI >= 15: 14 records against 11, or 13 recording
+  # groups against 11 once ucddb014 and ucddb028 merge. Both clear ten folds.
+  # Train on psg_ahi or ahi_severity; the pooled class exists to build folds.
+  # See ecgbench.labels.ucddb.attach_stratify_class.
+  method: "custom_function"
+
+# --- Folds ---
+# Ten, and it fits: 24 recording groups over 10 folds is 2-3 records per fold,
+# above the group count at which StratifiedGroupKFold starts emitting silently
+# empty folds. Nothing here needs szdb's reduced count.
+n_folds: 10
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  expected_leads: 3
+  # DELIBERATELY EMPTY, like afdb, chfdb, nsrdb, ptbdb, szdb and challenge2021:
+  # length varies legitimately, 27,060 to 4,001,280/128 = 31,260 s, so any single
+  # threshold would drop sound records as truncated. Omitting the rate disables
+  # the check rather than making it fire; `truncated_signal` stays in the list
+  # below only so a future uniform re-release needs one line here.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # THE ADC SPAN, NOT A PHYSIOLOGICAL RANGE, and that is a property of the source
+  # rather than a choice. Every one of the 75 Holter channels declares digital
+  # 0-4095 mapping to physical 0-10 mV, so the ECG baseline sits at mid-scale
+  # (~5.00 mV measured) and the signal is unipolar by construction. EDF's physical
+  # conversion is applied verbatim — an offset is not something a reader should
+  # silently remove, and `signal_unit_scale` is a multiplier that could not express
+  # it anyway — so a user wanting a centred trace subtracts the median themselves.
+  #
+  # BOTH RAILS ARE ATTAINED: measured over all 25 records, the float32 minimum is
+  # exactly 0.0 (11 records touch digital 0) and the maximum exactly 10.0
+  # (ucddb015 channel 1 touches digital 4095). The bound therefore carries a
+  # thousandth of a millivolt of slack at the top so a platform whose float32
+  # rounding differs cannot exclude the record the bound was computed from, and
+  # none at the bottom, where 0.0 is exact and a negative value could only come
+  # from a corrupt read — which is exactly what this check should still catch.
+  # What it no longer guards is amplitude plausibility; read `n_distinct_leads`
+  # and the rail fractions rather than the validation report.
+  amplitude_range_mv: [0.0, 10.001]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/ucddb.py reads SubjectDetails.xls, counts the
+# 3,428 respiratory events by type out of the fixed-width `_respevt.txt` tables,
+# counts the 20,789 scored 30 s epochs by stage, recomputes AHI and sleep
+# efficiency as a check on that parsing (both reproduce the shipped values),
+# reads the Holter geometry from the EDF headers, and attaches the recovered
+# polysomnogram offset. `respiratory_events()` and `sleep_stages()` are the
+# per-event and per-epoch forms, both carrying a `holter_secs` column that lines
+# up with ECGDataset's `window=`. There is no source CSV to point at.
+labels:
+  source_csv: null
+  join_column: "record_name"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "sleep apnea"
+    - "obstructive sleep apnea"
+    - "polysomnography"
+    - "apnea-hypopnea index"
+    - "sleep staging"
+    - "Holter"
+    - "three-lead"
+    - "overnight"
+    - "EDF"
+    - "PhysioNet"
+  rai_data_collection: >
+    Twenty-five adults were selected at random over six months (September 2002 to
+    February 2003) from patients referred to the Sleep Disorders Clinic at St
+    Vincent's University Hospital, Dublin, for possible diagnosis of obstructive
+    sleep apnea, central sleep apnea or primary snoring, under the direction of
+    Prof. Walter McNicholas. Inclusion required age over 18, no known cardiac
+    disease, no autonomic dysfunction and no medication known to interfere with
+    heart rate. Each subject underwent one full overnight polysomnogram on a
+    Jaeger-Toennies system (EEG C3-A2 and C4-A1, left and right EOG, submental EMG,
+    ECG at modified lead V2, oro-nasal thermistor airflow, uncalibrated ribcage and
+    abdomen strain gauges, finger pulse oximetry, tracheal microphone and body
+    position) with a simultaneous three-channel Holter ECG (V5, CC5, V5R) on a
+    Reynolds Lifecard CF. Sleep stages were scored in 30 s epochs to Rechtschaffen
+    and Kales rules and respiratory events annotated with onset, duration,
+    desaturation, snoring, arousal and heart-rate change, both by the same
+    experienced sleep technologist. Records were de-identified and archived at
+    University College Dublin; a revised version was posted on 1 September 2011.
+  rai_data_biases: >
+    This is twenty-five people from one clinic in one city over one six-month
+    period, so nothing derived from it generalises and it is far too small to train
+    on. The cohort is a referral population, not a general one: everyone was
+    already suspected of sleep-disordered breathing, so there is effectively no
+    healthy control group — a single subject has an apnea-hypopnea index below 5,
+    and the median is 16. It is 21 men to 4 women, all adults aged 28 to 68, all
+    overweight or obese (BMI 25.1 to 42.5), and cardiac disease and heart-rate
+    medication were exclusion criteria, so nothing here says anything about
+    sleep-disordered breathing in patients who have both. Every clinical value is
+    one scorer's work with no second reader and no inter-rater figure, and the
+    shipped apnea-hypopnea indices are rounded to whole numbers. The recordings
+    date from 2002-2003 on equipment of that era. Two upstream defects distort the
+    sample directly: ucddb028's Holter file is a byte-identical copy of ucddb014's,
+    so one of the 25 waveforms is a duplicate carrying another subject's labels,
+    and ucddb002's third channel is a copy of its second, so the database holds 74
+    distinct ECG channels rather than 75. Neither is annotated in the release and
+    the first is not documented anywhere.
+  rai_personal_sensitive_info: >
+    De-identified. The record names are the sequential study numbers UCDDB002 to
+    UCDDB028, with 004 and 016 absent from the release. SubjectDetails.xls carries
+    per-subject age, sex, height, weight, BMI, Epworth Sleepiness Score,
+    apnea-hypopnea index, study duration and sleep efficiency, all of which the
+    label loader exposes — enough to describe a subject clinically but not to
+    identify one. Recording dates and times were removed: the polysomnogram headers
+    keep a time of day but carry the placeholder dates 01.01.02 and 01.01.03, and
+    the Holter headers carry both a placeholder date (01.01.06) and a placeholder
+    time, which is why the two recordings of the same night had to be realigned
+    from the waveforms. No name, identifier, address or clinical free text is
+    present anywhere in the release.

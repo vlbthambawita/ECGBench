@@ -144,6 +144,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         svdb,
         szdb,
         tollet,
+        ucddb,
         wctecgdb,
         zzu_pecg,
     )
@@ -194,6 +195,7 @@ def _custom_loaders() -> dict[str, Callable[[Path, DatasetConfig], pd.DataFrame]
         "sami_trop": sami_trop.load_labels,
         "zzu_pecg": zzu_pecg.load_labels,
         "picsdb": picsdb.load_labels,
+        "ucddb": ucddb.load_labels,
     }
 
 

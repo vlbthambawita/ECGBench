@@ -6688,3 +6688,179 @@ class TestECGCapableSmartwatchesSplitter:
         assert isinstance(
             get_splitter("ecg_capable_smartwatches"), ECGCapableSmartwatchesSplitter
         )
+
+
+class TestUCDDBSplitter:
+    """25 overnight studies, 24 recording groups — because two share one waveform."""
+
+    def _tree(self, tmp_path, write_edf_file, subjects):
+        """subjects: [(rec, ahi, holter_source)] -> a miniature UCDDB directory.
+
+        ``holter_source`` names the record whose Holter payload this record's file
+        carries, which is how ucddb028 is reproduced in miniature.
+        """
+        import numpy as np
+
+        rows = []
+        for index, (rec, ahi, source) in enumerate(subjects):
+            signal = [
+                (lead * 1000 + np.arange(1280) + hash(source) % 7).astype(np.int16)
+                for lead in range(3)
+            ]
+            write_edf_file(
+                tmp_path / f"{rec}_lifecard.edf", signal,
+                ["chan 1", "chan 2", "chan 3"], [128] * 3,
+                physical_range=(0.0, 10.0), digital_range=(0.0, 4095.0),
+            )
+            # The polysomnogram: mixed-rate, exactly as shipped, so nothing can
+            # accidentally read it as the ECG.
+            write_edf_file(
+                tmp_path / f"{rec}.rec", [np.arange(1280, dtype=np.int16),
+                                          np.arange(80, dtype=np.int16)],
+                ["ECG", "SpO2"], [128, 8],
+            )
+            # 120 epochs = 1 h; 100 asleep. AHI = events / (100 * 30 / 3600).
+            (tmp_path / f"{rec}_stage.txt").write_text(
+                "\n".join(["0"] * 20 + ["3"] * 100) + "\n", encoding="utf-8"
+            )
+            n_events = int(round(ahi * 100 * 30 / 3600))
+            lines = [
+                "                              Respiratory Event List",
+                "        Respiratory Event           Desaturation   Snore Arousal     B/T",
+                " Time       Type   PB/CS  Duration  Low    %Drop                 Rate  Change",
+            ]
+            for i in range(n_events):
+                lines.append(
+                    f"{i // 60:02d}:{i % 60:02d}:00  HYP-O             16"
+                    "       89.9    4.1     -     -      64.7   -5.7 "
+                )
+            (tmp_path / f"{rec}_respevt.txt").write_text(
+                "\r\n".join(lines) + "\r\n\x1a", encoding="utf-8"
+            )
+            rows.append(
+                {
+                    "S/No": index + 1, "Study Number": rec.upper(),
+                    "Height (cm)": 175, "Weight (kg)": 90.0, "Gender": "M",
+                    "PSG Start Time": "23:00:00", "PSG AHI": ahi, "BMI": 29.4,
+                    "Age": 50, "Epworth Sleepiness Score": 10,
+                    "Study Duration (hr)": 1.0, "Sleep Efficiency (%)": 83,
+                    "No of data blocks in EDF": 10,
+                }
+            )
+        pd.DataFrame(rows).to_csv(tmp_path / "SubjectDetails.csv", index=False)
+        return tmp_path
+
+    #: Twelve of the real record names with their real apnea-hypopnea indices,
+    #: ending with the pair that shares a Holter file. Real names on purpose: the
+    #: duplicate is a hard-coded fact about this release
+    #: (``ecgbench.labels.ucddb.HOLTER_DUPLICATES``), so a fixture with invented
+    #: names would exercise the plumbing and not the fact.
+    SUBJECTS = [
+        ("ucddb002", 23), ("ucddb003", 51), ("ucddb005", 13), ("ucddb006", 31),
+        ("ucddb007", 12), ("ucddb008", 5), ("ucddb009", 12), ("ucddb010", 34),
+        ("ucddb011", 8), ("ucddb018", 2), ("ucddb014", 36), ("ucddb028", 46),
+    ]
+
+    def _subjects(self):
+        """The twelve above, with ucddb028's Holter carrying ucddb014's payload."""
+        return [
+            (rec, ahi, "ucddb014" if rec == "ucddb028" else rec)
+            for rec, ahi in self.SUBJECTS
+        ]
+
+    def _config(self, sample_config):
+        from dataclasses import replace
+
+        return replace(
+            sample_config, slug="ucddb", metadata_csv="ecgbench_metadata.csv",
+            signal_format="edf", record_id_column="record_name",
+            patient_id_column="recording_group",
+            signal_path_columns={128: "signal_path"}, default_sampling_rate=128,
+            sampling_rates=[128], label_column="ahi_severity", leads=3,
+            lead_names=["V5", "CC5", "V5R"], n_folds=10,
+        )
+
+    def test_load_metadata_generates_a_csv_the_validation_engine_can_reread(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """The chapman trap: a fix-up that lives only in memory leaves validation blind."""
+        from ecgbench.splitting.strategies.ucddb import UCDDBSplitter
+
+        root = self._tree(tmp_path, write_edf_file, self._subjects())
+        config = self._config(sample_config)
+        df = UCDDBSplitter().load_metadata(root, config)
+
+        assert len(df) == 12
+        written = root / "ecgbench_metadata.csv"
+        assert written.exists()
+        reread = pd.read_csv(written, dtype={"record_name": str})
+        assert list(reread["record_name"]) == list(df["record_name"])
+        # Every path in the generated CSV must resolve from the dataset root.
+        for path in reread["signal_path"]:
+            assert (root / path).exists()
+
+    def test_the_duplicated_holter_pair_share_one_recording_group(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """ucddb014 and ucddb028's payloads are bit-identical; two groups would leak."""
+        from ecgbench.splitting.strategies.ucddb import UCDDBSplitter
+
+        root = self._tree(tmp_path, write_edf_file, self._subjects())
+        df = UCDDBSplitter().load_metadata(root, self._config(sample_config))
+
+        # 12 records, 11 groups: the real database's 25 and 24 in miniature.
+        assert df["recording_group"].nunique() == len(df) - 1
+        group = df.set_index("record_name")["recording_group"]
+        assert group["ucddb028"] == group["ucddb014"] == "ucddb014+ucddb028"
+        # Named for both records, so a reader of the fold CSV can see what happened.
+        assert group["ucddb002"] == "ucddb002"
+
+    def test_stratification_pools_the_four_grades_into_two(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        """`ahi_severity` puts one subject in `normal`; ten folds cannot carry that."""
+        from ecgbench.splitting.strategies.ucddb import UCDDBSplitter
+
+        root = self._tree(tmp_path, write_edf_file, self._subjects())
+        config = self._config(sample_config)
+        splitter = UCDDBSplitter()
+        df = splitter.load_metadata(root, config)
+        labels = splitter.get_stratification_labels(df, config)
+
+        assert set(labels) == {"osa_moderate_severe", "osa_none_mild"}
+        assert len(labels) == len(df)
+        # The four-class grade it is NOT: that one has a singleton class.
+        assert df["ahi_severity"].value_counts().min() == 1
+        assert labels.value_counts().min() >= 5
+
+    def test_a_missing_stratify_column_is_an_error_not_a_silent_fallback(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.splitting.strategies.ucddb import UCDDBSplitter
+
+        root = self._tree(tmp_path, write_edf_file, self._subjects())
+        config = self._config(sample_config)
+        df = UCDDBSplitter().load_metadata(root, config).drop(columns=["stratify_class"])
+        with pytest.raises(ValueError, match="stratify_class"):
+            UCDDBSplitter().get_stratification_labels(df, config)
+
+    def test_the_generated_folds_keep_the_duplicated_pair_together(
+        self, tmp_path, write_edf_file, sample_config
+    ):
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.ucddb import UCDDBSplitter
+
+        root = self._tree(tmp_path, write_edf_file, self._subjects())
+        config = self._config(sample_config)
+        splitter = UCDDBSplitter()
+        df = splitter.load_metadata(root, config)
+        result = split_dataset(
+            df, splitter.get_stratification_labels(df, config), config, n_folds=5
+        )
+
+        assert result.group_column == "recording_group"
+        placed = pd.concat(
+            [frame.assign(fold=fold) for fold, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert placed.groupby("recording_group")["fold"].nunique().max() == 1

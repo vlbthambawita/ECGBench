@@ -2399,3 +2399,184 @@ class TestOpenSignalsReader:
         assert _parse_opensignals_ref("a/b.txt:A1,A2") == ("a/b.txt", ["A1", "A2"])
         assert _parse_opensignals_ref("a:b/c.txt") == ("a:b/c.txt", None)
         assert _parse_opensignals_ref("plain.txt") == ("plain.txt", None)
+
+
+class TestEDFReader:
+    """The `edf` branch of _load_signal — ucddb is the first dataset to use it.
+
+    EDF interleaves by one-second *data record*, not by sample, so a windowed
+    read is a seek to the first record it needs plus a slice inside it. The
+    fixtures encode lead and sample index in the value, so an off-by-one record
+    or a transposed read cannot pass.
+    """
+
+    def test_it_reads_every_channel_and_applies_the_declared_calibration(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        from ecgbench.dataset import _read_edf
+
+        path = write_edf_file(
+            tmp_path / "r.edf", edf_signal(), ["chan 1", "chan 2", "chan 3"], [500] * 3
+        )
+        signal = _read_edf(str(path), 0, None)
+
+        assert signal.shape == (3, 5000)
+        assert signal.dtype == np.float32
+        # physical range == digital range, so the values come back unchanged.
+        for lead in range(3):
+            assert signal[lead, 0] == lead * 10_000
+            assert signal[lead, 4999] == lead * 10_000 + 4999
+
+    def test_the_physical_scaling_is_edfs_own_including_a_baseline(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        """0-4095 mapped to 0-10 mV is ucddb's real calibration, pedestal and all.
+
+        Applied verbatim: the reader must not re-centre a source whose declared
+        range is one-sided, because that would silently disagree with every other
+        EDF reader.
+        """
+        from ecgbench.dataset import _read_edf
+
+        digital = np.array([0, 2048, 4095] * 100, dtype=np.int16)
+        path = write_edf_file(
+            tmp_path / "r.edf",
+            [digital],
+            ["chan 1"],
+            [300],
+            physical_range=(0.0, 10.0),
+            digital_range=(0.0, 4095.0),
+        )
+        signal = _read_edf(str(path), 0, None)
+
+        assert signal.min() == pytest.approx(0.0)
+        assert signal.max() == pytest.approx(10.0)
+        assert signal[0, 1] == pytest.approx(2048 * 10 / 4095, abs=1e-5)
+
+    @pytest.mark.parametrize(
+        ("start", "length"),
+        [(0, 500), (0, 5000), (37, 1000), (500, 500), (4999, 1), (1234, None)],
+    )
+    def test_a_window_equals_the_slice_of_the_whole_record(
+        self, tmp_path, write_edf_file, edf_signal, start, length
+    ):
+        """Including offsets that are NOT on a data-record boundary."""
+        from ecgbench.dataset import _read_edf
+
+        path = write_edf_file(
+            tmp_path / "r.edf", edf_signal(), ["chan 1", "chan 2", "chan 3"], [500] * 3
+        )
+        full = _read_edf(str(path), 0, None)
+        stop = None if length is None else start + length
+
+        assert np.array_equal(_read_edf(str(path), start, length), full[:, start:stop])
+
+    @pytest.mark.parametrize(("start", "length"), [(5000, 1), (0, 5001), (4900, 200), (-1, 10)])
+    def test_a_window_past_the_end_names_the_record_and_its_true_length(
+        self, tmp_path, write_edf_file, edf_signal, start, length
+
+    ):
+        from ecgbench.dataset import WindowOutOfRangeError, _read_edf
+
+        path = write_edf_file(
+            tmp_path / "r.edf", edf_signal(), ["chan 1", "chan 2", "chan 3"], [500] * 3
+        )
+        with pytest.raises(WindowOutOfRangeError, match="5000 samples"):
+            _read_edf(str(path), start, length)
+
+    def test_a_mixed_rate_file_is_refused_rather_than_reshaped(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        """A polysomnogram has no single (leads, samples) array, and ucddb ships 25."""
+        from ecgbench.dataset import _read_edf
+
+        path = write_edf_file(
+            tmp_path / "psg.edf",
+            [np.arange(1280, dtype=np.int16), np.arange(80, dtype=np.int16)],
+            ["ECG", "SpO2"],
+            [128, 8],
+        )
+        with pytest.raises(NotImplementedError, match="different sampling rates"):
+            _read_edf(str(path), 0, None)
+
+    def test_an_edf_plus_annotation_channel_is_not_returned_as_a_lead(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        """It holds UTF-8 TALs, not samples, and would otherwise look like a rate clash."""
+        from ecgbench.dataset import _read_edf
+
+        path = write_edf_file(
+            tmp_path / "r.edf",
+            [np.arange(1000, dtype=np.int16), np.arange(1000, dtype=np.int16),
+             np.zeros(120, dtype=np.int16)],
+            ["chan 1", "chan 2", "EDF Annotations"],
+            [500, 500, 60],
+        )
+        assert _read_edf(str(path), 0, None).shape == (2, 1000)
+
+    def test_the_length_comes_from_the_file_not_the_header_field(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        """EDF allows -1 for an unfinished recording, and some published files lie."""
+        from ecgbench.dataset import _record_length
+
+        unknown = write_edf_file(
+            tmp_path / "a.edf", edf_signal(), ["c1", "c2", "c3"], [500] * 3,
+            declared_records=-1,
+        )
+        overstated = write_edf_file(
+            tmp_path / "b.edf", edf_signal(), ["c1", "c2", "c3"], [500] * 3,
+            declared_records=99,
+        )
+        assert _record_length(str(unknown), "edf") == 5000
+        assert _record_length(str(overstated), "edf") == 5000
+
+    def test_a_24_bit_bdf_is_refused_by_name(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        from ecgbench.dataset import _read_edf
+
+        path = write_edf_file(
+            tmp_path / "r.bdf", edf_signal(), ["c1", "c2", "c3"], [500] * 3,
+            version="\xffBIO",
+        )
+        with pytest.raises(ValueError, match="only "):
+            _read_edf(str(path), 0, None)
+
+    def test_the_validation_engine_reads_it_the_same_way(
+        self, tmp_path, write_edf_file, edf_signal
+    ):
+        """engine.py keeps its own window-less copy of _load_signal; it must agree."""
+        from ecgbench.dataset import _load_signal
+        from ecgbench.validation.engine import _load_signal as _validation_load
+
+        path = str(
+            write_edf_file(
+                tmp_path / "r.edf", edf_signal(), ["c1", "c2", "c3"], [500] * 3
+            )
+        )
+        assert np.array_equal(
+            _validation_load(path, "edf", 1.0), _load_signal(path, "edf", 1.0)
+        )
+
+    def test_it_loads_through_ECGDataset_with_window_and_leads(  # noqa: N802
+        self, tmp_edf_signal_dataset, ucddb_config
+    ):
+        from ecgbench.dataset import ECGDataset
+
+        full = ECGDataset(
+            ucddb_config, split="train", version="clean",
+            data_path=tmp_edf_signal_dataset, metadata_source="local",
+        )
+        assert tuple(full[0]["signal"].shape) == (3, 5000)
+
+        windowed = ECGDataset(
+            ucddb_config, split="train", version="clean",
+            data_path=tmp_edf_signal_dataset, metadata_source="local",
+            window=(1000, 256), leads=["V5R", "V5"],
+        )
+        signal = windowed[0]["signal"]
+        assert tuple(signal.shape) == (2, 256)
+        # V5R is stored channel 2, V5 is channel 0 — selection is by name.
+        assert signal[0, 0].item() == 2 * 10_000 + 1000
+        assert signal[1, 0].item() == 1000

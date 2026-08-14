@@ -3181,3 +3181,97 @@ def test_ecg_capable_smartwatches_ships_a_reference_manifest():
     # Identifiers must never reach a manifest — it is checksums and counts only.
     assert "records" not in manifest.get("inputs", {})
     assert set(manifest["inputs"]) == {"ecgbench_metadata.csv"}
+
+
+def test_load_ucddb_config():
+    """UCDDB: the first EDF dataset, and the first grouped on a duplicated waveform."""
+    config = load_config("ucddb")
+    assert config.slug == "ucddb"
+    assert config.version == "1.0.0"
+    # THE FIRST `edf` DATASET IN ECGBENCH. The branch was added for it; see
+    # tests/test_dataset.py::TestEDFReader.
+    assert config.signal_format == "edf"
+    # 1.0 for the same reason wfdb datasets use 1.0: the reader applies the
+    # per-channel physical range the header declares, and all 75 Holter channels
+    # declare "mV". Nothing multiplies afterwards.
+    assert config.signal_unit_scale == 1.0
+    assert config.leads == 3
+    # FROM THE LANDING PAGE, NOT THE HEADERS — every one of the 25 files labels
+    # its channels "chan 1", "chan 2", "chan 3" and names no electrode.
+    assert config.lead_names == ["V5", "CC5", "V5R"]
+    assert len(config.lead_names) == config.leads
+    assert config.sampling_rates == [128]
+    assert config.default_sampling_rate == 128
+    assert config.signal_path_columns == {128: "signal_path"}
+    # SubjectDetails.xls is a 2003-era BIFF file with no signal path, so
+    # UCDDBSplitter generates this from it plus the stage files, the event files
+    # and the EDF headers.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_name"
+    # NOT subject_id, and the difference is the point: ucddb014 and ucddb028 are
+    # two different men whose Holter payloads are bit-identical, so the grouping
+    # is by RECORDING. See test_splitting.py::TestUCDDBSplitter.
+    assert config.patient_id_column == "recording_group"
+    # One layout in all 25 files, so neither per-record lead mechanism applies.
+    assert config.record_lead_layouts is None
+    assert config.alternate_lead_names is None
+    assert config.n_folds == 10
+    assert config.has_predefined_splits is False
+    # ODC-By, so the fold CSVs are published.
+    assert config.publish_fold_csvs is True
+    # Module-based labels: there is no machine-readable table in the release.
+    assert config.labels is not None
+    assert config.labels.available is True
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_name"
+
+
+def test_ucddb_stratifies_more_coarsely_than_its_label_column():
+    """`ahi_severity` has a class of one subject; ten folds cannot carry it.
+
+    The splitter uses `stratify_class` (the moderate-or-severe pool) instead, so
+    the config's label_column and its stratification axis are deliberately
+    different quantities. Asserted so a later "consistency" edit cannot quietly
+    point stratification at the four-class grade.
+    """
+    config = load_config("ucddb")
+    assert config.label_column == "ahi_severity"
+    assert config.label_format == "single"
+    assert config.stratification is not None
+    assert config.stratification.method == "custom_function"
+
+
+def test_ucddb_declares_no_expected_samples_because_record_length_varies():
+    """7.52 h to 8.68 h, so any single threshold would drop sound records.
+
+    Omitting the rate DISABLES ``truncated_signal`` rather than making it fire —
+    the same escape hatch afdb, chfdb, nsrdb, ptbdb, szdb, picsdb and
+    challenge2021 use.
+    """
+    config = load_config("ucddb")
+    assert config.validation is not None
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    assert config.validation.expected_leads == 3
+
+
+def test_ucddb_amplitude_bounds_are_the_adc_span_not_a_physiological_range():
+    """0-4095 maps to 0-10 mV, so the ECG rides a ~5 mV pedestal by construction.
+
+    Both rails are attained across the 25 records — float32 minimum exactly 0.0,
+    maximum exactly 10.0 — so the upper bound carries a thousandth of a millivolt
+    of slack (the chfdb trap) and the lower bound carries none, because 0.0 is
+    exact in float32 and a negative physical value could only come from a corrupt
+    read, which is what this check should still catch.
+    """
+    import numpy as np
+
+    config = load_config("ucddb")
+    assert config.validation is not None
+    low, high = config.validation.amplitude_range_mv
+    assert (low, high) == (0.0, 10.001)
+    assert float(np.float32(10.0)) <= high
+    assert float(np.float32(0.0)) >= low
+    # A reader that forgot the EDF calibration would return raw digital counts,
+    # which is exactly what the bound still catches.
+    assert 4095 > high

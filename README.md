@@ -41,6 +41,19 @@ pip install ecgbench[torch]
 pip install ecgbench[hdf5]
 ```
 
+### With .xls metadata
+
+`ucddb`'s only metadata table is `SubjectDetails.xls`, a pre-2007 binary
+spreadsheet that `openpyxl` cannot read and `pandas` needs `xlrd` for. It is the
+only dataset that does, so the dependency is its own extra:
+
+```bash
+pip install ecgbench[xls]
+```
+
+(Converting the file once to `SubjectDetails.csv` beside it works too — the label
+loader prefers the CSV when it is there.)
+
 ### With everything
 
 ```bash
@@ -342,6 +355,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 
 | `ecg_capable_smartwatches` | **`II` in all 720 smartwatch records — and every one of them is lead I.** The release's own Methods wire the simulator's right-arm output to the watch crown and its left-arm output to the caseback, and describe the watches' exports as "single-lead (Lead I)"; LA − RA *is* lead I. `lead_names` follows the files anyway, because that is what `leads=` resolves against and renaming a channel would make ECGBench disagree with `wfdb` — so `leads=["II"]` returns a genuine lead II for the 195 Philips reference records and an arm-to-arm lead I for the other 720, with no error. Filter on `labels["derivation"]` first. This is also the one release whose **predominant layout is the smaller one**: the reference stores all twelve derivations and is declared in `alternate_lead_names: {12: [...]}`. See below |
 | `picsdb` | **One channel, and the ten headers disagree what to call it: `II` in seven records, `ECG` in `infant1` and `infant5`, `I` in `infant10`.** The `mitdb` problem at a lead count of one — `alternate_lead_names` is keyed by lead *count*, and the count never varies — so `record_lead_layouts` carries all three and `ECGDataset` reads each record's own header. `leads=["II"]` therefore returns a signal for seven records and **raises for three**, which is the honest answer: the release says only "a single channel of a 3-lead electrocardiogram" and nothing states that the `ECG` channel is lead II. Gain and baseline both differ per record (800.4–1420.8 adu/mV, baseline −141 to +25,427), so each has its own converter rail and `amplitude_range_mv` is the union of ten, [−40.9604, +40.915] mV |
+| `ucddb` | **`chan 1`, `chan 2`, `chan 3` in the files — the electrode names are only on the landing page.** All 25 Reynolds Lifecard CF Holter files label their channels by position and name no electrode; PhysioNet's page says "Three-channel Holter ECGs (V5, CC5, V5R)", and `lead_names` is that sentence's order. Nothing in the release corroborates it, so `leads=["V5R"]` is a channel position with a probable name. Two further caveats: **`ucddb002`'s third channel is a bit-identical copy of its second**, so it has two distinct leads and not three, and none of V5/CC5/V5R is one of the standard twelve, so this must not be stacked with 12-lead data |
 
 **Three datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -1082,6 +1096,33 @@ while carrying signal nothing can flag**: each holds 239–3,147 s in perfectly 
 runs (24 minutes in one stretch for `infant5`), `infant5` and `infant1` are clipped at
 the converter rail for 1,691 s and 642 s, and R-peak annotation covers 94.0–99.9% of
 each record — `infant10`'s last 2.13 h carry none. See `examples/load_picsdb.py`.
+
+`ucddb` is the **first EDF dataset** here, and the one whose annotations do not line
+up with its own ECG until they are moved. 25 overnight sleep studies from Dublin, each
+shipping two simultaneous recordings of the same night: a 14-channel polysomnogram and
+a three-channel Holter ECG (V5, CC5, V5R at 128 Hz, 7.52–8.68 h each, 203.4 h in all).
+ECGBench splits the Holter; the polysomnograms mix 8, 64 and 128 Hz channels, so
+`_read_edf` refuses them by name rather than reshaping them. Four things to know.
+**The annotations are stamped in polysomnogram time and the Holter's clock is a
+placeholder** — its headers read 09:0x on 01.01.06, rising a minute apart in filename
+order, and the landing page confirms the real times were removed — so 3,428 scored
+respiratory events and 20,789 sleep epochs are unusable until realigned;
+`PSG_OFFSET_SECS` recovers the offset for 24 of the 25 records by cross-correlating
+median-RR heart rate between the two recordings, 22 of them at r = 0.82–0.98 with a
+third-to-third spread of 3 s or less, and `respiratory_events()` / `sleep_stages()`
+return a `holter_secs` column that indexes straight into `window=`. **`ucddb028`'s
+Holter file is a bit-identical copy of `ucddb014`'s** — four bytes of start time apart,
+undocumented upstream, and confirmed independently by the alignment search, which
+matches `ucddb028`'s waveform to `ucddb014`'s polysomnogram at the same offset and
+r = 0.940 while its own subject's gives 0.01 — so `patient_id_column` is
+`recording_group`, merging the pair into 24 groups, and `waveform_matches_subject` is
+False for it. **The first 67–119 s of every record is a 1 mV calibration square wave**,
+byte-identical across all 25 over the shortest block, so `window=(0, n)` returns the
+same non-ECG array for the whole database; start at `ECG_STARTS_AT_SAMPLE` (15,232).
+And **the ECG rides a ~5 mV pedestal** because every channel declares digital 0–4095
+mapping to physical 0–10 mV, which ECGBench applies verbatim, making
+`amplitude_range_mv` the ADC span rather than a physiologic bound. See
+`examples/load_ucddb.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays
