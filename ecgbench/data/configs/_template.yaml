@@ -21,7 +21,7 @@ creators:
 
 # --- Signal Properties ---
 signal_format: "wfdb"             # One of: wfdb, csv, csv_lead_rows, npy, hdf5,
-                                  #         opensignals, edf
+                                  #         opensignals, edf, mat
                                   #   csv           -> samples in rows, leads in
                                   #                    columns, with a header row
                                   #   csv_lead_rows -> the transpose: leads in rows,
@@ -30,7 +30,11 @@ signal_format: "wfdb"             # One of: wfdb, csv, csv_lead_rows, npy, hdf5,
                                   #                    Every channel must share one
                                   #                    sampling rate; a mixed-rate
                                   #                    polysomnogram raises.
-                                  # (mat not implemented)
+                                  #   mat           -> MATLAB v5/v7 container. The
+                                  #                    reference carries the variable,
+                                  #                    the orientation and the unit:
+                                  #                    <file>.mat:<var>:<ls|sl>:<mV|uV>
+                                  #                    (v7.3 is HDF5 -> use hdf5)
 signal_unit_scale: 1.0            # Multiply raw samples by this to get millivolts.
                                   #   wfdb applies its own header gain -> leave at 1.0
                                   #   edf applies the header's own physical range,

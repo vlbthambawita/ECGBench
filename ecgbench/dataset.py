@@ -129,6 +129,15 @@ def _record_length(record_path: str, signal_format: str) -> int | None:
         # Costs one header read; the length is n_data_records x samples-per-record
         # and never needs the payload.
         return _edf_length(record_path)
+    if signal_format == "mat":
+        # No cheap header read exists — loadmat decodes the variable — but this
+        # is only ever reached to build an error message that has already failed.
+        try:
+            path, variable, orientation, _ = _parse_mat_ref(record_path)
+            matrix = _mat_potentials(path, variable, record_path)
+            return int(matrix.shape[0] if orientation == "sl" else matrix.shape[1])
+        except Exception:
+            return None
     return None
 
 
@@ -237,6 +246,130 @@ def _hdf5_signal_view(dataset, row: int | None, record_path: str, sl: slice) -> 
             f"{dataset.shape[0]} records."
         )
     return np.asarray(dataset[row, sl, :], dtype=np.float32).T
+
+
+#: Orientation codes a ``mat`` reference may carry. ``ls`` is (leads, samples),
+#: which is what the EDGAR time-signal standard specifies and what all but one
+#: contributor actually ships; ``sl`` is its transpose.
+_MAT_ORIENTATIONS = {"ls", "sl"}
+
+#: Unit codes a ``mat`` reference may carry, mapped to the millivolt factor.
+#: Spelled as the sources spell them, matched case-insensitively.
+_MAT_UNIT_SCALES = {"mv": 1.0, "uv": 0.001, "microv": 0.001, "µv": 0.001}
+
+
+def _parse_mat_ref(record_path: str) -> tuple[str, str | None, str, float]:
+    """Split a ``mat`` reference into file, variable, orientation and unit scale.
+
+    The grammar is ``<file>.mat[:<variable>[:<orientation>[:<unit>]]]``, and
+    every part after the file exists because a MATLAB container declares none of
+    them reliably:
+
+    ``<variable>``
+        Which variable holds the potentials. There is no convention: EDGAR's own
+        standard says ``ts``, but its contributors also ship ``bspm``, ``ECG``,
+        ``EGM``, ``pots``, ``lichaampots`` and one variable per simulation named
+        after the pacing site (``Simulation_04_LVLAT``). Omitted, the file's sole
+        variable is used.
+    ``<orientation>``
+        ``ls`` for (leads, samples), ``sl`` for (samples, leads). **This cannot
+        be inferred from the shape.** EDGAR's KIT simulations are 2223 leads by
+        225 samples and Dalhousie's averaged beats are 1142 samples by 120
+        leads, so "leads are the shorter axis" is wrong in both directions.
+        Defaults to ``ls``.
+    ``<unit>``
+        ``mV`` or ``uV``. Also not inferable, and not reliably declared: EDGAR
+        mixes both across contributors, several files declare no unit at all,
+        and the two Valencia recordings declare ``mV`` for samples their own
+        README says are microvolts — believing the file would put body-surface
+        potentials at five volts. Defaults to ``mV`` (factor 1.0).
+
+    Parsing is right to left over a closed vocabulary, so a colon is only ever
+    read as a separator when the token after it is a known orientation or unit,
+    or when what precedes it ends in ``.mat``. A directory named with a colon
+    stays part of the path.
+    """
+    text = str(record_path)
+    orientation = "ls"
+    scale = 1.0
+
+    head, separator, tail = text.rpartition(":")
+    if separator and tail.lower() in _MAT_UNIT_SCALES:
+        scale = _MAT_UNIT_SCALES[tail.lower()]
+        text = head
+        head, separator, tail = text.rpartition(":")
+    if separator and tail.lower() in _MAT_ORIENTATIONS:
+        orientation = tail.lower()
+        text = head
+        head, separator, tail = text.rpartition(":")
+    if separator and head.lower().endswith(".mat"):
+        return head, tail, orientation, scale
+    return text, None, orientation, scale
+
+
+def _mat_potentials(path: str, variable: str | None, record_path: str) -> np.ndarray:
+    """Return the raw potential matrix out of a MATLAB v5/v7 ``.mat`` file.
+
+    EDGAR wraps its recordings in a struct whose ``potvals`` field is the matrix
+    (``ts``, ``bspm``, ``ECG``, ``EGM``, ``Simulation_*``), but two contributors
+    store a bare array instead (``pots``, ``lichaampots``), so both are accepted.
+    Returned in the file's own orientation and units; :func:`_load_signal`
+    applies the reference's orientation and scale.
+    """
+    try:
+        import scipy.io
+    except ImportError as e:
+        raise ImportError(
+            "scipy is required to read MATLAB (.mat) records. "
+            "Install with: pip install ecgbench[mat]"
+        ) from e
+
+    try:
+        contents = scipy.io.loadmat(path, struct_as_record=False, squeeze_me=False)
+    except NotImplementedError as e:
+        # loadmat refuses v7.3, which is HDF5 and would need the hdf5 reader.
+        raise ValueError(
+            f"{record_path!r} is a MATLAB v7.3 file, which is HDF5 rather than the "
+            "v5/v7 container this reader handles. Re-save it from MATLAB with "
+            "'-v7', or read it with signal_format: hdf5."
+        ) from e
+
+    variables = {k: v for k, v in contents.items() if not k.startswith("__")}
+
+    def matrix_of(value):
+        """The potential matrix inside a struct, or the array itself."""
+        if isinstance(value, np.ndarray) and value.dtype == object and value.size:
+            member = value.flat[0]
+            if hasattr(member, "potvals"):
+                return np.asarray(member.potvals)
+            return None
+        if isinstance(value, np.ndarray) and value.ndim == 2 and value.dtype.kind in "fiu":
+            return value
+        return None
+
+    if variable is not None:
+        if variable not in variables:
+            raise ValueError(
+                f"MATLAB record {record_path!r} names variable {variable!r}, which is "
+                f"not in the file. Found: {sorted(variables)}"
+            )
+        matrix = matrix_of(variables[variable])
+        if matrix is None:
+            raise ValueError(
+                f"Variable {variable!r} of {record_path!r} is neither a struct with a "
+                "'potvals' field nor a 2-D numeric array."
+            )
+        return matrix
+
+    found = {name: matrix_of(value) for name, value in variables.items()}
+    found = {name: m for name, m in found.items() if m is not None}
+    if len(found) != 1:
+        raise ValueError(
+            f"MATLAB file {record_path!r} holds {len(found)} potential matrices "
+            f"({sorted(found)}), so which one carries the signal is ambiguous. "
+            "Name it in the path as '<file>.mat:<variable>'."
+        )
+    return next(iter(found.values()))
 
 
 def _parse_npy_ref(record_path: str) -> tuple[str, int]:
@@ -752,10 +885,37 @@ def _load_signal(
         # window is a seek to the first data record it needs — the reason a
         # 7.5-hour overnight Holter record is usable at all.
         signal = _read_edf(record_path, start, length)
+    elif signal_format == "mat":
+        # MATLAB v5/v7 container. Unlike every other branch here the window is a
+        # slice after the read rather than a push-down: loadmat decodes a whole
+        # variable and offers no seek. That costs nothing on the records this
+        # format is used for (EDGAR's longest is 55,296 samples, ~1 MB); revisit
+        # if a long-record dataset ever adopts it.
+        #
+        # Orientation and units come from the reference, not from the file — see
+        # _parse_mat_ref for why neither can be inferred.
+        path, variable, orientation, mat_scale = _parse_mat_ref(record_path)
+        matrix = _mat_potentials(path, variable, record_path)
+        if matrix.ndim != 2:
+            raise ValueError(
+                f"MATLAB record {record_path!r} has shape {matrix.shape}; expected a "
+                "2-D matrix of potentials."
+            )
+        signal = np.asarray(matrix, dtype=np.float32)
+        if orientation == "sl":
+            signal = signal.T
+        if mat_scale != 1.0:
+            signal = signal * np.float32(mat_scale)
+        if window is not None:
+            available = signal.shape[1]
+            if start >= available or (length is not None and sampto > available):
+                raise _window_error(record_path, start, length, available)
+            signal = signal[:, start:sampto]
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, edf"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, "
+            "edf, mat"
         )
 
     if unit_scale != 1.0:

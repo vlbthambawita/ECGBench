@@ -116,10 +116,31 @@ def _load_signal(record_path: str, signal_format: str, unit_scale: float = 1.0) 
         from ecgbench.dataset import _read_edf
 
         signal = _read_edf(record_path, 0, None)
+    elif signal_format == "mat":
+        # MATLAB v5/v7 container. Orientation and per-record units travel in the
+        # reference rather than the config, because EDGAR mixes (leads, samples)
+        # with (samples, leads) and millivolts with microvolts inside one
+        # release — see ecgbench.dataset._parse_mat_ref. Window-less like the
+        # rest of this function.
+        from ecgbench.dataset import _mat_potentials, _parse_mat_ref
+
+        path, variable, orientation, mat_scale = _parse_mat_ref(record_path)
+        matrix = _mat_potentials(path, variable, record_path)
+        if matrix.ndim != 2:
+            raise ValueError(
+                f"MATLAB record {record_path!r} has shape {matrix.shape}; expected a "
+                "2-D matrix of potentials."
+            )
+        signal = np.asarray(matrix, dtype=np.float32)
+        if orientation == "sl":
+            signal = signal.T
+        if mat_scale != 1.0:
+            signal = signal * np.float32(mat_scale)
     else:
         raise NotImplementedError(
             f"Signal format '{signal_format}' not yet supported. "
-            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, edf"
+            "Currently supported: wfdb, csv, csv_lead_rows, opensignals, npy, hdf5, "
+            "edf, mat"
         )
 
     if unit_scale != 1.0:

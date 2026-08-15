@@ -1,0 +1,381 @@
+# ECGBench Config: EDGAR — Experimental Data and Geometric Analysis Repository
+# =============================================================================
+# https://edgar.sci.utah.edu/  (free registration)  ·  https://www.ecg-imaging.org/
+#
+# EDGAR IS NOT ONE DATASET AND THIS CONFIG DOES NOT PRETEND OTHERWISE. It is a
+# portal of 33 posts holding 26 distinct electrocardiographic-imaging experiments
+# from ten institutions, contributed between 2002 and 2022, each with its own
+# archive layout, MATLAB variable names, sampling rate, electrode array and unit
+# convention. 24 of them ship time signals; 2,943 recordings from 20 subjects.
+# Nothing below is a property of "the dataset" — every figure is an aggregate
+# over experiments that were never designed to be pooled, and the per-record
+# columns (`experiment`, `subject_id`, `recording_surface`, `electrode_array`,
+# `sampling_rate_hz`, `n_leads`) are what a user should actually filter on.
+# ecgbench/labels/edgar.py carries the curated per-experiment table.
+#
+# THE FIRST `mat` DATASET IN ECGBENCH. `signal_format: "mat"` was added for it;
+# see ecgbench/dataset.py:_parse_mat_ref. The signal reference is not a plain
+# path — it is `<file>.mat:<variable>:<orientation>:<unit>`, and all four parts
+# are needed because a MATLAB container declares none of them reliably. See
+# signal_path_columns below.
+#
+# NINE THINGS TO KNOW BEFORE USING IT, all verified against the files.
+#
+# 1. THE RECORDINGS HAVE TO BE UNPACKED BEFORE ANYTHING CAN READ THEM. EDGAR
+#    publishes only zips — 291 of them — so EDGARSplitter unpacks the 24
+#    authoritative archives into `ecgbench_extracted/` on first run and every
+#    signal path starts there. Only the `.mat` members under a signal directory
+#    are written: the CT and MRI volumes are 7,524 DICOM files and 10 of the
+#    repository's 11 GB, and nothing in ECGBench reads them. The dataset root
+#    must be writable. Extraction is idempotent and takes about ten seconds.
+#
+# 2. THE PORTAL CROSS-POSTS WHOLE ARCHIVES, AND THE WRONG ONES. WordPress stores
+#    one upload per filename per month, so a post linking a generically named
+#    `Interventions.zip` gets whichever dataset uploaded that name first.
+#    Verified by SHA-256 over all 12,212 shipped `.mat` members: the Valencia
+#    pat2 post's `Interventions.zip` is byte-identical to Charles-PSTOV-pat3's
+#    594 BSPM recordings; the KIT `TMV_FEM` post's Docs/Interventions/Meshes zips
+#    are Dalhousie's; and every data link on the `KIT-2020-SimVentrPacings` post
+#    resolves to the KIT-20 *clinical* dataset, leaving that post with no data of
+#    its own. ECGBench therefore reads one uniquely titled archive per
+#    experiment. Those 24 archives cover all 2,943 recordings exactly once, with
+#    no overlap and nothing left over — asserted by
+#    `ecgbench.labels.edgar.verify_archive_coverage`.
+#
+# 3. SEVEN OF THE 33 POSTS ARE RE-PUBLICATIONS OF ANOTHER POST (the 2016 archive
+#    and the 2025 re-issue of the same experiment). They contribute no records;
+#    see `DUPLICATE_POSTS`. Two further posts ship no signals at all:
+#    `bratislava_2020_p034` publishes only documentation and geometry, and
+#    `kit-2020-simventrpacings-fivesourcemodels` has the broken data links above.
+#
+# 4. ORIENTATION IS NOT RECOVERABLE FROM THE SHAPE. EDGAR's standard is
+#    (leads, samples) and 23 of the 24 experiments follow it, including KIT's
+#    2223-lead by 225-sample simulations. Dalhousie stores the transpose — 1142
+#    samples by 120 leads — established from its own `bad_leads` field (indices
+#    up to 120) and its `avg_beats_mtx`, which is (beats, 120). "Leads are the
+#    shorter axis" is therefore false in both directions, so the orientation
+#    travels in the signal reference instead of being guessed at load time.
+#
+# 5. TWO EXPERIMENTS DECLARE THE WRONG UNIT, AND THE FILE LOSES TO THE README.
+#    Valencia pat1 and pat2 set `ECG.units = 'mV'` on samples reaching 5350 —
+#    five volts on a body surface. Their own `Docs/Readme.txt` says "the units
+#    are microV", which is what ECGBench applies. Every record carries both
+#    `declared_unit` and `unit_applied`, and `unit_source` says which won and
+#    why; these four records are the only disagreement in the release.
+#
+# 6. ONE `potvals` FIELD, THREE DIFFERENT QUANTITIES. Utah-10-03-02 stores 570
+#    activation/recovery-interval maps and 570 QRS/QRST/ST integral maps in the
+#    same field as its recordings — the integral maps mislabelled `unit = 'ms'`.
+#    They are not time signals and are excluded. The separation is clean rather
+#    than a judgement call: no derived map has more than 5 frames and no real
+#    recording has fewer than 145.
+#
+# 7. AN INVERSE SOLUTION IS NOT A RECORDING. Maastricht ships `heartpots.mat`,
+#    which its README states are "NOT measured, but reconstructed from the
+#    body-surface potentials (with a Tikhonov zeroth order regularization
+#    method)". Those two files are excluded; including them would put a method's
+#    output into a benchmark of measurements. The same README flags an unresolved
+#    gain factor on that experiment's *measured* epicardial recordings, so their
+#    absolute amplitudes should not be trusted either.
+#
+# 8. `recording_surface: transmembrane` IS NOT A POTENTIAL. KIT's TMV source
+#    models are simulated membrane voltages (resting level exactly −84 mV in
+#    every one of the 16 records), a different physical quantity from every other
+#    record here. They have their own surface value so that nobody trains on them
+#    as though they were electrograms.
+#
+# 9. FOUR SUBJECTS HOLD 92% OF THE RECORDINGS. charles_pstov_pat1 alone has 944
+#    of 2,943 and five subjects have two each, so patient-safe folds are
+#    necessarily unequal and the default fold-10 test split is a couple of dozen
+#    records rather than a tenth of the release. That is what a repository of 20
+#    experiments looks like; the alternative — splitting one subject's 944
+#    recordings across train and test — would make pacing-site localisation look
+#    solved. Use `fold_numbers` with `split=None` and your own grouping if the
+#    default layout does not suit the question.
+
+name: "EDGAR (Experimental Data and Geometric Analysis Repository)"
+slug: "edgar"
+# The portal is a rolling publication rather than a versioned release: posts
+# carry dates (2016/09 and 2025/07 uploads coexist) and no version number
+# appears anywhere in the archives. This is the date the local mirror was taken.
+version: "2026-08-10"
+url: "https://edgar.sci.utah.edu/"
+download_url: null  # login-gated, 291 archives, and EDGARSplitter generates metadata_csv
+# The portal states no SPDX licence. Access is by free registration and each
+# dataset page carries its own required citations and acknowledgment text, which
+# ecgbench/labels/edgar.py reproduces per experiment in `notes`.
+license: "Free registration; per-dataset citation and acknowledgment required"
+description: >
+  The reference open repository for electrocardiographic imaging (ECGI): 26
+  experiments contributed by ten institutions, pairing body-surface potential
+  maps with simultaneously recorded cardiac-surface potentials and matched
+  geometry. ECGBench indexes the 2,943 time-signal recordings of the 24
+  experiments that publish any, from 20 subjects — 13 human (three ventricular
+  pacing-site studies from Prague with CARTO ground truth, a KIT PVC study, a
+  Dalhousie paced/VT/VF study, two Valencia atrial-fibrillation patients mapped
+  under adenosine AV block, five EP Solutions vest patients and one healthy
+  Nijmegen subject recorded in a noisy and an MEG-shielded room), four animal
+  (two Utah torso-tank ischaemia experiments with 599-electrode cage and
+  247-electrode sock plus 480 plunge needles, a Bordeaux torso-tank pig, a
+  Maastricht closed-chest dog and an Auckland open-chest pig) and two simulated
+  (Valencia atrial rotors, KIT ventricular pacing in five source models).
+  Electrode counts run from 54 to 2,223 and sampling rates from 500 to 2,048 Hz.
+  Geometry, transfer matrices and imaging ship alongside on the portal and are
+  not indexed here.
+citation: >
+  Aras K, Good W, Tate J, Burton B, Brooks D, Coll-Font J, Doessel O, Schulze W,
+  Potyagaylo D, Wang L, van Dam P, MacLeod R. Experimental Data and Geometric
+  Analysis Repository — EDGAR. Journal of Electrocardiology 48(6):975-981 (2015).
+  EDGAR additionally requires the per-experiment citations and acknowledgment
+  text on each dataset's portal page; `ecgbench.labels.edgar.EXPERIMENTS` records
+  which experiment a record came from so the right ones can be found.
+doi: "10.1016/j.jelectrocard.2015.08.008"
+
+creators:
+  - type: Organization
+    name: "Scientific Computing and Imaging Institute / CVRTI, University of Utah"
+    url: "https://edgar.sci.utah.edu/"
+  - type: Organization
+    name: "Consortium for ECG Imaging (CEI)"
+    url: "https://www.ecg-imaging.org/"
+
+# --- Signal Properties ---
+# MATLAB v5/v7 containers. The reference carries the variable, the orientation
+# and the unit; see signal_path_columns.
+signal_format: "mat"
+# 1.0, and this is the wfdb/edf case rather than an omission: the per-record unit
+# is applied by the reader from the reference, because EDGAR mixes millivolts and
+# microvolts across contributors and a single dataset-wide factor would be wrong
+# for one or the other. See note 5 above.
+signal_unit_scale: 1.0
+# THE MODE, NOT A PROPERTY OF THE DATASET. 2,181 of 2,943 recordings have 120
+# electrodes (the three Prague pacing studies and Dalhousie); the release holds
+# 29 distinct electrode counts from 54 to 2,223. Filter on `n_leads`.
+leads: 120
+# DELIBERATELY EMPTY, AND NOT AN OVERSIGHT. EDGAR's channels are electrode
+# positions on a torso, sock, cage, needle or mesh geometry — index i of
+# `potvals` is node i of the matching `Meshes/` file — not named clinical leads.
+# There is no aVR here to select, so `ECGDataset(leads=["V1"])` is meaningless
+# for this dataset and `alternate_lead_names` could not express 29 layouts
+# anyway. Use the geometry files on the portal to map a channel to a position.
+lead_names: []
+# Nominal: the MEDIAN, 0.152 s. Length is not uniform and the spread is four
+# orders of magnitude — 145 samples (a KIT clinical beat) to 55,296 (a 27 s
+# Bordeaux run). Most records are single extracted beats, not continuous
+# recordings. Any window a user applies across the whole dataset has to fit 145
+# samples; filter on `n_samples` first.
+duration_seconds: 0.152
+# Six rates, and 53 records declare none: the 40 KIT simulation runs and the 13
+# Nijmegen recordings state no rate in the file and none in their README, so
+# `sampling_rate_hz` is null for them rather than guessed. (Nijmegen's uniform
+# 9,999 samples would be 10 s at 1 kHz, but nothing in the release says so.)
+# 2034.5 Hz, Valencia's, is the only non-integer rate in the repository.
+sampling_rates: [500, 1000, 1200, 2000, 2034.5, 2048]
+default_sampling_rate: 2000
+
+# --- File Structure ---
+# No metadata file of any kind ships with EDGAR — 26 free-text READMEs and
+# nothing tabular. EDGARSplitter builds this CSV on first run via
+# ecgbench.labels.edgar, which unpacks the archives, opens every recording and
+# joins the CARTO pacing-site tables. The validation engine re-reads it from
+# disk, so the dataset root must be writable.
+metadata_csv: "ecgbench_metadata.csv"
+metadata_csv_separator: ","
+record_id_column: "record_id"
+# False, and checked rather than assumed: record ids are
+# "charles_pat1__Interventions_interventionLeftVentPace01_2012-07-27Subject_run1"
+# and subject ids are "charles_pstov_pat1" — neither is all-digits, so the CSV
+# round trip cannot destroy a leading zero. export_splits verifies this.
+zero_padded_identifiers: false
+# SUBJECT, AND IT SPANS FIVE POSTS FOR ONE OF THEM. `kit_subject20` groups the
+# KIT-20 clinical recordings with all four KIT simulations, because the
+# simulations were computed on that subject's own anatomy and geometry — putting
+# them in different folds would let a model see the test subject's torso. 20
+# groups over 2,943 recordings.
+patient_id_column: "subject_id"
+
+# ONE COLUMN, keyed on the nominal 2 kHz, because a record exists at exactly one
+# rate — there is no per-rate re-sampling here as there is in PTB-XL. To select
+# by rate, filter on the per-record `sampling_rate_hz` label column.
+#
+# THE VALUES ARE NOT PLAIN PATHS. Each is
+#   ecgbench_extracted/<experiment>/<path>.mat:<variable>:<orientation>:<unit>
+# e.g.
+#   ecgbench_extracted/dalhousie_2006/Interventions/BSPM/6105d35e_39.120avg.mat:bspm:sl:uV
+# `<variable>` because EDGAR's contributors name the struct ts, bspm, ECG, EGM,
+# pots, lichaampots or Simulation_04_LVLAT; `<orientation>` because of note 4;
+# `<unit>` because of note 5. All four parts are always written, so nothing is
+# inferred at load time and the fold CSVs record exactly what was decided.
+signal_path_columns:
+  2000: "signal_path"
+
+# --- Labels ---
+# The surface the electrodes sat on: torso 2,485, epicardium 245, intramural
+# 190, transmembrane 16, endocardium 7. NOT the stratification label — see the
+# stratification block. `electrode_array` is the finer distinction within a
+# surface (a 599-electrode rigid cage and a 247-electrode sock are both
+# `epicardium` here, and they are not the same measurement).
+label_column: "recording_surface"
+label_format: "single"
+
+stratification:
+  # Custom, and DELIBERATELY COARSER THAN label_column. Two of the five surfaces
+  # come from a single subject each — all 190 intramural recordings are one
+  # dog's plunge needles, all 16 transmembrane runs one simulated anatomy — and
+  # a class living in one patient group cannot be spread over ten folds.
+  # Measured with StratifiedGroupKFold(10) over the real table: stratifying on
+  # `recording_surface` leaves ALL TEN folds missing at least one class;
+  # stratifying on body-surface vs cardiac-surface leaves three. EDGARSplitter
+  # stratifies on `stratify_class`, which is that binary — 2,485 records in 20
+  # subjects against 458 in 10. Train on `recording_surface`; the pooled class
+  # exists to build folds. See ecgbench.splitting.strategies.edgar.
+  method: "custom_function"
+
+# --- Folds ---
+# Ten, and it fits: 20 subjects over 10 folds is 2 per fold, above the group
+# count at which StratifiedGroupKFold starts emitting silently empty folds
+# (EDGARSplitter raises if that ever stops being true). What ten folds cannot
+# do is make them equal — see note 9 above.
+n_folds: 10
+
+# --- Predefined Splits ---
+has_predefined_splits: false
+
+# --- Quality Validation ---
+validation:
+  # The mode again, matching `leads` above. Nothing reads this field today, and
+  # for EDGAR it would be wrong to act on if anything did: 762 recordings
+  # legitimately have a different electrode count.
+  expected_leads: 120
+  # DELIBERATELY EMPTY, like afdb, chfdb, nsrdb, ptbdb, szdb, ucddb and
+  # challenge2021: length varies by four orders of magnitude across experiments
+  # and within several of them, so any single threshold would drop sound
+  # records as truncated. Omitting the rate disables the check rather than
+  # making it fire; `truncated_signal` stays in the list below only so a future
+  # per-experiment scheme has somewhere to go.
+  expected_samples: {}
+  checks:
+    - missing_leads
+    - nan_values
+    - truncated_signal
+    - flat_line
+    - corrupt_header
+    - amplitude_outlier
+  # A CORRUPTION GUARD, NOT A PHYSIOLOGICAL RANGE, and that is forced by the
+  # content rather than chosen. These are five physically different
+  # measurements whose plausible amplitudes differ by two orders of magnitude:
+  # measured over all 2,943 records, body-surface potentials span
+  # [-29.14, +19.18] mV, epicardial [-281.55, +49.61], intramural
+  # [-103.65, +81.79], simulated transmembrane [-84.00, +26.96] and simulated
+  # endocardial [-901.35, +670.05]. No single bound can mean "physiologically
+  # plausible" for all of them, so this one is the union of the attained ranges
+  # with a millivolt of slack — it catches a decode failure and nothing subtler.
+  # Judge amplitude plausibility per `recording_surface`, not from the
+  # validation report.
+  #
+  # Both extremes are attained by valencia_sim's simulated atrial electrograms
+  # and both are exactly representable in float32, so the slack is precaution
+  # rather than necessity (cf. chfdb, where a bound set to the attained rail
+  # excluded the very record it was computed from).
+  amplitude_range_mv: [-902.0, 671.0]
+
+# --- Labels ---
+# Module-based: ecgbench/labels/edgar.py holds the curated per-experiment table
+# (which archive is authoritative, which surface each electrode array sat on,
+# orientation, unit and its provenance, and the portal's required citations),
+# unpacks the archives, opens every recording for its shape, rate, declared unit
+# and bad-lead count, and joins the CARTO pacing-site tables so the four pacing
+# experiments carry `pacing_chamber`, `pacing_site` and the site's x/y/z
+# coordinates — the actual ground truth for pacing-site localisation, present
+# for 2,157 of the 2,943 records. There is no source CSV to point at.
+labels:
+  source_csv: null
+  join_column: "record_id"
+
+# --- Croissant Metadata ---
+croissant:
+  keywords:
+    - "ECG"
+    - "electrocardiography"
+    - "electrocardiographic imaging"
+    - "ECGI"
+    - "body surface potential mapping"
+    - "BSPM"
+    - "inverse problem"
+    - "epicardial potentials"
+    - "endocardial mapping"
+    - "torso tank"
+    - "cardiac electrophysiology"
+    - "pacing site localization"
+    - "ischemia"
+    - "atrial fibrillation"
+    - "simulation"
+    - "MATLAB"
+  rai_data_collection: >
+    Twenty-six experiments contributed to a common repository by ten
+    institutions between 2002 and 2022, curated at the University of Utah's SCI
+    Institute under the Consortium for ECG Imaging. Collection protocols differ
+    completely between them and each is described only by its own README. The
+    human studies were clinical electrophysiology procedures with simultaneous
+    body-surface mapping: three ventricular pacing-site studies at Charles
+    University Hospital, Prague (33, 21 and 22 endocardial CARTO-localised
+    pacing sites, 120-electrode BSPM at 2 kHz), a Karlsruhe Institute of
+    Technology study of paced beats and spontaneous PVCs in one subject
+    (63 electrodes, 1 kHz), a Dalhousie University study of paced beats, VT and
+    VF with simultaneous CARTO endocardial mapping (120-lead signal-averaged
+    beats at 2 kHz), two atrial-fibrillation patients mapped at Hospital General
+    Universitario Gregorio Maranon with Universitat Politecnica de Valencia
+    during an adenosine-induced AV block that suppressed ventricular activity
+    (54-electrode BSPM and 62-73 endocardial basket channels at 2034.5 Hz), five
+    EP Solutions vest patients paced from LV and RV sites, and one healthy
+    subject recorded at Radboud UMC Nijmegen in an ordinary room and in an
+    MEG-shielded room with normal breathing and expiratory breath-hold. The
+    animal studies were terminal experiments under institutional animal-ethics
+    approval: two Langendorff-perfused canine hearts in an electrolytic torso
+    tank at Utah, made ischaemic by coronary occlusion and recorded on a
+    192-electrode tank with a 599-electrode cardiac cage (2002) or a
+    247-electrode sock and 480 plunge needles (2010); a third Utah tank
+    experiment in 2018; a pig heart in a Bordeaux torso tank after ablation-
+    induced left bundle branch block; a closed-chest dog at Maastricht with
+    implanted epicardial electrodes; and an open-chest pig at Auckland with a
+    239-wire UnEmap sock, 184 BioSemi body-surface electrodes and an EnSite LV
+    catheter. Two datasets are simulations: atrial rotors from a modified
+    Courtemanche membrane model (Valencia) and ventricular pacing in five source
+    models on KIT subject 20's anatomy. Geometry came from CT or MRI in every
+    case and ships alongside the signals.
+  rai_data_biases: >
+    This is twenty subjects, and four of them hold 92% of the recordings — one
+    Prague patient alone contributes 944 of 2,943 — so any pooled statistic is
+    really a statement about those four. Nothing here is a population sample:
+    the human subjects are individuals undergoing electrophysiology procedures,
+    the largest human studies are pacing experiments in structurally normal
+    ventricles, and no age, sex or ethnicity is recorded for anyone. Eight of
+    the twenty subjects are not human — two dogs, a canine tank preparation, two
+    pigs and two simulated anatomies — and 46 recordings are synthetic. Twenty
+    experiments could not be more heterogeneous by design: electrode counts run
+    from 54 to 2,223, sampling rates from 500 to 2,048 Hz, and most records are
+    single extracted or signal-averaged beats rather than continuous recordings,
+    so a model trained across the whole table is learning across acquisition
+    systems as much as across physiology. Five different measurement surfaces
+    are pooled into one record table and their amplitudes differ by two orders
+    of magnitude; 16 of the records are transmembrane voltages, not potentials
+    at all. Several upstream defects distort what is available: nine of the 33
+    portal posts carry another dataset's archives or none, four files are 404 on
+    EDGAR's own server, two experiments declare the wrong unit, one contributor
+    documents an unresolved gain error on its epicardial recordings, and one
+    experiment (Bratislava) publishes geometry with the signals its README
+    describes withheld. Six recordings carry NaN for 13 to 30 disconnected
+    electrodes, and one Dalhousie header marks two runs JUNK/DELETE.
+  rai_personal_sensitive_info: >
+    De-identified, and thinly described. Human subjects appear only as study
+    labels — "Subject20", "pat1", "P034", "024" — with no age, sex, or date of
+    birth anywhere in the archives, and no clinical free text beyond one-line
+    experiment notes (Bratislava's withheld-signal post is the only page giving
+    an age and sex). Experiment dates are in the archive and post names and are
+    genuine procedure dates, from 2002 to 2022, which is the only quasi-
+    identifier present. The strongest data about a subject is anatomical rather
+    than demographic: the portal ships each subject's segmented CT or MRI torso
+    and cardiac geometry, which ECGBench does not index or redistribute, and
+    which is patient-specific by construction. Access to the source is by free
+    registration at edgar.sci.utah.edu; ECGBench publishes only fold tables of
+    record identifiers and file paths.

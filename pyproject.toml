@@ -42,7 +42,11 @@ hdf5 = ["h5py>=3.0.0"]
 # Datasets whose only metadata table is a pre-2007 binary .xls (ucddb's
 # SubjectDetails.xls). openpyxl cannot read that format and pandas needs xlrd.
 xls = ["xlrd>=2.0.1"]
-all = ["ecgbench[torch,croissant,download,hf,hdf5,xls]"]
+# Datasets shipping MATLAB v5/v7 containers (edgar). Only the mat branch of
+# _load_signal and the edgar splitter need it, so it stays out of the base
+# install.
+mat = ["scipy>=1.8.0"]
+all = ["ecgbench[torch,croissant,download,hf,hdf5,xls,mat]"]
 dev = [
     "ecgbench[all]",
     "pytest>=7.0.0",

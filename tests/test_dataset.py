@@ -2580,3 +2580,179 @@ class TestEDFReader:
         # V5R is stored channel 2, V5 is channel 0 — selection is by name.
         assert signal[0, 0].item() == 2 * 10_000 + 1000
         assert signal[1, 0].item() == 1000
+
+
+class TestMatReference:
+    """The four-part `mat` reference — edgar is the first dataset to use it.
+
+    ``<file>.mat:<variable>:<orientation>:<unit>``. Every part after the file
+    exists because a MATLAB container declares none of them reliably, and the
+    parse is right-to-left over a closed vocabulary so an ordinary path with a
+    colon in it cannot be mistaken for one.
+    """
+
+    def test_a_bare_path_takes_the_documented_defaults(self):
+        from ecgbench.dataset import _parse_mat_ref
+
+        assert _parse_mat_ref("a/b.mat") == ("a/b.mat", None, "ls", 1.0)
+
+    def test_each_part_is_optional_from_the_right(self):
+        from ecgbench.dataset import _parse_mat_ref
+
+        assert _parse_mat_ref("a/b.mat:bspm") == ("a/b.mat", "bspm", "ls", 1.0)
+        assert _parse_mat_ref("a/b.mat:bspm:sl") == ("a/b.mat", "bspm", "sl", 1.0)
+        assert _parse_mat_ref("a/b.mat:bspm:sl:uV") == ("a/b.mat", "bspm", "sl", 0.001)
+
+    def test_the_unit_is_matched_case_insensitively(self):
+        """EDGAR spells it 'uV', 'microV' and 'mV' in different experiments."""
+        from ecgbench.dataset import _parse_mat_ref
+
+        assert _parse_mat_ref("a/b.mat:ts:ls:MV")[3] == 1.0
+        assert _parse_mat_ref("a/b.mat:ts:ls:UV")[3] == 0.001
+        assert _parse_mat_ref("a/b.mat:ts:ls:microV")[3] == 0.001
+
+    def test_a_colon_in_a_directory_name_stays_part_of_the_path(self):
+        """Only a known orientation/unit token, or a '.mat' prefix, separates."""
+        from ecgbench.dataset import _parse_mat_ref
+
+        assert _parse_mat_ref("odd:dir/b.mat") == ("odd:dir/b.mat", None, "ls", 1.0)
+        # 'notaunit' is neither, so the whole string is the path.
+        assert _parse_mat_ref("a/b.mat:ts:notaunit")[0] == "a/b.mat:ts:notaunit"
+
+
+class TestMatReader:
+    """The `mat` branch of _load_signal, against real MATLAB files.
+
+    The fixture values encode lead and sample index, so a transposed, shifted or
+    truncated read cannot pass by accident.
+    """
+
+    def _write(self, tmp_path, payload, name="r.mat"):
+        scipy_io = pytest.importorskip("scipy.io")
+        path = tmp_path / name
+        scipy_io.savemat(path, payload)
+        return str(path)
+
+    def _signal(self, n_leads=3, n_samples=100):
+        data = np.empty((n_leads, n_samples), dtype=np.float64)
+        for lead in range(n_leads):
+            data[lead, :] = lead * 10_000 + np.arange(n_samples)
+        return data
+
+    def test_it_reads_a_struct_with_a_potvals_field(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path, {"ts": {"potvals": self._signal(), "unit": "mV"}})
+        signal = _load_signal(f"{path}:ts:ls:mV", "mat")
+
+        assert signal.shape == (3, 100)
+        assert signal.dtype == np.float32
+        for lead in range(3):
+            assert signal[lead, 0] == lead * 10_000
+            assert signal[lead, 99] == lead * 10_000 + 99
+
+    def test_sl_transposes_and_ls_does_not(self, tmp_path):
+        """Dalhousie stores (samples, leads); everyone else stores (leads, samples).
+
+        Not inferable from the shape — EDGAR's KIT simulations are 2223 leads by
+        225 samples, so "leads are the shorter axis" is wrong in both directions.
+        """
+        from ecgbench.dataset import _load_signal
+
+        stored = self._signal().T  # (100 samples, 3 leads)
+        path = self._write(tmp_path, {"bspm": {"potvals": stored}})
+
+        assert _load_signal(f"{path}:bspm:sl", "mat").shape == (3, 100)
+        assert _load_signal(f"{path}:bspm:ls", "mat").shape == (100, 3)
+        assert _load_signal(f"{path}:bspm:sl", "mat")[2, 0] == 20_000
+
+    def test_the_unit_in_the_reference_is_applied(self, tmp_path):
+        """The wfdb/edf principle: the record's own scaling, not a config-wide one.
+
+        EDGAR mixes mV and uV across contributors inside one release, so a single
+        signal_unit_scale could only be right for some of it.
+        """
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path, {"ts": {"potvals": self._signal()}})
+
+        millivolts = _load_signal(f"{path}:ts:ls:mV", "mat")
+        microvolts = _load_signal(f"{path}:ts:ls:uV", "mat")
+        assert microvolts[2, 50] == pytest.approx(millivolts[2, 50] / 1000)
+
+    def test_it_reads_a_bare_array_for_the_contributors_who_ship_one(self, tmp_path):
+        """Nijmegen ships `pots` and Maastricht `lichaampots` with no struct."""
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path, {"pots": self._signal()})
+        assert _load_signal(f"{path}:pots", "mat").shape == (3, 100)
+        # ...and without naming it, since the file holds only one matrix.
+        assert _load_signal(path, "mat").shape == (3, 100)
+
+    def test_an_unnamed_variable_is_an_error_when_the_file_holds_several(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(
+            tmp_path, {"a": {"potvals": self._signal()}, "b": {"potvals": self._signal()}}
+        )
+        with pytest.raises(ValueError, match="ambiguous"):
+            _load_signal(path, "mat")
+
+    def test_naming_a_variable_that_is_not_there_says_what_is(self, tmp_path):
+        from ecgbench.dataset import _load_signal
+
+        path = self._write(tmp_path, {"ts": {"potvals": self._signal()}})
+        with pytest.raises(ValueError, match="not in the file"):
+            _load_signal(f"{path}:bspm", "mat")
+
+    def test_a_window_is_a_slice_and_reports_a_bad_one(self, tmp_path):
+        """loadmat has no seek, so unlike wfdb/edf the window is applied after."""
+        from ecgbench.dataset import WindowOutOfRangeError, _load_signal
+
+        path = self._write(tmp_path, {"ts": {"potvals": self._signal()}})
+
+        windowed = _load_signal(f"{path}:ts:ls:mV", "mat", window=(10, 20))
+        assert windowed.shape == (3, 20)
+        assert windowed[1, 0] == 10_010
+
+        with pytest.raises(WindowOutOfRangeError, match="has 100 samples"):
+            _load_signal(f"{path}:ts:ls:mV", "mat", window=(90, 20))
+
+    def test_validation_reads_it_the_same_way(self, tmp_path):
+        """engine.py keeps its own window-less copy; the two must not diverge."""
+        from ecgbench.dataset import _load_signal
+        from ecgbench.validation.engine import _load_signal as validation_load
+
+        stored = self._signal().T
+        path = self._write(tmp_path, {"bspm": {"potvals": stored}})
+        reference = f"{path}:bspm:sl:uV"
+
+        np.testing.assert_array_equal(
+            validation_load(reference, "mat"), _load_signal(reference, "mat")
+        )
+
+    def test_the_dataset_loads_records_through_the_reference(
+        self, tmp_mat_signal_dataset, sample_config
+    ):
+        """End to end through the real __init__: the reference resolves under data_path.
+
+        The fold CSV carries the whole four-part string, which is what EDGAR's own
+        fold tables hold, so this covers path joining as well as parsing.
+        """
+        from dataclasses import replace
+
+        from ecgbench.dataset import ECGDataset
+
+        dataset = ECGDataset(
+            replace(sample_config, signal_format="mat"),
+            split="train",
+            version="clean",
+            data_path=str(tmp_mat_signal_dataset),
+            metadata_source="local",
+        )
+        signal = dataset[0]["signal"].numpy()
+
+        assert signal.shape == (12, 5000)
+        for lead in (0, 5, 11):
+            assert signal[lead, 0] == pytest.approx(lead * 100_000)
+            assert signal[lead, 4999] == pytest.approx(lead * 100_000 + 4999)

@@ -793,8 +793,12 @@ def test_load_ningbo_iva_config():
 def test_the_hdf5_and_2000hz_facts_are_intentional():
     """Guard the configs that broke a catalogue-wide assumption.
 
-    ``ningbo_iva`` is still the only 2000 Hz dataset. hdf5 is now the second
-    commonest format: ``sph`` reads a 2-D ``(leads, samples)`` array per file,
+    ``ningbo_iva`` and ``edgar`` are the 2 kHz-or-faster datasets, and they are
+    fast for unrelated reasons: ningbo_iva ships one uniform 2000 Hz release,
+    while edgar's 2000 is the MODE of six rates spanning 500 to 2048 Hz — a
+    record there exists at exactly one of them, so the nominal rate keys a
+    single path column and the real rate is a per-record label. hdf5 is still
+    the second commonest format: ``sph`` reads a 2-D ``(leads, samples)`` array per file,
     while ``code15``, ``code_test``, ``sami_trop`` and ``ikem`` read a **row of a
     shared 3-D** ``(records, samples, leads)`` array and get transposed. The two
     shapes go through the same ``signal_format``, so this list is the reminder
@@ -815,7 +819,7 @@ def test_the_hdf5_and_2000hz_facts_are_intentional():
     assert sorted(by_format["hdf5"]) == [
         "code15", "code_test", "ikem", "sami_trop", "sph",
     ]
-    assert fastest == ["ningbo_iva"]
+    assert fastest == ["edgar", "ningbo_iva"]
     # Every hdf5 dataset but sph reads a row of a shared 3-D array, and all of
     # them declare 12 leads except ikem, which stores only the 8 independent ones.
     assert load_config("ikem").leads == 8
@@ -3275,3 +3279,70 @@ def test_ucddb_amplitude_bounds_are_the_adc_span_not_a_physiological_range():
     # A reader that forgot the EDF calibration would return raw digital counts,
     # which is exactly what the bound still catches.
     assert 4095 > high
+
+
+def test_load_edgar_config():
+    """EDGAR: the first `mat` dataset, and the first with no lead names at all."""
+    config = load_config("edgar")
+    assert config.slug == "edgar"
+    # A rolling portal rather than a versioned release — this is the mirror date.
+    assert config.version == "2026-08-10"
+    # THE FIRST `mat` DATASET IN ECGBENCH. The branch was added for it; see
+    # tests/test_dataset.py::TestMatReader.
+    assert config.signal_format == "mat"
+    # 1.0 for the same reason wfdb and edf datasets use 1.0: the per-record unit
+    # travels in the signal reference and is applied by the reader, because EDGAR
+    # mixes millivolts (most experiments) with microvolts (Dalhousie, Maastricht
+    # and the two Valencia patients). A dataset-wide factor would be wrong for
+    # one group or the other, so nothing multiplies afterwards.
+    assert config.signal_unit_scale == 1.0
+    # THE MODE, NOT A PROPERTY OF THE DATASET: 2,181 of 2,943 recordings have 120
+    # electrodes, and the release holds 29 distinct counts from 54 to 2,223.
+    assert config.leads == 120
+    # DELIBERATELY EMPTY, and the only config in ECGBench for which that is
+    # correct rather than missing: EDGAR's channels are electrode positions on a
+    # torso, sock, cage, needle or mesh geometry, not named clinical leads, so
+    # there is no aVR here for ECGDataset(leads=...) to select.
+    assert config.lead_names == []
+    assert not config.alternate_lead_names
+    assert config.record_lead_layouts is None
+    assert config.sampling_rates == [500, 1000, 1200, 2000, 2034.5, 2048]
+    assert config.default_sampling_rate == 2000
+    # ONE column keyed on the nominal rate — a record exists at exactly one rate,
+    # so there is no per-rate re-sampling here as there is in PTB-XL.
+    assert config.signal_path_columns == {2000: "signal_path"}
+    # EDGAR ships 26 free-text READMEs and nothing tabular, so EDGARSplitter
+    # unpacks the archives and builds this on first run.
+    assert config.metadata_csv == "ecgbench_metadata.csv"
+    assert config.record_id_column == "record_id"
+    # Grouped on the SUBJECT, which spans five portal posts for KIT subject 20:
+    # the four simulations were computed on that subject's own anatomy.
+    assert config.patient_id_column == "subject_id"
+    assert config.record_id_column != config.patient_id_column
+    # Record ids are "charles_pat1__Interventions_..." and subject ids
+    # "charles_pstov_pat1" — neither is all-digits, so the CSV round trip cannot
+    # strip a leading zero.
+    assert config.zero_padded_identifiers is False
+    # Coarser than label_column on purpose; see TestEDGARSplitter.
+    assert config.label_column == "recording_surface"
+    assert config.stratification.method == "custom_function"
+    assert config.n_folds == 10
+    assert config.has_predefined_splits is False
+    # Openly available after a free registration, so the fold tables (paths and
+    # identifiers only) are published.
+    assert config.publish_fold_csvs is True
+    # Length spans four orders of magnitude (145 to 55,296 samples), so no single
+    # expected_samples threshold could hold — omitting the rate disables the
+    # check rather than making it fire.
+    assert config.validation.expected_samples == {}
+    assert "truncated_signal" in config.validation.checks
+    # A CORRUPTION GUARD, NOT A PHYSIOLOGICAL RANGE: five measurement surfaces
+    # whose plausible amplitudes differ by two orders of magnitude, so the bound
+    # is the union of the attained ranges. Body-surface records reach only
+    # [-29.14, +19.18] mV; the extremes are valencia_sim's atrial electrograms.
+    low, high = config.validation.amplitude_range_mv
+    assert low == -902.0 and high == 671.0
+    assert low < -901.3549 and high > 670.0545
+    # Module-based labels: there is no source CSV to point at.
+    assert config.labels.source_csv is None
+    assert config.labels.join_column == "record_id"

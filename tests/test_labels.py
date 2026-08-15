@@ -12992,3 +12992,188 @@ class TestUCDDBLabels:
 
         assert row["calibration_samples"] == CALIBRATION_SAMPLES["ucddb002"]
         assert row["calibration_secs"] == pytest.approx(116.0)
+
+
+class TestEDGARLabels:
+    """The curated table that turns 33 portal posts into one record table.
+
+    EDGAR ships no metadata of any kind, and the facts a reader needs — which
+    archive is authoritative, which surface an array sat on, which orientation
+    `potvals` is stored in, what unit the samples are in — are curated in
+    `EXPERIMENTS` rather than read from the files, because the files get several
+    of them wrong. These tests pin the invariants of that table and the parsers
+    that depend on it. The archive-level checks that need the real 11 GB mirror
+    live in `verify_archive_coverage`, not here.
+    """
+
+    def test_every_experiment_declares_a_known_surface_and_array(self):
+        from ecgbench.labels.edgar import EXPERIMENTS, RECORDING_SURFACES
+
+        assert EXPERIMENTS
+        for slug, exp in EXPERIMENTS.items():
+            assert exp.slug == slug, "the dict key must match the experiment's slug"
+            assert exp.surfaces, f"{slug} claims no files"
+            for surface, array in exp.surfaces.values():
+                assert surface in RECORDING_SURFACES, (surface, slug)
+                assert array, f"{slug} names a surface with no electrode array"
+
+    def test_orientation_and_unit_come_from_closed_vocabularies(self):
+        """Both travel into the signal reference, which the reader parses strictly."""
+        from ecgbench.dataset import _MAT_ORIENTATIONS, _MAT_UNIT_SCALES
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        for exp in EXPERIMENTS.values():
+            assert exp.orientation in _MAT_ORIENTATIONS, exp.slug
+            assert exp.unit.lower() in _MAT_UNIT_SCALES, exp.slug
+            assert exp.unit_source, f"{exp.slug} must say where its unit came from"
+
+    def test_dalhousie_is_the_only_transposed_experiment(self):
+        """Established from its own bad_leads and avg_beats_mtx, not from the shape."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        transposed = {s for s, e in EXPERIMENTS.items() if e.orientation == "sl"}
+        assert transposed == {"dalhousie_2006"}
+
+    def test_only_the_two_valencia_experiments_override_a_declared_unit(self):
+        """Their files say 'mV' for samples reaching 5350 — five volts on a torso."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        overridden = {
+            slug
+            for slug, exp in EXPERIMENTS.items()
+            if "contradicted" in exp.unit_source
+        }
+        assert overridden == {"valencia_pat1", "valencia_pat2"}
+        for slug in overridden:
+            assert EXPERIMENTS[slug].unit == "uV"
+
+    def test_each_experiment_names_a_distinct_authoritative_archive(self):
+        """The portal serves one upload per filename, so a repeat is a curation bug."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        claims = [(e.post, e.archive) for e in EXPERIMENTS.values()]
+        assert len(set(claims)) == len(claims)
+
+    def test_duplicate_posts_point_at_experiments_that_exist(self):
+        from ecgbench.labels.edgar import DUPLICATE_POSTS, EXPERIMENTS
+
+        posts = {e.post for e in EXPERIMENTS.values()}
+        for republished, canonical in DUPLICATE_POSTS.items():
+            assert canonical in posts, canonical
+            assert republished not in posts, "a re-publication must not also be a source"
+
+    def test_kit_subject_20_groups_the_clinical_study_with_its_simulations(self):
+        """The simulations were computed on that subject's own anatomy and geometry.
+
+        Splitting them from the clinical recordings would let a model see the test
+        subject's torso, which is why the group spans five portal posts.
+        """
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        shared = {s for s, e in EXPERIMENTS.items() if e.subject_id == "kit_subject20"}
+        assert shared == {
+            "kit20_clinical",
+            "kit20_sim_ep_endoepi",
+            "kit20_sim_ep_peri",
+            "kit20_sim_tmv_endoepi",
+            "kit20_sim_tmv_fem",
+        }
+
+    def test_transmembrane_is_reserved_for_the_kit_source_models(self):
+        """Membrane voltages are not potentials, and must not read as electrograms."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        tmv = {
+            slug
+            for slug, exp in EXPERIMENTS.items()
+            if any(s == "transmembrane" for s, _ in exp.surfaces.values())
+        }
+        assert tmv == {"kit20_sim_tmv_endoepi", "kit20_sim_tmv_fem"}
+
+    def test_maastrichts_reconstructed_potentials_are_excluded(self):
+        """Its README: 'NOT measured, but reconstructed ... Tikhonov'."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        exp = EXPERIMENTS["maastricht_2015"]
+        assert "heartpots" in exp.exclude
+        assert exp.claims("Interventions/dog2_beat1_SR/heartpots.mat") is None
+        assert exp.claims("Interventions/dog2_beat1_SR/bodypots.mat") == (
+            "torso",
+            "body-surface electrodes",
+        )
+
+    def test_utahs_derived_maps_are_excluded_by_directory(self):
+        """570 ARI maps and 570 integral maps share the recordings' `potvals` field."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        exp = EXPERIMENTS["utah_2010_sock"]
+        base = "Interventions/I1-Demand_Ischemia-350to275Hz/I1_Time_Signals"
+        assert exp.claims(f"{base}/Sock_/Run0018-cs.mat") == (
+            "epicardium",
+            "247-electrode sock",
+        )
+        assert exp.claims(f"{base}/Sock_ARI/Run0018-cs-ari.mat") is None
+        assert exp.claims(f"{base}/Needles_ITG/Run0018-ns-itg.mat") is None
+
+    def test_a_longer_surface_rule_wins_over_a_shorter_one(self):
+        """Valencia's ECG and EGM sit in the same directory, one character apart."""
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        exp = EXPERIMENTS["valencia_pat1"]
+        assert exp.claims("Interventions/AV_block/ECG_AV_block.mat")[0] == "torso"
+        assert exp.claims("Interventions/AV_block/EGM_AV_block.mat")[0] == "endocardium"
+
+    def test_an_unrecognised_path_is_not_guessed_at(self):
+        from ecgbench.labels.edgar import EXPERIMENTS
+
+        assert EXPERIMENTS["valencia_pat1"].claims("Interventions/AV_block/other.mat") is None
+
+    def test_a_sampling_rate_may_be_a_number_or_free_text(self):
+        """EDGAR declares 1000, '2kHz' and '2048 Hz' in different experiments."""
+        from ecgbench.labels.edgar import _parse_rate
+
+        assert _parse_rate(1000) == 1000.0
+        assert _parse_rate(2034.5) == 2034.5
+        assert _parse_rate("2kHz") == 2000.0
+        assert _parse_rate("2048 Hz") == 2048.0
+        assert _parse_rate(None) is None
+        assert _parse_rate("unknown") is None
+
+    def test_carto_tables_parse_into_chamber_keyed_coordinates(self, tmp_path):
+        """The pacing-site ground truth, in the hand-formatted text EDGAR ships."""
+        from ecgbench.labels.edgar import _read_carto_sites
+
+        path = tmp_path / "sites.txt"
+        path.write_text(
+            "CARTO pacing site locations.\n"
+            "LV:\n"
+            "Pac#\tx\t\ty\t\tz\n"
+            "1\t\t24.296\t32.230\t-9.360\n"
+            "2\t\t22.832\t29.768\t9.654\n"
+            "RV:\n"
+            "Pac#\tx\t\ty\t\tz\n"
+            "1\t\t7.279\t12.625\t36.393\n"
+        )
+        sites = _read_carto_sites(path)
+
+        assert sites[("LV", 1)] == (24.296, 32.230, -9.360)
+        assert sites[("LV", 2)] == (22.832, 29.768, 9.654)
+        # Same index, different chamber — the key has to carry both.
+        assert sites[("RV", 1)] == (7.279, 12.625, 36.393)
+        assert len(sites) == 3
+
+    def test_a_pacing_folder_names_its_chamber_and_site(self):
+        from ecgbench.labels.edgar import EXPERIMENTS, _pacing_site
+
+        charles = EXPERIMENTS["charles_pat1"]
+        assert _pacing_site(
+            charles, "Interventions/interventionLeftVentPace07/x_run3.mat"
+        ) == ("LV", 7)
+        assert _pacing_site(
+            charles, "Interventions/interventionRightVentPace12/x_run1.mat"
+        ) == ("RV", 12)
+        # KIT numbers its sites without naming a chamber.
+        kit = EXPERIMENTS["kit20_clinical"]
+        assert _pacing_site(kit, "Interventions/InterventionPace3/S20_run1.mat") == ("", 3)
+        # A non-pacing intervention has no site at all.
+        assert _pacing_site(kit, "Interventions/PVC/S20_run1.mat") == ("", None)

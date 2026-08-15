@@ -41,6 +41,15 @@ pip install ecgbench[torch]
 pip install ecgbench[hdf5]
 ```
 
+### With MATLAB datasets
+
+`edgar` publishes every recording as a MATLAB v5/v7 `.mat` container, which needs
+`scipy`. It is the only dataset that does, so the dependency is its own extra:
+
+```bash
+pip install ecgbench[mat]
+```
+
 ### With .xls metadata
 
 `ucddb`'s only metadata table is `SubjectDetails.xls`, a pre-2007 binary
@@ -356,6 +365,7 @@ Names, not indices, because **lead order is not consistent across datasets**:
 | `ecg_capable_smartwatches` | **`II` in all 720 smartwatch records — and every one of them is lead I.** The release's own Methods wire the simulator's right-arm output to the watch crown and its left-arm output to the caseback, and describe the watches' exports as "single-lead (Lead I)"; LA − RA *is* lead I. `lead_names` follows the files anyway, because that is what `leads=` resolves against and renaming a channel would make ECGBench disagree with `wfdb` — so `leads=["II"]` returns a genuine lead II for the 195 Philips reference records and an arm-to-arm lead I for the other 720, with no error. Filter on `labels["derivation"]` first. This is also the one release whose **predominant layout is the smaller one**: the reference stores all twelve derivations and is declared in `alternate_lead_names: {12: [...]}`. See below |
 | `picsdb` | **One channel, and the ten headers disagree what to call it: `II` in seven records, `ECG` in `infant1` and `infant5`, `I` in `infant10`.** The `mitdb` problem at a lead count of one — `alternate_lead_names` is keyed by lead *count*, and the count never varies — so `record_lead_layouts` carries all three and `ECGDataset` reads each record's own header. `leads=["II"]` therefore returns a signal for seven records and **raises for three**, which is the honest answer: the release says only "a single channel of a 3-lead electrocardiogram" and nothing states that the `ECG` channel is lead II. Gain and baseline both differ per record (800.4–1420.8 adu/mV, baseline −141 to +25,427), so each has its own converter rail and `amplitude_range_mv` is the union of ten, [−40.9604, +40.915] mV |
 | `ucddb` | **`chan 1`, `chan 2`, `chan 3` in the files — the electrode names are only on the landing page.** All 25 Reynolds Lifecard CF Holter files label their channels by position and name no electrode; PhysioNet's page says "Three-channel Holter ECGs (V5, CC5, V5R)", and `lead_names` is that sentence's order. Nothing in the release corroborates it, so `leads=["V5R"]` is a channel position with a probable name. Two further caveats: **`ucddb002`'s third channel is a bit-identical copy of its second**, so it has two distinct leads and not three, and none of V5/CC5/V5R is one of the standard twelve, so this must not be stacked with 12-lead data |
+| `edgar` | **No lead names at all, and that is correct rather than missing.** Its channels are electrode positions on a torso, sock, cage, needle or mesh geometry — index *i* of `potvals` is node *i* of the matching `Meshes/` file — so there is no aVR here for `leads=` to select and `lead_names` is empty. It is also the only dataset whose channel **count** is not a property of the dataset: **29 distinct counts from 54 to 2,223** across 24 experiments, which no `alternate_lead_names` map could express. `config.leads` is 120 because that is the mode (2,181 of 2,943 records). Filter on `labels["n_leads"]` and `labels["electrode_array"]`, and use the portal's geometry files to map a channel to a position |
 
 **Three datasets store more than one lead layout.** `zzu_pecg` holds 12 leads for
 12,334 records and 9 for the other 1,856, and the reduced layout is not a prefix of
@@ -1123,6 +1133,32 @@ And **the ECG rides a ~5 mV pedestal** because every channel declares digital 0�
 mapping to physical 0–10 mV, which ECGBench applies verbatim, making
 `amplitude_range_mv` the ADC span rather than a physiologic bound. See
 `examples/load_ucddb.py`.
+
+`edgar` is the **first MATLAB dataset** here, and the only entry in the catalogue that
+is not one dataset at all: 26 electrocardiographic-imaging experiments from ten
+institutions, 24 of which ship signals — **2,943 recordings from 20 subjects**, 29
+electrode counts from 54 to 2,223, six sampling rates, five measurement surfaces and
+two unit conventions. Four things to know. **Its signal paths are not paths**: a
+reference reads `<file>.mat:<variable>:<orientation>:<unit>`, because MATLAB declares
+none of the three and each has a counterexample inside the release — 22 variable names
+across the contributors, Dalhousie storing `potvals` transposed while KIT stores 2,223
+leads by 225 samples (so "leads are the shorter axis" is wrong in both directions), and
+Valencia declaring `mV` for samples its own README says are microvolts, which would put
+body-surface potentials at five volts. **The portal cross-posts whole archives**:
+WordPress serves one upload per filename, so the Valencia-pat2 post's
+`Interventions.zip` is byte-identical to Charles-PSTOV-pat3's 594 recordings and every
+data link on the `KIT-2020-SimVentrPacings` post resolves to a different dataset — so
+ECGBench reads one uniquely titled archive per experiment, and asserts that those 24
+cover all 2,943 recordings exactly once. **One `potvals` field holds three different
+quantities**: 1,140 derived activation and integral maps (excluded — no derived map has
+more than 5 frames and no recording fewer than 145), Maastricht's Tikhonov-reconstructed
+potentials (excluded — an inverse solution is not a measurement), and KIT's simulated
+transmembrane voltages (kept, with a `recording_surface` value of their own, because
+their resting level is −84 mV and they are not electrograms). **And four subjects hold
+92% of the recordings**, so the subject-grouped folds are patient-safe but very unequal
+— the default fold-10 test split is 12 records. Everything is unpacked from 291 zips
+into `ecgbench_extracted/` on the first `ecgbench splits` run. See
+`examples/load_edgar.py` and the curated table in `ecgbench/labels/edgar.py`.
 
 Both are **read-time adapters**: they shape the returned tensor only. Source files,
 fold CSVs and validation are untouched — a record excluded for a flat V6 stays

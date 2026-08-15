@@ -6864,3 +6864,123 @@ class TestUCDDBSplitter:
             ignore_index=True,
         )
         assert placed.groupby("recording_group")["fold"].nunique().max() == 1
+
+
+class TestEDGARSplitter:
+    """Twenty subjects, five measurement surfaces, and why the folds use neither.
+
+    What these pin is the one decision a reader would otherwise assume was an
+    oversight: EDGAR's stratification label is coarser than its `label_column`,
+    because two of the five surfaces come from a single subject each and a class
+    living in one patient group cannot be spread over ten folds.
+    """
+
+    def _frame(self):
+        """A miniature EDGAR metadata table with the real shape of the problem."""
+        import pandas as pd
+
+        rows = []
+        # One dominant subject, as charles_pstov_pat1 is (944 of 2,943 records).
+        for i in range(20):
+            rows.append(("big", "torso", f"big_{i}"))
+        # Two subjects contributing paired torso/cardiac recordings.
+        for subject in ("tank_a", "tank_b"):
+            for surface in ("torso", "epicardium", "intramural"):
+                rows.append((subject, surface, f"{subject}_{surface}"))
+        # A subject whose only surface is one nobody else has.
+        rows.append(("sim", "transmembrane", "sim_0"))
+        return pd.DataFrame(rows, columns=["subject_id", "recording_surface", "record_id"])
+
+    def test_stratify_class_pools_everything_that_is_not_the_body_surface(self):
+        from ecgbench.splitting.strategies.edgar import (
+            STRATIFY_COLUMN,
+            attach_stratify_class,
+        )
+
+        out = attach_stratify_class(self._frame())
+        by_surface = out.groupby("recording_surface")[STRATIFY_COLUMN].unique()
+
+        assert list(by_surface["torso"]) == ["body_surface"]
+        for surface in ("epicardium", "intramural", "transmembrane"):
+            assert list(by_surface[surface]) == ["cardiac_surface"]
+        # The original label survives untouched — it is what users train on.
+        assert set(out["recording_surface"]) == set(self._frame()["recording_surface"])
+
+    def test_attach_does_not_mutate_its_input(self):
+        from ecgbench.splitting.strategies.edgar import (
+            STRATIFY_COLUMN,
+            attach_stratify_class,
+        )
+
+        frame = self._frame()
+        attach_stratify_class(frame)
+        assert STRATIFY_COLUMN not in frame.columns
+
+    def test_the_stratification_label_is_the_pooled_class_not_the_surface(self):
+        from dataclasses import replace
+
+        from ecgbench.splitting.strategies.edgar import (
+            EDGARSplitter,
+            attach_stratify_class,
+        )
+
+        config = replace(
+            _edgar_test_config(),
+            n_folds=3,
+        )
+        labels = EDGARSplitter().get_stratification_labels(
+            attach_stratify_class(self._frame()), config
+        )
+        assert set(labels) == {"body_surface", "cardiac_surface"}
+        assert labels.name == "surface_class"
+
+    def test_it_refuses_a_fold_count_above_the_subject_count(self):
+        """StratifiedGroupKFold emits silently EMPTY folds past the group count."""
+        from dataclasses import replace
+
+        from ecgbench.splitting.strategies.edgar import (
+            EDGARSplitter,
+            attach_stratify_class,
+        )
+
+        config = replace(_edgar_test_config(), n_folds=10)  # only 4 subjects here
+        with pytest.raises(ValueError, match="4 subjects but n_folds=10"):
+            EDGARSplitter().get_stratification_labels(
+                attach_stratify_class(self._frame()), config
+            )
+
+    def test_it_says_which_column_is_missing_rather_than_raising_keyerror(self):
+        from ecgbench.splitting.strategies.edgar import EDGARSplitter
+
+        with pytest.raises(ValueError, match="stratify_class"):
+            EDGARSplitter().get_stratification_labels(self._frame(), _edgar_test_config())
+
+    def test_subjects_never_span_folds(self):
+        """The guarantee that matters here: one subject contributes 944 recordings."""
+        from dataclasses import replace
+
+        import pandas as pd
+
+        from ecgbench.splitting.engine import split_dataset
+        from ecgbench.splitting.strategies.edgar import (
+            EDGARSplitter,
+            attach_stratify_class,
+        )
+
+        config = replace(_edgar_test_config(), n_folds=3)
+        frame = attach_stratify_class(self._frame())
+        labels = EDGARSplitter().get_stratification_labels(frame, config)
+        result = split_dataset(frame, labels, config, n_folds=config.n_folds)
+
+        placed = pd.concat(
+            [frame.assign(fold=fold) for fold, frame in result.folds.items()],
+            ignore_index=True,
+        )
+        assert placed.groupby("subject_id")["fold"].nunique().max() == 1
+
+
+def _edgar_test_config():
+    """The shipped edgar config — the splitter reads n_folds and the group column."""
+    from ecgbench import load_config
+
+    return load_config("edgar")

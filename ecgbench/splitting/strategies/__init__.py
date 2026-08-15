@@ -21,6 +21,7 @@ from . import (  # noqa: F401
     ecgrdvq,
     echonext,
     edb,
+    edgar,
     generic,
     ikem,
     incartdb,

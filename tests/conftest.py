@@ -470,6 +470,40 @@ def tmp_hdf5_signal_dataset(tmp_path) -> Path:
 
 
 @pytest.fixture
+def tmp_mat_signal_dataset(tmp_path) -> Path:
+    """A loadable mat-format dataset: 5 records of 12 x 5000, plus a fold tree.
+
+    The layout EDGAR ships: one MATLAB v5 file per record holding a struct whose
+    ``potvals`` field is the matrix, oriented **(leads, samples)** — EDGAR's own
+    standard. Sample i of lead j holds ``j * 100000 + i``, so a window's contents
+    identify exactly which samples were read and a transposed, shifted or
+    truncated read cannot pass by accident.
+
+    Paths carry the full four-part reference EDGAR uses, ``<file>.mat:ts:ls:mV``,
+    so the fixture exercises the parser rather than only the reader.
+    """
+    scipy_io = pytest.importorskip("scipy.io")
+
+    records = tmp_path / "records"
+    records.mkdir()
+    record_ids, paths = [], []
+    for r in range(5):
+        rid = f"rec_{r}"
+        data = np.empty((12, 5000), dtype=np.float64)
+        for lead in range(12):
+            data[lead, :] = lead * 100_000 + np.arange(5000)
+        scipy_io.savemat(
+            records / f"{rid}.mat",
+            {"ts": {"potvals": data, "unit": "mV", "samplefrequency": 500}},
+        )
+        record_ids.append(rid)
+        paths.append(f"records/{rid}.mat:ts:ls:mV")
+
+    _write_fold_tree(tmp_path, paths, record_ids)
+    return tmp_path
+
+
+@pytest.fixture
 def tmp_wfdb_signal_dataset(tmp_path) -> Path:
     """A loadable wfdb-format dataset: 5 records of 12 x 5000, plus a fold tree.
 
