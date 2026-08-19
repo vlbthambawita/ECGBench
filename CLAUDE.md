@@ -75,6 +75,32 @@ Those same `.md` files are a Jekyll collection powering the website, so front ma
 ### Website (`docs/`)
 Jekyll site (`docs/_config.yml`, `baseurl: /ECGBench`) with `index.html` rendering catalogue tables from `docs/_data/{tables,columns,statuses}.yml` + the `datasets` collection, plus one detail page per dataset via `_layouts/dataset.html`. Table cells render through one partial per column (`_includes/cells/<column>.html`); dataset detail pages are driven by the `sections:` list in front matter, one partial per section type (`_includes/sections/`: `description`, `table`, `code`, `links`, `notebook`, `plot`). There is no CSV download — tabular access is the Python catalogue only.
 
+### Manual (`docs-src/`, mkdocs-material)
+
+**There are two static-site generators here and they must not be merged.** Jekyll
+owns `docs/` and builds the catalogue into the site root; mkdocs-material owns
+`docs-src/` (+ `mkdocs.yml`, `overrides/main.html`, `requirements-docs.txt`) and
+builds the prose manual into `_site/docs/`, served at `<site>/docs/`. mkdocs'
+own default is `docs_dir: docs`, which would put generated scaffolding inside the
+directory `pyproject.toml` force-includes into the wheel as `ecgbench/_datasets`
+— hence the explicit `docs_dir: docs-src`. Do not port the dataset pages to
+mkdocs: they render through the `sections:` front matter and `_includes/sections/`,
+and those same files are `catalogue.py`'s data source.
+
+Manual pages hold **no duplicated prose**. `architecture.md` and
+`guides/adding-a-dataset.md` are one `--8<--` line each, pulling in
+`ECGBench_architecture/ARCHITECTURE.md` and `ADD_DATASET_TODO.md` whole;
+`reference/cli.md` and `guides/distribution-policy.md` pull named sections out of
+`README.md`, delimited there by `<!-- --8<-- [start:name] -->` comments (invisible
+on GitHub and PyPI — do not delete them). `pymdownx.snippets` resolves those paths
+against the working directory, so **mkdocs must run from the repo root**. A
+snippet source changing is a site change: all three files are in both workflows'
+`paths:` filters.
+
+`site_url` is not just metadata — mkdocs bakes its *path* into every asset href,
+exactly like Jekyll's `baseurl`, so `deploy-hf-space.yml` seds both. Local preview:
+`pip install -r requirements-docs.txt && mkdocs serve`.
+
 ### CLI (`ecgbench/cli/`)
 `_main.py` builds the root parser and dispatches via `args.func`. Each subcommand module follows the same contract: a public `run_X(...)` function (the Python API, pure kwargs, no argparse), a private `_cli_run(args)` adapter, and `add_subparser(subparsers)` that ends with `p.set_defaults(func=_cli_run)`. A new subcommand needs all three plus registration in `_main.py` and re-export in `cli/__init__.py`.
 
@@ -225,8 +251,8 @@ Version derived from git tags via `hatch-vcs`. Push a `v*` tag to trigger PyPI p
 
 ## CI/CD (GitHub Actions)
 
-- `deploy-pages.yml` — GitHub Pages deploy of `docs/`, on `docs/**` changes on `main` **or `workflow_dispatch`**. It has no tag trigger: the `github-pages` environment rejects tag refs, so a tag-ref run dies at the "waiting" stage before building
-- `deploy-hf-space.yml` — HF Space (`vlbthambawita/ECGBench`, `sdk: static`) on `docs/**` changes or `v*` tags. HF Spaces don't run Jekyll, so the workflow builds `_site/` itself, patches `baseurl: ""` (Spaces serve from root, Pages from `/ECGBench/`), writes `_site/_version.json`, and uploads with `delete_patterns=["*"]`
+- `deploy-pages.yml` — GitHub Pages deploy of `docs/`, on `docs/**` / `docs-src/**` / snippet-source changes on `main` **or `workflow_dispatch`**. Jekyll builds the catalogue into `_site/`, then a second step builds `docs-src/` into `_site/docs/` with `mkdocs build --strict`. It has no tag trigger: the `github-pages` environment rejects tag refs, so a tag-ref run dies at the "waiting" stage before building
+- `deploy-hf-space.yml` — HF Space (`vlbthambawita/ECGBench`, `sdk: static`) on `docs/**` changes or `v*` tags. HF Spaces don't run Jekyll, so the workflow builds `_site/` itself, patches `baseurl: ""` **and mkdocs' `site_url`** (Spaces serve from root, Pages from `/ECGBench/`), builds the manual into `_site/docs/`, writes `_site/_version.json`, and uploads with `delete_patterns=["*"]`
 - `publish-pypi.yml` — PyPI publish on `v*` tags via Trusted Publishing, plus a `refresh-pages-version` job that dispatches `deploy-pages.yml` on `main`
 - `cancel-stuck-pages-deployment.yml` — manual (`workflow_dispatch`) escape hatch. Pages serves one deployment at a time, so a deployment hung server-side holds the lock and every later run fails — first as a 10-minute `deployment_queued` timeout, then as `Deployment request failed … due to in progress deployment. Please cancel <sha> first`. Re-running or cancelling the *run* does not clear the server-side record; only `POST /repos/:o/:r/pages/deployments/:id/cancel` does, which is what this workflow calls. The deployment id is the stuck commit's full SHA
 

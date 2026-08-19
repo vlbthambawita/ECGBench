@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+<!--
+  The manual is served at <site>/docs/ and the dataset catalogue keeps the site
+  root, so every page carries one link back to it. {{ base_url }} is mkdocs'
+  page-relative path to the manual root, so `{{ base_url }}/..` reaches the
+  catalogue under both /ECGBench/docs/ (Pages) and /docs/ (HF Space) without
+  hardcoding either. base_url is page-relative ('.', '..', '../..') on every
+  page except 404.html, where Material makes it absolute and trailing-slashed
+  ('/docs/'); the replace collapses the '//' that would otherwise make the URL
+  normalise back to the manual root instead of the catalogue.
+-->
+{% block announce %}
+  <a href="{{ (base_url ~ '/../') | replace('//', '/') }}" style="color: inherit;">
+    &larr; ECGBench dataset catalogue &mdash; all 64 datasets
+  </a>
+{% endblock %}

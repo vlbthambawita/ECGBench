@@ -7,6 +7,14 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-pages.yml'
+      - 'docs-src/**'
+      - 'mkdocs.yml'
+      - 'overrides/**'
+      - 'requirements-docs.txt'
+      # Snippet sources — the manual embeds sections of these verbatim.
+      - 'README.md'
+      - 'ADD_DATASET_TODO.md'
+      - 'ECGBench_architecture/ARCHITECTURE.md'
     # No tag trigger. The github-pages environment restricts deployments to the
     # default branch by default, so a tag-ref run is rejected at the "waiting"
     # stage with "not allowed to deploy to github-pages due to environment
@@ -54,6 +62,25 @@ jobs:
         with:
           source: ./docs
           destination: ./_site
+
+      - name: Build the manual with MkDocs into _site/docs/
+        # Second generator (issue #78). Jekyll renders the dataset catalogue
+        # into _site/; MkDocs renders docs-src/ into _site/docs/. The catalogue
+        # keeps the site root and none of its output is touched — /docs/ is a
+        # free path, the datasets collection lives at /datasets/.
+        #
+        # jekyll-build-pages runs in a container and leaves _site/ owned by
+        # root, so reclaim it before writing into it. This repeats the chown in
+        # the next step deliberately, so neither step depends on the other's
+        # position.
+        #
+        # --strict turns a broken internal link into a failed build instead of a
+        # deployed one. Must run from the repository root: pymdownx.snippets
+        # resolves README.md and ARCHITECTURE.md relative to the working dir.
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" _site
+          pip install -q -r requirements-docs.txt
+          mkdocs build --strict -d _site/docs
 
       - name: Write _version.json into built site
         # index.html fetches this at runtime and keeps the version badge hidden

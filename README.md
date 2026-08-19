@@ -14,11 +14,15 @@ ECGBench provides a curated catalogue of 64 publicly available ECG datasets, a c
 | | |
 |---|---|
 | **Website** | [vlbthambawita.github.io/ECGBench](https://vlbthambawita.github.io/ECGBench/) |
+| **Documentation** | [vlbthambawita.github.io/ECGBench/docs](https://vlbthambawita.github.io/ECGBench/docs/) |
 | **HuggingFace Space** | [huggingface.co/spaces/vlbthambawita/ECGBench](https://huggingface.co/spaces/vlbthambawita/ECGBench) |
 | **Fold splits (Hub)** | [huggingface.co/datasets/vlbthambawita/ECGBench](https://huggingface.co/datasets/vlbthambawita/ECGBench) |
 | **PyPI** | [pypi.org/project/ecgbench](https://pypi.org/project/ecgbench/) |
 
 ## Installation
+
+<!-- Snippet markers for the mkdocs manual (docs-src/). Invisible on GitHub and PyPI; see mkdocs.yml -> pymdownx.snippets. -->
+<!-- --8<-- [start:install] -->
 
 ### Base (config, catalogue, validation, splitting)
 
@@ -76,6 +80,8 @@ git clone https://github.com/vlbthambawita/ECGBench.git
 cd ECGBench
 uv pip install -e ".[dev]"
 ```
+
+<!-- --8<-- [end:install] -->
 
 ## Quick Start
 
@@ -1346,6 +1352,7 @@ loader also normalises three different shipped column layouts. See
 `examples/load_vitaldb_arrhythmia.py` and the dataset page.
 
 ### Restricted and credentialed datasets
+<!-- --8<-- [start:restricted] -->
 
 Most datasets' fold CSVs are published to the [HuggingFace
 Hub](https://huggingface.co/datasets/vlbthambawita/ECGBench) and download
@@ -1414,6 +1421,8 @@ byte-identical, and local copies get filtered: we found a
 changes the stratification and hence the folds. Verify your download against the
 provider's own checksums before generating.
 
+<!-- --8<-- [end:restricted] -->
+
 ### Output format
 
 Each sample is a dict:
@@ -1465,6 +1474,7 @@ ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version
 6. Upload: `ecgbench upload --data-dir output/ --datasets <slug>`
 
 ## CLI
+<!-- --8<-- [start:cli] -->
 
 Installing `ecgbench` adds a single `ecgbench` console command with three subcommands:
 
@@ -1603,6 +1613,8 @@ counts: dict[str, int] = ecgbench.run_upload(
 ```
 
 Requires the `hf` extra (`pip install ecgbench[hf]`).
+
+<!-- --8<-- [end:cli] -->
 
 ## API Reference
 

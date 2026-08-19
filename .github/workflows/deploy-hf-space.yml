@@ -7,6 +7,14 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-hf-space.yml'
+      - 'docs-src/**'
+      - 'mkdocs.yml'
+      - 'overrides/**'
+      - 'requirements-docs.txt'
+      # Snippet sources — the manual embeds sections of these verbatim.
+      - 'README.md'
+      - 'ADD_DATASET_TODO.md'
+      - 'ECGBench_architecture/ARCHITECTURE.md'
     tags:
       - 'v[0-9]*'
   workflow_dispatch:
@@ -33,13 +41,24 @@ jobs:
       - name: Install huggingface_hub
         run: pip install -q "huggingface_hub>=0.23"
 
-      - name: Override baseurl for HF Space
-        # GitHub Pages serves under /ECGBench/, but HF Spaces serve at the
-        # root path, so we need an empty baseurl for assets/links to resolve.
+      - name: Override the site prefix for HF Space
+        # GitHub Pages serves under /ECGBench/, but HF Spaces serve at the root
+        # path, so both generators need their prefix rewritten.
+        #
+        # Jekyll: baseurl "" .
+        #
+        # MkDocs: it does NOT emit prefix-relative links when site_url is set —
+        # it bakes site_url's *path* into every asset and nav href, so the Pages
+        # value would emit /ECGBench/docs/assets/... and 404 on every stylesheet
+        # here. Only the path component of the replacement matters; the host is
+        # there so the canonical tags and sitemap.xml point somewhere real.
         run: |
           sed -i 's|^baseurl:.*|baseurl: ""|' docs/_config.yml
+          sed -i 's|^site_url:.*|site_url: https://vlbthambawita-ecgbench.static.hf.space/docs/|' mkdocs.yml
           echo "Patched docs/_config.yml:"
           cat docs/_config.yml
+          echo "Patched site_url:"
+          grep '^site_url:' mkdocs.yml
 
       - name: Build with Jekyll
         # HF Spaces with sdk: static do not run Jekyll, so we must render
@@ -48,6 +67,25 @@ jobs:
         with:
           source: ./docs
           destination: ./_site
+
+      - name: Build the manual with MkDocs into _site/docs/
+        # Second generator (issue #78). Jekyll renders the dataset catalogue
+        # into _site/; MkDocs renders docs-src/ into _site/docs/. The catalogue
+        # keeps the site root and none of its output is touched — /docs/ is a
+        # free path, the datasets collection lives at /datasets/.
+        #
+        # jekyll-build-pages runs in a container and leaves _site/ owned by
+        # root, so reclaim it before writing into it. This repeats the chown in
+        # the next step deliberately, so neither step depends on the other's
+        # position.
+        #
+        # --strict turns a broken internal link into a failed build instead of a
+        # deployed one. Must run from the repository root: pymdownx.snippets
+        # resolves README.md and ARCHITECTURE.md relative to the working dir.
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" _site
+          pip install -q -r requirements-docs.txt
+          mkdocs build --strict -d _site/docs
 
       - name: Write _version.json into built site
         # Jekyll excludes _*-prefixed files by default, so write the

@@ -1,0 +1,1 @@
+--8<-- "ECGBench_architecture/ARCHITECTURE.md"

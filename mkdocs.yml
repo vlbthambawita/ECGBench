@@ -1,0 +1,124 @@
+# ECGBench manual (issue #78).
+#
+# This is the *second* generator in this repository and it deliberately keeps
+# out of the first one's way:
+#
+#   docs/       Jekyll — the dataset catalogue and the 64 dataset pages. Also
+#               the Python catalogue's data source: pyproject force-includes
+#               docs/_datasets into the wheel as ecgbench/_datasets. Nothing
+#               here may write into it.
+#   docs-src/   this manual.
+#
+# mkdocs' own default is docs_dir: docs, which would collide with both, hence
+# the explicit docs_dir below. CI builds this into _site/docs/ so the catalogue
+# keeps the site root and the manual is served at <site>/docs/.
+#
+# site_url below is not merely metadata: mkdocs bakes its *path* into every
+# asset href and nav link, exactly like Jekyll's baseurl. The two hosts serve
+# from different prefixes (/ECGBench/docs/ on Pages, /docs/ on the HF Space), so
+# deploy-hf-space.yml seds this value alongside baseurl. Change one and change
+# the other.
+
+site_name: ECGBench
+site_description: Reproducible ECG benchmark datasets with standardised splits, validation, and Croissant metadata.
+site_author: Vajira Thambawita
+site_url: https://vlbthambawita.github.io/ECGBench/docs/
+
+repo_url: https://github.com/vlbthambawita/ECGBench
+repo_name: vlbthambawita/ECGBench
+edit_uri: edit/main/docs-src/
+
+docs_dir: docs-src
+# site_dir defaults to site/, which .gitignore already covers. CI passes -d.
+
+theme:
+  name: material
+  custom_dir: overrides
+  # System font stack instead of Material's Google Fonts default: the
+  # catalogue at the site root uses one too, and it keeps the manual from
+  # making third-party requests. Mermaid still loads from unpkg at runtime
+  # (Material fetches it lazily for the architecture diagrams).
+  font: false
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  # Material's icon shortcodes (:material-database:) and the card grid on
+  # the home page need this; without it the shortcodes render literally.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  # Single-sourcing. Pages under docs-src/ pull their body out of the files that
+  # already hold it — ARCHITECTURE.md, ADD_DATASET_TODO.md, README.md — so the
+  # manual cannot drift from them. base_path is relative to the working
+  # directory, so mkdocs must be run from the repository root.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Guides:
+      - Adding a dataset: guides/adding-a-dataset.md
+      - Distribution policy: guides/distribution-policy.md
+  - Reference:
+      - CLI: reference/cli.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/vlbthambawita/ECGBench
+      name: ECGBench on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/ecgbench/
+      name: ecgbench on PyPI
+
+copyright: MIT License &middot; Maintained by Vajira Thambawita

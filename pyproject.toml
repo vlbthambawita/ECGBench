@@ -59,7 +59,7 @@ dev = [
 Homepage = "https://github.com/vlbthambawita/ECGBench"
 Repository = "https://github.com/vlbthambawita/ECGBench"
 Issues = "https://github.com/vlbthambawita/ECGBench/issues"
-Documentation = "https://vlbthambawita.github.io/ECGBench/"
+Documentation = "https://vlbthambawita.github.io/ECGBench/docs/"
 
 [project.scripts]
 ecgbench = "ecgbench.cli:main"

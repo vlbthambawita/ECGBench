@@ -1,0 +1,9 @@
+# Build dependencies for the mkdocs-material manual in docs-src/ (issue #78).
+# Used by .github/workflows/deploy-pages.yml and deploy-hf-space.yml, which
+# build it into _site/docs/ alongside the Jekyll catalogue.
+#
+# Pinned below 2.0 deliberately: MkDocs 2.0 removes the plugin system and
+# rewrites theming, which would break overrides/main.html and pymdownx.snippets
+# with no migration path. Bump only after checking the build still passes.
+mkdocs>=1.6,<2.0
+mkdocs-material>=9.5,<10.0
