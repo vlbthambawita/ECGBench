@@ -97,6 +97,18 @@ against the working directory, so **mkdocs must run from the repo root**. A
 snippet source changing is a site change: all three files are in both workflows'
 `paths:` filters.
 
+`docs-src/reference/api/` is generated from the source by **mkdocstrings**, whose
+`griffe` backend *parses* `ecgbench/` rather than importing it — so the docs build
+needs none of the project's dependencies, not even numpy, and CI installs only
+`requirements-docs.txt`. Two consequences. The lazy attributes in
+`ecgbench/__init__.py` cannot be documented at the package root (they are keys in
+`_LAZY_IMPORTS`, not definitions), so each page targets the defining module —
+`::: ecgbench.dataset`, not `::: ecgbench`. And because the build runs
+`--strict`, a malformed **docstring** now fails a deploy: Google-style `Args:`
+in a module docstring, a bare `x["a"]["b"]` that Markdown reads as a reference
+link, or a continuation line indented inconsistently inside a `Returns:` block.
+All three existed and were fixed when the reference was added.
+
 `site_url` is not just metadata — mkdocs bakes its *path* into every asset href,
 exactly like Jekyll's `baseurl`, so `deploy-hf-space.yml` seds both. Local preview:
 `pip install -r requirements-docs.txt && mkdocs serve`.

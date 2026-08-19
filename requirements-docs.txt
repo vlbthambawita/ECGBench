@@ -7,3 +7,6 @@
 # with no migration path. Bump only after checking the build still passes.
 mkdocs>=1.6,<2.0
 mkdocs-material>=9.5,<10.0
+# API reference. Pulls griffe, which parses ecgbench/ statically — the docs
+# build therefore needs none of the project's own dependencies installed.
+mkdocstrings[python]>=1.0,<2.0

@@ -1136,12 +1136,14 @@ class ECGDataset(_TorchDataset):
                 carry identifiers only, never labels.
 
     Example:
+        ```pycon
         >>> train_ds = ECGDataset("ptbxl", split="train", data_path="/data/ptb-xl/1.0.3/")
         >>> loader = DataLoader(train_ds, batch_size=32, collate_fn=ecg_collate_fn)
 
         >>> ds = ECGDataset("ptbxl", split="train", data_path="...", labels=True)
         >>> ds[0]["labels"]["superclasses"]
         ['NORM']
+        ```
     """
 
     def __init__(
@@ -1525,17 +1527,20 @@ class ECGDataset(_TorchDataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         """Get a single ECG record with signal and metadata.
 
+        The dict holds:
+
+        - ``"signal"``: torch.Tensor, float32, shape (leads, samples). ``leads``
+          is ``len(self.lead_names)`` after any ``leads=`` selection, and
+          ``samples`` is the ``window=`` length when one is set.
+        - ``"record_id"``: record identifier
+        - ``"split"``: the dataset's split, or — when constructed with
+          ``split=None`` — this record's own ``default_split``
+        - ``"fold"``: int (if available)
+        - ``"labels"``: dict of label fields (only with ``labels=True``)
+        - All other metadata columns
+
         Returns:
-            dict with:
-              - "signal": torch.Tensor, float32, shape (leads, samples). ``leads``
-                is ``len(self.lead_names)`` after any ``leads=`` selection, and
-                ``samples`` is the ``window=`` length when one is set.
-              - "record_id": record identifier
-              - "split": the dataset's split, or — when constructed with
-                ``split=None`` — this record's own ``default_split``
-              - "fold": int (if available)
-              - "labels": dict of label fields (only with ``labels=True``)
-              - All other metadata columns
+            The record, as described above.
 
         Raises:
             WindowOutOfRangeError: ``window=`` does not fit this record. Record

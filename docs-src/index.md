@@ -44,6 +44,15 @@ deterministic 10-fold splits behind a single PyTorch `Dataset` class.
 
     [:octicons-arrow-right-24: Command reference](reference/cli.md)
 
+-   :material-code-braces: **API reference**
+
+    ---
+
+    Every public class and function, generated from the source: signatures,
+    docstrings, and the source itself behind a fold.
+
+    [:octicons-arrow-right-24: Browse the API](reference/api/index.md)
+
 </div>
 
 ## Installation

@@ -1,15 +1,13 @@
 """
 Individual quality check functions for ECG signal validation.
 
-Every check has the signature:
+Every check shares one signature and is registered in ``CHECK_REGISTRY``::
+
     def check_<name>(signal: np.ndarray, config: DatasetConfig) -> list[str]
 
-Args:
-    signal: numpy array of shape (leads, samples)
-    config: the dataset's DatasetConfig
-
-Returns:
-    List of issue descriptions. Empty list means check passed.
+``signal`` is an array of shape (leads, samples) and ``config`` the dataset's
+``DatasetConfig``. The return value is a list of issue descriptions; an empty
+list means the record passed that check.
 """
 
 from __future__ import annotations
