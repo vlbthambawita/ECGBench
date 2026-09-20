@@ -1,5 +1,6 @@
 ---
 slug: "mit-bih-arrhythmia-database"
+config_slug: "mitdb"
 name: "MIT-BIH Arrhythmia Database"
 category: "two-lead"
 order: 1

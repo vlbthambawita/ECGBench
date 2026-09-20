@@ -1,5 +1,6 @@
 ---
 slug: "shandong-provincial-hospital-ecg-database-sphdb"
+config_slug: "sph"
 name: "Shandong Provincial Hospital ECG Database (SPHDB)"
 category: "12-lead-other"
 order: 4

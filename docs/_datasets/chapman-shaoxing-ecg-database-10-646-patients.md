@@ -1,5 +1,6 @@
 ---
 slug: "chapman-shaoxing-ecg-database-10-646-patients"
+config_slug: "chapman_shaoxing"
 name: "Chapman-Shaoxing ECG Database (10,646 patients)"
 category: "12-lead-other"
 order: 2

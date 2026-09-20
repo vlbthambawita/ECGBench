@@ -1,5 +1,6 @@
 ---
 slug: "brno-university-of-technology-ecg-quality-database-but-qdb"
+config_slug: "butqdb"
 name: "Brno University of Technology ECG Quality Database (BUT QDB)"
 category: "one-lead"
 order: 7

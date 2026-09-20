@@ -1,5 +1,6 @@
 ---
 slug: "code-15-pct-telehealth-network-of-minas-gerais-15-pct-subset"
+config_slug: "code15"
 name: "CODE-15% (Telehealth Network of Minas Gerais, 15% subset)"
 category: "12-lead-other"
 order: 5

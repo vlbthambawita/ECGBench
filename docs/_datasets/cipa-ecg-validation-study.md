@@ -1,5 +1,6 @@
 ---
 slug: "cipa-ecg-validation-study"
+config_slug: "ecgcipa"
 name: "CiPA ECG Validation Study"
 category: "12-lead-physionet"
 order: 16

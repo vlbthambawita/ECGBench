@@ -1,5 +1,6 @@
 ---
 slug: "cpsc-2018-china-physiological-signal-challenge-2018"
+config_slug: "cpsc_2018"
 name: "CPSC 2018 (China Physiological Signal Challenge 2018)"
 category: "12-lead-other"
 order: 1

@@ -1,5 +1,6 @@
 ---
 slug: "ningbo-first-hospital-ecg-database-idiopathic-ventricular-arrhythmia"
+config_slug: "ningbo_iva"
 name: "Ningbo First Hospital ECG Database (Idiopathic Ventricular Arrhythmia)"
 category: "12-lead-other"
 order: 3

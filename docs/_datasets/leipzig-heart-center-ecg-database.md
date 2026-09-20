@@ -1,5 +1,6 @@
 ---
 slug: "leipzig-heart-center-ecg-database"
+config_slug: "leipzig_heart_center_ecg"
 name: "Leipzig Heart Center ECG Database"
 category: "12-lead-physionet"
 order: 12

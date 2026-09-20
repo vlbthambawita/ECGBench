@@ -1,5 +1,6 @@
 ---
 slug: "st-vincent-s-ucd-sleep-apnea-database-ucddb"
+config_slug: "ucddb"
 name: "St. Vincent's / UCD Sleep Apnea Database (UCDDB)"
 category: "three-lead"
 order: 1

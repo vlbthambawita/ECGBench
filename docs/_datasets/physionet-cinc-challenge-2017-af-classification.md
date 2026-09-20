@@ -1,5 +1,6 @@
 ---
 slug: "physionet-cinc-challenge-2017-af-classification"
+config_slug: "challenge2017"
 name: "PhysioNet/CinC Challenge 2017 (AF Classification)"
 category: "one-lead"
 order: 2

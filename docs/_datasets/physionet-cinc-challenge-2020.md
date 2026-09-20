@@ -1,5 +1,6 @@
 ---
 slug: "physionet-cinc-challenge-2020"
+config_slug: "challenge2020"
 name: "PhysioNet/CinC Challenge 2020"
 category: "12-lead-physionet"
 order: 22

@@ -1,5 +1,6 @@
 ---
 slug: "long-term-af-database-ltafdb"
+config_slug: "ltafdb"
 name: "Long-Term AF Database (LTAFDB)"
 category: "two-lead"
 order: 3

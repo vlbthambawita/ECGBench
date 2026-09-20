@@ -1,5 +1,6 @@
 ---
 slug: "wilson-central-terminal-ecg-database"
+config_slug: "wctecgdb"
 name: "Wilson Central Terminal ECG Database"
 category: "12-lead-physionet"
 order: 15

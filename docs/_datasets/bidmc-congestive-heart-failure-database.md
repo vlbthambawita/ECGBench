@@ -1,5 +1,6 @@
 ---
 slug: "bidmc-congestive-heart-failure-database"
+config_slug: "chfdb"
 name: "BIDMC Congestive Heart Failure Database"
 category: "two-lead"
 order: 7

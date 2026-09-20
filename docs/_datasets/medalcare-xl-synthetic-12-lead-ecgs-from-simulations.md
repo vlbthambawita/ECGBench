@@ -1,5 +1,6 @@
 ---
 slug: "medalcare-xl-synthetic-12-lead-ecgs-from-simulations"
+config_slug: "medalcare_xl"
 name: "MedalCare-XL (Synthetic 12-Lead ECGs from Simulations)"
 category: "12-lead-other"
 order: 10

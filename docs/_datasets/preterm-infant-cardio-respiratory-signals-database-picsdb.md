@@ -1,5 +1,6 @@
 ---
 slug: preterm-infant-cardio-respiratory-signals-database-picsdb
+config_slug: "picsdb"
 name: Preterm Infant Cardio-Respiratory Signals Database (PICSDB)
 category: one-lead
 order: 9

@@ -1,5 +1,6 @@
 ---
 slug: "ptb-diagnostic-ecg-database"
+config_slug: "ptbdb"
 name: "PTB Diagnostic ECG Database"
 category: "12-lead-physionet"
 order: 3

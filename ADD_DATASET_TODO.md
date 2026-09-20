@@ -78,7 +78,9 @@ Jump to "Derived and annotation-only datasets" below.
 
 Phases 2–7 use `<config-slug>`. Phase 1 (catalogue) uses `<catalogue-slug>`.
 The two are unrelated strings — nothing maps one to the other mechanically, so
-pick both up front and keep them straight.
+pick both up front and keep them straight. The link between them is **declared**:
+the catalogue front matter's `config_slug:` field names the config, and
+`catalogue.get_config()` reads it rather than guessing.
 
 ---
 
@@ -117,7 +119,7 @@ as the `datasets` collection powering the website. A field only one side knows
 about is a field that silently does nothing on the other.
 
 - [ ] Create `docs/_datasets/<catalogue-slug>.md`, copying the front matter of a comparable existing entry (e.g. `ptb-xl.md`).
-- [ ] Set the identity fields: `slug` (must equal the filename), `name`, `source_url`, `url_label`, `format`, `patients`, `records`, `access`, `license`, `origin_institution`, `origin_country`, `leads`, `paper_title`, `paper_doi`, `search_keywords`.
+- [ ] Set the identity fields: `slug` (must equal the filename), `config_slug` (the `<config-slug>` this entry is implemented by, quoted — omit it entirely for a derived or annotation-only layer, which gets no config; `tests/test_catalogue.py::TestConfigSlugMapping` fails if it names a missing YAML or if two entries claim one config), `name`, `source_url`, `url_label`, `format`, `patients`, `records`, `access`, `license`, `origin_institution`, `origin_country`, `leads`, `paper_title`, `paper_doi`, `search_keywords`.
 - [ ] Set `category` to one of the six values fixed by `_CATEGORY_ORDER` in `catalogue.py` — `12-lead-physionet`, `12-lead-other`, `two-lead`, `one-lead`, `three-lead`, `bspm`. It must also match an `id:` in `docs/_data/tables.yml`, or the row renders in no table.
 - [ ] Set `status` to one of the keys of `docs/_data/statuses.yml` — `not_started`, `implementing`, `completed`, `needs_review`, `unavailable`. Use `unavailable` only when the **source** has withdrawn the data (as KURIAS-ECG's authors did); it describes their side, not ours, so none of the phases below apply and the page should say why.
 - [ ] Set `order` (int) — controls sort position within the category.

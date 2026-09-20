@@ -1,5 +1,6 @@
 ---
 slug: "code-test-827-record-hold-out-test-set"
+config_slug: "code_test"
 name: "CODE-test (827-record hold-out test set)"
 category: "12-lead-other"
 order: 6

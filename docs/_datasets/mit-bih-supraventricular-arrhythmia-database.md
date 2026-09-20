@@ -1,5 +1,6 @@
 ---
 slug: "mit-bih-supraventricular-arrhythmia-database"
+config_slug: "svdb"
 name: "MIT-BIH Supraventricular Arrhythmia Database"
 category: "two-lead"
 order: 5

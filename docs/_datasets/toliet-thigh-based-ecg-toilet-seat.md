@@ -1,5 +1,6 @@
 ---
 slug: "toliet-thigh-based-ecg-toilet-seat"
+config_slug: "tollet"
 name: "tOLIet (Thigh-based ECG, toilet seat)"
 category: "one-lead"
 order: 6

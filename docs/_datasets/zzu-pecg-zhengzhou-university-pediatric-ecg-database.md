@@ -1,5 +1,6 @@
 ---
 slug: "zzu-pecg-zhengzhou-university-pediatric-ecg-database"
+config_slug: "zzu_pecg"
 name: "ZZU pECG (Zhengzhou University Pediatric ECG Database)"
 category: "12-lead-other"
 order: 15

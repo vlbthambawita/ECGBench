@@ -1,5 +1,6 @@
 ---
 slug: "lobachevsky-university-ecg-database-ludb"
+config_slug: "ludb"
 name: "Lobachevsky University ECG Database (LUDB)"
 category: "12-lead-physionet"
 order: 9

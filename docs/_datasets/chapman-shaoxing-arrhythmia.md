@@ -1,5 +1,6 @@
 ---
 slug: "chapman-shaoxing-arrhythmia"
+config_slug: "ecg_arrhythmia"
 name: "Chapman-Shaoxing (Arrhythmia)"
 category: "12-lead-physionet"
 order: 7

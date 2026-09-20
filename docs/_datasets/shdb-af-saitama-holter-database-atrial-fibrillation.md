@@ -1,5 +1,6 @@
 ---
 slug: "shdb-af-saitama-holter-database-atrial-fibrillation"
+config_slug: "shdb_af"
 name: "SHDB-AF (Saitama Holter Database — Atrial Fibrillation)"
 category: "two-lead"
 order: 10

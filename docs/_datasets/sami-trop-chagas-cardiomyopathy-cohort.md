@@ -1,5 +1,6 @@
 ---
 slug: "sami-trop-chagas-cardiomyopathy-cohort"
+config_slug: "sami_trop"
 name: "SaMi-Trop (Chagas Cardiomyopathy Cohort)"
 category: "12-lead-other"
 order: 8

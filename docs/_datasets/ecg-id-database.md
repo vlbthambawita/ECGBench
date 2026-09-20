@@ -1,5 +1,6 @@
 ---
 slug: "ecg-id-database"
+config_slug: "ecgiddb"
 name: "ECG-ID Database"
 category: "one-lead"
 order: 4

@@ -1,5 +1,6 @@
 ---
 slug: "edgar-experimental-data-and-geometric-analysis-repository"
+config_slug: "edgar"
 name: "EDGAR (Experimental Data & Geometric Analysis Repository)"
 category: "bspm"
 order: 1

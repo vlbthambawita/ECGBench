@@ -1,5 +1,6 @@
 ---
 slug: "mhd-effect-on-12-lead-ecgs-in-mri-scanners"
+config_slug: "mhd_effect_ecg_mri"
 name: "MHD Effect on 12-Lead ECGs in MRI Scanners"
 category: "12-lead-physionet"
 order: 14

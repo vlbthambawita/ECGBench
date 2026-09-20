@@ -1,5 +1,6 @@
 ---
 slug: "ikem-dataset-institute-for-clinical-and-experimental-medicine-prague"
+config_slug: "ikem"
 name: "IKEM Dataset (Institute for Clinical and Experimental Medicine, Prague)"
 category: "12-lead-other"
 order: 9

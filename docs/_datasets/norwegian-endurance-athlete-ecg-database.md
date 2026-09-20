@@ -1,5 +1,6 @@
 ---
 slug: "norwegian-endurance-athlete-ecg-database"
+config_slug: "norwegian_athlete_ecg"
 name: "Norwegian Endurance Athlete ECG Database"
 category: "12-lead-physionet"
 order: 13

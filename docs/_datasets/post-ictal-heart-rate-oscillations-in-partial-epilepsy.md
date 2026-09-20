@@ -1,5 +1,6 @@
 ---
 slug: post-ictal-heart-rate-oscillations-in-partial-epilepsy
+config_slug: "szdb"
 name: Post-Ictal Heart Rate Oscillations in Partial Epilepsy
 category: one-lead
 order: 5

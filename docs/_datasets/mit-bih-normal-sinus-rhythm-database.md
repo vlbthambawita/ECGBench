@@ -1,5 +1,6 @@
 ---
 slug: "mit-bih-normal-sinus-rhythm-database"
+config_slug: "nsrdb"
 name: "MIT-BIH Normal Sinus Rhythm Database"
 category: "two-lead"
 order: 4

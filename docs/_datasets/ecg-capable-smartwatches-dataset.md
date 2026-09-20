@@ -1,5 +1,6 @@
 ---
 slug: "ecg-capable-smartwatches-dataset"
+config_slug: "ecg_capable_smartwatches"
 name: "ECG-Capable Smartwatches Dataset"
 category: "one-lead"
 order: 10

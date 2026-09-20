@@ -1,5 +1,6 @@
 ---
 slug: "ecg-effects-of-ranolazine-dofetilide-verapamil-quinidine-ecgrdvq"
+config_slug: "ecgrdvq"
 name: "ECG Effects of Ranolazine, Dofetilide, Verapamil, Quinidine (ECGRDVQ)"
 category: "12-lead-physionet"
 order: 18

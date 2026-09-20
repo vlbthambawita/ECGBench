@@ -1,5 +1,6 @@
 ---
 slug: "mimic-iv-ecg"
+config_slug: "mimic_iv_ecg"
 name: "MIMIC-IV-ECG"
 category: "12-lead-physionet"
 order: 4

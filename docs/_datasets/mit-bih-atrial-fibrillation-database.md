@@ -1,5 +1,6 @@
 ---
 slug: "mit-bih-atrial-fibrillation-database"
+config_slug: "afdb"
 name: "MIT-BIH Atrial Fibrillation Database"
 category: "two-lead"
 order: 2

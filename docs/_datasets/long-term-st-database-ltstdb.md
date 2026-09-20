@@ -1,5 +1,6 @@
 ---
 slug: "long-term-st-database-ltstdb"
+config_slug: "ltstdb"
 name: "Long-Term ST Database (LTSTDB)"
 category: "two-lead"
 order: 12

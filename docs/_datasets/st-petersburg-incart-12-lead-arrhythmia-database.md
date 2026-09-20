@@ -1,5 +1,6 @@
 ---
 slug: "st-petersburg-incart-12-lead-arrhythmia-database"
+config_slug: "incartdb"
 name: "St Petersburg INCART 12-Lead Arrhythmia Database"
 category: "12-lead-physionet"
 order: 8

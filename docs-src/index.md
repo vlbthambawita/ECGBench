@@ -86,11 +86,17 @@ The single most common source of confusion, so it is worth stating up front.
 |---|---|---|
 | Slug style | dashed — `ptb-xl` | underscored — `ptbxl` |
 | Lives in | `docs/_datasets/<slug>.md` | `ecgbench/data/configs/<slug>.yaml` |
-| Count | 64 | 52 |
+| Count | 64 | 51 |
 | Gives you | a description | validation, splits, a loader |
 
-They do **not** map mechanically onto one another: two catalogue entries
-(`chapman-shaoxing-arrhythmia`, `chapman-shaoxing-ecg-database-10-646-patients`)
-are both served by the one `chapman_shaoxing` config. A dataset's `status:` in
-the catalogue is likewise not a reliable signal of whether it runs — check
-`ecgbench/data/configs/` for that.
+They do **not** map mechanically onto one another — `mit-bih-arrhythmia-database`
+is implemented by `mitdb`, and the two Chapman entries are served by two
+different configs (`chapman-shaoxing-arrhythmia` by `ecg_arrhythmia`, the
+PhysioNet release; `chapman-shaoxing-ecg-database-10-646-patients` by
+`chapman_shaoxing`, the figshare release). The link is therefore *declared*:
+every implemented dataset's catalogue front matter carries `config_slug:`,
+exposed as `CatalogueEntry.config_slug` and used by `catalogue.get_config()`.
+The 13 entries without one have no config by design — derived layers such as
+PTB-XL+, sources not yet implemented, and the withdrawn KURIAS-ECG. A dataset's
+`status:` in the catalogue is likewise not a reliable signal of whether it runs —
+check `ecgbench/data/configs/` for that.

@@ -1,5 +1,6 @@
 ---
 slug: "staff-iii-database"
+config_slug: "staffiii"
 name: "STAFF III Database"
 category: "12-lead-physionet"
 order: 24

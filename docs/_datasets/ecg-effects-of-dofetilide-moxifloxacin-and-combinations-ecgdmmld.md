@@ -1,5 +1,6 @@
 ---
 slug: "ecg-effects-of-dofetilide-moxifloxacin-and-combinations-ecgdmmld"
+config_slug: "ecgdmmld"
 name: "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)"
 category: "12-lead-physionet"
 order: 17

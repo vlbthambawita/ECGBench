@@ -1,5 +1,6 @@
 ---
 slug: "european-st-t-database-edb"
+config_slug: "edb"
 name: "European ST-T Database (EDB)"
 category: "two-lead"
 order: 6

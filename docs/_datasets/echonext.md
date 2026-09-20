@@ -1,5 +1,6 @@
 ---
 slug: "echonext"
+config_slug: "echonext"
 name: "EchoNext"
 category: "12-lead-physionet"
 order: 20

@@ -1,5 +1,6 @@
 ---
 slug: mit-bih-st-change-database
+config_slug: "stdb"
 name: MIT-BIH ST Change Database
 category: two-lead
 order: 11

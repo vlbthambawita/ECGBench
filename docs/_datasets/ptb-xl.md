@@ -1,5 +1,6 @@
 ---
 slug: "ptb-xl"
+config_slug: "ptbxl"
 name: "PTB-XL"
 category: "12-lead-physionet"
 order: 1

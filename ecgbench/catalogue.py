@@ -10,6 +10,7 @@ No heavy dependencies — always importable.
 from __future__ import annotations
 
 import functools
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,8 @@ from pathlib import Path
 import yaml
 
 _FRONT_MATTER = re.compile(r"^---\s*\n(.*?)\n---\s*", re.DOTALL)
+
+logger = logging.getLogger(__name__)
 
 #: Closed vocabulary for ``related[].relation``, mapped to the inverse used when
 #: the reverse edge is derived. Declare a relationship once, on either side.
@@ -87,6 +90,12 @@ class CatalogueEntry:
     """A single dataset in the ECGBench catalogue.
 
     Fields mirror the YAML front matter in ``docs/_datasets/<slug>.md``.
+
+    ``slug`` and ``config_slug`` live in different namespaces: the former is the
+    dashed Markdown filename (``ptb-xl``), the latter the underscored YAML config
+    name (``ptbxl``). Nothing maps one to the other mechanically, so the config
+    slug is declared in the front matter and ``None`` means the dataset has no
+    config — a derived layer, a not-yet-implemented source, or a withdrawn one.
     """
 
     slug: str
@@ -108,6 +117,7 @@ class CatalogueEntry:
     order: int = 0
     search_keywords: str = ""
     related: tuple[RelatedLink, ...] = ()
+    config_slug: str | None = None
     raw: dict = field(default_factory=dict, compare=False, repr=False)
 
 
@@ -184,6 +194,14 @@ def _with_reverse_edges(
     return {slug: sorted(links, key=lambda x: x.slug) for slug, links in resolved.items()}
 
 
+def _optional_str(value: object) -> str | None:
+    """Return ``value`` as a non-empty string, or ``None`` when it is absent or blank."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _entry_from_meta(
     slug: str, meta: dict, related: tuple[RelatedLink, ...] = ()
 ) -> CatalogueEntry:
@@ -207,6 +225,7 @@ def _entry_from_meta(
         order=int(meta.get("order", 0)),
         search_keywords=meta.get("search_keywords", ""),
         related=related,
+        config_slug=_optional_str(meta.get("config_slug")),
         raw=meta,
     )
 
@@ -332,25 +351,51 @@ def get_download_url(key: str) -> str | None:
 
 
 def get_config(dataset_name: str):
-    """Try to find a matching YAML config for a catalogue dataset.
+    """Load the YAML config that implements a catalogue dataset.
 
-    Fuzzy-matches the catalogue name/slug to available config slugs by
-    normalising to lowercase and removing hyphens/spaces.
+    The catalogue slug and the config slug are unrelated strings (``ptb-xl`` vs
+    ``ptbxl``, ``mit-bih-arrhythmia-database`` vs ``mitdb``), so the mapping is
+    declared: each front matter carries ``config_slug``, exposed as
+    ``CatalogueEntry.config_slug``. ``dataset_name`` may be a catalogue slug, a
+    display name, or a config slug.
+
+    A catalogue entry without ``config_slug`` falls back to the historical
+    fuzzy match — lowercase, hyphens/underscores/spaces removed — against the
+    available config slugs, and logs a warning naming the file to fix. That
+    fallback resolved only 5 of 51 configs, which is why the field exists.
 
     Returns ``DatasetConfig`` if found, else ``None``.
     """
     from ecgbench.config import list_available_configs, load_config
 
+    available = list_available_configs()
+
+    entry = get_dataset(dataset_name)
+    if entry is None:
+        entry = next((e for e in _load() if e.config_slug == dataset_name), None)
+
+    if entry is not None and entry.config_slug is not None:
+        if entry.config_slug not in available:
+            raise ValueError(
+                f"{entry.slug}: front matter declares config_slug={entry.config_slug!r}, "
+                f"but no such config exists in ecgbench/data/configs/"
+            )
+        return load_config(entry.config_slug)
+
     def _normalise(s: str) -> str:
         return s.lower().replace("-", "").replace(" ", "").replace("_", "")
 
-    entry = get_dataset(dataset_name)
     targets = {_normalise(dataset_name)}
-    if entry:
+    if entry is not None:
+        logger.warning(
+            "docs/_datasets/%s.md has no config_slug; falling back to fuzzy matching "
+            "against config filenames. Declare config_slug in its front matter.",
+            entry.slug,
+        )
         targets.add(_normalise(entry.slug))
         targets.add(_normalise(entry.name))
 
-    for slug in list_available_configs():
+    for slug in available:
         if _normalise(slug) in targets:
             return load_config(slug)
     return None
@@ -369,6 +414,7 @@ def to_dataframe():
     rows = [
         {
             "slug": e.slug,
+            "config_slug": e.config_slug,
             "name": e.name,
             "category": e.category,
             "status": e.status,

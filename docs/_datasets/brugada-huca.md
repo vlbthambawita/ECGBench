@@ -1,5 +1,6 @@
 ---
 slug: "brugada-huca"
+config_slug: "brugada_huca"
 name: "Brugada-HUCA"
 category: "12-lead-physionet"
 order: 10

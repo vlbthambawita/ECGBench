@@ -5,6 +5,8 @@ typo'd slug renders a dead link, and a hand-written reverse edge drifts from its
 counterpart. These tests make both failures loud.
 """
 
+import logging
+
 import pytest
 
 import ecgbench
@@ -13,7 +15,9 @@ from ecgbench.catalogue import (
     RelatedLink,
     _parse_related,
     _with_reverse_edges,
+    get_config,
 )
+from ecgbench.config import list_available_configs
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +37,95 @@ class TestCatalogueLoads:
     def test_every_slug_is_unique(self, entries):
         slugs = [e.slug for e in entries]
         assert len(slugs) == len(set(slugs))
+
+
+class TestConfigSlugMapping:
+    """``config_slug`` is declared per front matter; these keep it one-to-one and live.
+
+    Catalogue slugs (``mit-bih-arrhythmia-database``) and config slugs (``mitdb``)
+    share no mechanical relation, and the old hyphen/underscore normalisation in
+    ``get_config`` resolved only 5 of 51 configs. The declaration is the fix; a
+    declaration that names a missing YAML, or two entries claiming one config, is
+    the way it rots.
+    """
+
+    def test_every_config_slug_names_an_existing_config(self, entries):
+        available = set(list_available_configs())
+        missing = [
+            (e.slug, e.config_slug)
+            for e in entries
+            if e.config_slug is not None and e.config_slug not in available
+        ]
+        assert not missing, f"config_slug points at no YAML in ecgbench/data/configs/: {missing}"
+
+    def test_every_config_is_claimed_by_exactly_one_entry(self, entries):
+        claims: dict[str, list[str]] = {slug: [] for slug in list_available_configs()}
+        for e in entries:
+            if e.config_slug is not None:
+                claims.setdefault(e.config_slug, []).append(e.slug)
+        unclaimed = sorted(c for c, owners in claims.items() if not owners)
+        shared = {c: owners for c, owners in claims.items() if len(owners) > 1}
+        assert not unclaimed, f"configs no catalogue entry declares: {unclaimed}"
+        assert not shared, f"configs claimed by more than one catalogue entry: {shared}"
+
+    def test_configured_dataset_count(self, entries):
+        assert sum(1 for e in entries if e.config_slug) == len(list_available_configs())
+
+    def test_config_slug_is_absent_for_catalogue_only_entries(self, by_slug):
+        # Derived layers and withdrawn sources must not acquire a config by accident.
+        for slug in ("ptb-xl-plus", "mimic-iv-ecg-ext-icd", "kurias-ecg"):
+            assert by_slug[slug].config_slug is None, slug
+
+    def test_get_config_resolves_unrelated_slug_pairs(self):
+        assert get_config("mit-bih-arrhythmia-database").slug == "mitdb"
+        assert get_config("chapman-shaoxing-arrhythmia").slug == "ecg_arrhythmia"
+        assert get_config("chapman-shaoxing-ecg-database-10-646-patients").slug == (
+            "chapman_shaoxing"
+        )
+
+    def test_get_config_accepts_display_name_and_config_slug(self):
+        assert get_config("MIT-BIH Arrhythmia Database").slug == "mitdb"
+        assert get_config("mitdb").slug == "mitdb"
+
+    def test_get_config_resolves_every_configured_entry(self, entries):
+        for e in entries:
+            if e.config_slug is not None:
+                assert get_config(e.slug).slug == e.config_slug, e.slug
+
+    def test_get_config_is_none_for_catalogue_only_entries(self):
+        assert get_config("ptb-xl-plus") is None
+        assert get_config("kurias-ecg") is None
+
+    def test_get_config_is_none_for_unknown_key(self):
+        assert get_config("no-such-dataset") is None
+
+    def test_missing_config_slug_falls_back_with_a_warning(self, monkeypatch, caplog):
+        """An entry without the declaration still resolves the old way, loudly."""
+        import ecgbench.catalogue as cat
+
+        entries = tuple(
+            e if e.slug != "ptb-xl" else cat.CatalogueEntry(
+                **{**e.__dict__, "config_slug": None, "raw": e.raw}
+            )
+            for e in cat._load()
+        )
+        monkeypatch.setattr(cat, "_load", lambda: entries)
+        with caplog.at_level(logging.WARNING, logger="ecgbench.catalogue"):
+            assert get_config("ptb-xl").slug == "ptbxl"
+        assert any("ptb-xl.md" in r.getMessage() for r in caplog.records)
+
+    def test_declared_but_missing_config_is_an_error(self, monkeypatch):
+        import ecgbench.catalogue as cat
+
+        entries = tuple(
+            e if e.slug != "ptb-xl" else cat.CatalogueEntry(
+                **{**e.__dict__, "config_slug": "ghost", "raw": e.raw}
+            )
+            for e in cat._load()
+        )
+        monkeypatch.setattr(cat, "_load", lambda: entries)
+        with pytest.raises(ValueError, match="config_slug='ghost'"):
+            get_config("ptb-xl")
 
 
 class TestRelatedIntegrity:

@@ -1,5 +1,6 @@
 ---
 slug: "sudden-cardiac-death-holter-database"
+config_slug: "sddb"
 name: "Sudden Cardiac Death Holter Database"
 category: "two-lead"
 order: 8

@@ -1,5 +1,6 @@
 ---
 slug: "qt-database-qtdb"
+config_slug: "qtdb"
 name: "QT Database (QTDB)"
 category: "two-lead"
 order: 9

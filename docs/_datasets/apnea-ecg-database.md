@@ -1,5 +1,6 @@
 ---
 slug: "apnea-ecg-database"
+config_slug: "apnea_ecg"
 name: "Apnea-ECG Database"
 category: "one-lead"
 order: 3
