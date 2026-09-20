@@ -41,7 +41,7 @@ Two things about that top level are worth knowing before you read the rest.
 | Doing | Start at |
 |---|---|
 | Loading records for training | [`ECGDataset`](dataset.md) |
-| Looking up what exists | [`catalogue`](catalogue.md) |
+| Looking up what exists | [`metadata`](metadata.md) (merged view, any alias) or [`catalogue`](catalogue.md) (front matter only) |
 | Describing a new dataset | [`DatasetConfig`](config.md) |
 | Running the whole pipeline | [`run_splits`](pipelines.md) |
 | Checking a split is the canonical one | [`verify_splits`](manifest.md) |

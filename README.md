@@ -1476,7 +1476,7 @@ ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version
 ## CLI
 <!-- --8<-- [start:cli] -->
 
-Installing `ecgbench` adds a single `ecgbench` console command with three subcommands:
+Installing `ecgbench` adds a single `ecgbench` console command with six subcommands:
 
 ```bash
 ecgbench --help               # top-level help
@@ -1489,8 +1489,11 @@ ecgbench --version            # package version
 | `splits` | Full pipeline -- validate signals, generate 10-fold splits, export CSVs, and write Croissant metadata |
 | `croissant` | Generate Croissant 1.1 JSON-LD for an already-split dataset directory |
 | `upload` | Upload fold CSVs and metadata to HuggingFace Hub (requires `ecgbench[hf]`) |
+| `list` | List every dataset with its implementation state, merged from the catalogue and the configs |
+| `info` | Show one dataset's merged metadata; accepts either slug or the display name |
+| `related` | Show a dataset's relationships to others, with the `shares_records` leakage flag |
 
-Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
+Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_info`, `run_related`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
 
 ### `ecgbench splits`
 
@@ -1613,6 +1616,65 @@ counts: dict[str, int] = ecgbench.run_upload(
 ```
 
 Requires the `hf` extra (`pip install ecgbench[hf]`).
+
+### `ecgbench list`
+
+One row per dataset — all 64 catalogue entries, not only the implemented ones — merged from the catalogue front matter and the YAML configs. The `state` column is derived, not declared: `catalogue_only` (no config), `config` (config but no label loader), `config_labels` (labels available, fold CSVs not published) or `published` (labels available and fold CSVs on the Hub).
+
+```bash
+ecgbench list
+ecgbench list --state published
+ecgbench list --category two-lead --format csv
+ecgbench list --format json | jq '.[] | select(.signal.leads == 2) | .dataset_id'
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--state` | `catalogue_only`&vert;`config`&vert;`config_labels`&vert;`published` | all | Keep only datasets in this implementation state |
+| `--category` | str | all | Keep only one catalogue category (e.g. `two-lead`) |
+| `--format` | `table`&vert;`json`&vert;`csv` | `table` | Output format; `json` writes one document to stdout and nothing else |
+
+### `ecgbench info`
+
+Everything ECGBench knows about one dataset. The argument is any alias — the dashed catalogue slug (`ptb-xl`), the underscored config slug (`ptbxl`) or the display name — and an unknown one exits non-zero naming the closest matches. A dagger (`†`) marks a value on which the catalogue and the config disagree; `--verbose` lists every fact with its source file, most trustworthy first.
+
+```bash
+ecgbench info mit-bih-arrhythmia-database     # same record as: ecgbench info mitdb
+ecgbench info ptbxl --verbose
+ecgbench info echonext --format json
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `dataset` | str | *required* | Dataset id or any alias |
+| `--verbose` | flag | off | Append every fact with its source and path |
+| `--format` | `table`&vert;`json` | `table` | Output format |
+
+### `ecgbench related`
+
+The relationships declared in the catalogue, both directions, with the `shares_records` flag that matters for leakage: `yes` means the two datasets contain the same recordings, so training on one and evaluating on the other contaminates the test set.
+
+```bash
+ecgbench related ptb-xl
+ecgbench related mimic_iv_ecg --format json
+```
+
+Python equivalents:
+
+```python
+import ecgbench
+
+meta = ecgbench.get_metadata("mit-bih-arrhythmia-database")   # DatasetMeta; same as "mitdb"
+meta.signal.leads, meta.access.license_text, meta.implementation_state
+
+ecgbench.search_metadata("holter", leads=2, access="open")     # list[DatasetMeta]
+ecgbench.related_metadata("ptbxl")                             # list[RelationMeta]
+
+# or the exact CLI equivalents
+ecgbench.run_list(state="published")
+ecgbench.run_info("ptb-xl")
+ecgbench.run_related("ptbxl")
+```
 
 <!-- --8<-- [end:cli] -->
 

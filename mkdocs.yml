@@ -144,6 +144,7 @@ nav:
           - Dataset: reference/api/dataset.md
           - Config: reference/api/config.md
           - Catalogue: reference/api/catalogue.md
+          - Metadata: reference/api/metadata.md
           - Validation: reference/api/validation.md
           - Splitting: reference/api/splitting.md
           - Labels: reference/api/labels.md

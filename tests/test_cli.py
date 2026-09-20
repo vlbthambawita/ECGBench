@@ -8,6 +8,7 @@ verify that the CLI dispatcher wires everything up correctly.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -29,17 +30,20 @@ def test_top_level_help_lists_subcommands(capsys):
         main(["--help"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for sub in ("splits", "croissant", "upload"):
+    for sub in ("splits", "croissant", "upload", "list", "info", "related"):
         assert sub in out
 
 
-@pytest.mark.parametrize("sub", ["splits", "croissant", "upload"])
+@pytest.mark.parametrize(
+    "sub", ["splits", "croissant", "upload", "list", "info", "related"]
+)
 def test_subcommand_help_parses(sub, capsys):
     with pytest.raises(SystemExit) as exc:
         main([sub, "--help"])
     assert exc.value.code == 0
-    out = capsys.readouterr().out
-    assert "--dataset" in out or "--data-dir" in out
+    out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)  # argparse colour on 3.14
+    assert out.startswith("usage: ecgbench " + sub)
+    assert "--dataset" in out or "--data-dir" in out or "--format" in out
 
 
 def test_missing_subcommand_fails():

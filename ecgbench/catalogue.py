@@ -265,7 +265,13 @@ def _load() -> tuple[CatalogueEntry, ...]:
 
 
 def list_datasets() -> list[CatalogueEntry]:
-    """Return all datasets in the catalogue."""
+    """Return all datasets in the catalogue.
+
+    Note:
+        ``ecgbench.metadata.list_all()`` returns the same datasets merged with
+        their configs (``DatasetMeta``); this catalogue-only view is kept for
+        compatibility and will be deprecated once the metadata layer is complete.
+    """
     return list(_load())
 
 
@@ -277,6 +283,11 @@ def get_dataset(key: str) -> CatalogueEntry | None:
 
     Returns:
         CatalogueEntry if found, None otherwise.
+
+    Note:
+        ``ecgbench.metadata.get()`` also accepts the config slug and raises with
+        close matches instead of returning ``None``; this catalogue-only lookup
+        will be deprecated once the metadata layer is complete.
     """
     key_lower = key.lower()
     for entry in _load():
@@ -294,6 +305,12 @@ def search(
     """Search and filter datasets.
 
     All filters are AND-combined. Each is case-insensitive substring match.
+
+    Note:
+        ``ecgbench.metadata.search()`` searches a superset of these fields (page
+        prose and config text included) and adds structured filters such as
+        ``leads=`` and ``signal_format=``; this function will be deprecated once
+        the metadata layer is complete.
 
     Args:
         query: Free-text search across name, origin, format, paper, and keywords.

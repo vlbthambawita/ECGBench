@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vlbthambawita.github.io/ECGBench/metadata.schema.json",
+  "title": "ECGBench dataset metadata export",
+  "description": "One record per dataset, merged from the catalogue front matter (docs/_datasets/*.md) and the YAML configs (ecgbench/data/configs/*.yaml) by ecgbench.metadata.build. Generated; never hand-edited.",
+  "type": "object",
+  "required": ["schema_version", "content_digest", "built_at", "datasets"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "content_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical JSON of `datasets` alone; timestamp excluded."
+    },
+    "built_at": {"type": "string", "format": "date-time"},
+    "datasets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/dataset"}
+    }
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "nullableInteger": {"type": ["integer", "null"]},
+    "provenance": {
+      "type": "object",
+      "required": ["source", "source_path", "observed_at"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"type": "string", "enum": ["catalogue", "config", "validation_report", "manifest"]},
+        "source_path": {"type": "string"},
+        "observed_at": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "fact": {
+      "type": "object",
+      "required": ["key", "value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string"},
+        "value": {
+          "type": ["string", "integer", "number", "boolean", "null", "array"],
+          "items": {"type": ["string", "integer", "number", "boolean", "null"]}
+        },
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "required": [
+        "format", "leads", "lead_names", "alternate_lead_names", "record_lead_layouts",
+        "sampling_rates", "default_sampling_rate", "duration_seconds", "units", "unit_scale",
+        "zero_padded_identifiers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["wfdb", "csv", "csv_lead_rows", "opensignals", "npy", "hdf5", "edf", "mat"]
+        },
+        "leads": {"type": "integer", "minimum": 1},
+        "lead_names": {"type": ["array", "null"], "items": {"type": "string"}},
+        "alternate_lead_names": {
+          "type": ["object", "null"],
+          "description": "Lead layouts keyed by stored lead count; keys are strings in JSON.",
+          "propertyNames": {"pattern": "^[0-9]+$"},
+          "additionalProperties": {"type": "array", "items": {"type": "string"}}
+        },
+        "record_lead_layouts": {
+          "type": ["array", "null"],
+          "items": {"type": "array", "items": {"type": "string"}}
+        },
+        "sampling_rates": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
+        "default_sampling_rate": {"type": "integer"},
+        "duration_seconds": {"type": "number"},
+        "units": {"type": "string"},
+        "unit_scale": {"type": "number"},
+        "zero_padded_identifiers": {"type": "boolean"}
+      }
+    },
+    "access": {
+      "type": "object",
+      "required": [
+        "access", "license_text", "license_url", "url", "download_url", "publish_fold_csvs",
+        "no_publish_reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "access": {"type": "string", "enum": ["open", "credentialed", "restricted"]},
+        "license_text": {"$ref": "#/$defs/nullableString"},
+        "license_url": {"$ref": "#/$defs/nullableString"},
+        "url": {"type": "string"},
+        "download_url": {"$ref": "#/$defs/nullableString"},
+        "publish_fold_csvs": {"type": "boolean"},
+        "no_publish_reason": {"type": "string"}
+      }
+    },
+    "split": {
+      "type": "object",
+      "required": ["n_folds", "predefined_column", "has_patient_id", "record_id_column"],
+      "additionalProperties": false,
+      "properties": {
+        "n_folds": {"type": "integer", "minimum": 2},
+        "predefined_column": {"$ref": "#/$defs/nullableString"},
+        "has_patient_id": {"type": "boolean"},
+        "record_id_column": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "relation": {
+      "type": "object",
+      "required": ["target", "relation", "shares_records", "verified", "note", "derived"],
+      "additionalProperties": false,
+      "properties": {
+        "target": {"type": "string"},
+        "relation": {
+          "type": "string",
+          "enum": [
+            "contains", "subset_of", "derived_from", "has_derivative", "same_cohort",
+            "sibling_release"
+          ]
+        },
+        "shares_records": {"type": ["boolean", "null"]},
+        "verified": {"type": "boolean"},
+        "note": {"type": "string"},
+        "derived": {"type": "boolean"}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "dataset_id", "aliases", "name", "category", "status", "implementation_state", "version",
+        "description", "paper_title", "paper_doi", "citation", "origin_institution",
+        "origin_country", "search_keywords", "records", "patients", "records_display",
+        "patients_display", "signal", "access", "split", "relations", "facts", "prose"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "aliases": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "name": {"type": "string", "minLength": 1},
+        "category": {
+          "type": "string",
+          "enum": ["12-lead-physionet", "12-lead-other", "two-lead", "one-lead", "three-lead", "bspm"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["not_started", "implementing", "completed", "needs_review", "unavailable"]
+        },
+        "implementation_state": {
+          "type": "string",
+          "enum": ["catalogue_only", "config", "config_labels", "published"]
+        },
+        "version": {"$ref": "#/$defs/nullableString"},
+        "description": {"type": "string"},
+        "paper_title": {"$ref": "#/$defs/nullableString"},
+        "paper_doi": {"$ref": "#/$defs/nullableString"},
+        "citation": {"type": "string"},
+        "origin_institution": {"type": "string"},
+        "origin_country": {"$ref": "#/$defs/nullableString"},
+        "search_keywords": {"type": "string"},
+        "records": {"$ref": "#/$defs/nullableInteger"},
+        "patients": {"$ref": "#/$defs/nullableInteger"},
+        "records_display": {"type": "string"},
+        "patients_display": {"type": "string"},
+        "signal": {"oneOf": [{"$ref": "#/$defs/signal"}, {"type": "null"}]},
+        "access": {"$ref": "#/$defs/access"},
+        "split": {"oneOf": [{"$ref": "#/$defs/split"}, {"type": "null"}]},
+        "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+        "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "prose": {"type": "string"}
+      }
+    }
+  }
+}

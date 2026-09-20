@@ -17,6 +17,10 @@ __author__ = "Vajira Thambawita"
 # --- Lightweight imports (always available) ---
 from .catalogue import categories, get_dataset, list_datasets, search, to_dataframe
 from .config import DatasetConfig, list_available_configs, load_config
+from .metadata import DatasetMeta, MetadataStore, open_store
+from .metadata import get as get_metadata
+from .metadata import related as related_metadata
+from .metadata import search as search_metadata
 
 # --- Lazy imports (heavy dependencies) ---
 _LAZY_IMPORTS: dict[str, str] = {
@@ -48,6 +52,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "run_splits": ".cli",
     "run_croissant": ".cli",
     "run_upload": ".cli",
+    "run_list": ".cli",
+    "run_info": ".cli",
+    "run_related": ".cli",
 }
 
 
@@ -70,6 +77,13 @@ __all__ = [
     "get_dataset",
     "to_dataframe",
     "categories",
+    # Metadata layer (catalogue + configs merged, any alias resolves)
+    "DatasetMeta",
+    "MetadataStore",
+    "open_store",
+    "get_metadata",
+    "search_metadata",
+    "related_metadata",
     # Dataset
     "ECGDataset",
     "ecg_collate_fn",
@@ -98,4 +112,7 @@ __all__ = [
     "run_splits",
     "run_croissant",
     "run_upload",
+    "run_list",
+    "run_info",
+    "run_related",
 ]
