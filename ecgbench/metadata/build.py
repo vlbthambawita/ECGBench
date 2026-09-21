@@ -33,7 +33,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +65,13 @@ _REPO_ROOT = _PACKAGE_DIR.parent
 DEFAULT_JSON_PATH = _PACKAGE_DIR / "data" / "metadata.json"
 #: Its hand-written JSON Schema.
 SCHEMA_PATH = _PACKAGE_DIR / "data" / "metadata.schema.json"
+#: The SQLite index (FTS5 + relational tables) generated from the same model.
+#: Not committed: SQLite bytes are not deterministic, so it is built by the
+#: packaging hook and, in a source checkout, on first use.
+SQLITE_PATH = _PACKAGE_DIR / "data" / "metadata.sqlite"
+#: Fingerprint (mtime + size) of the source files the last build saw, used to
+#: detect a stale index in a source checkout. Not committed either.
+SOURCES_PATH = _PACKAGE_DIR / "data" / "metadata.sources.json"
 
 _LABELS_DIR = _PACKAGE_DIR / "labels"
 _CONFIGS_DIR = _PACKAGE_DIR / "data" / "configs"
@@ -530,3 +540,439 @@ def load_json(path: Path | str = DEFAULT_JSON_PATH) -> tuple[DatasetMeta, ...]:
             "or install a matching version"
         )
     return tuple(DatasetMeta.from_dict(d) for d in document["datasets"])
+
+
+# --------------------------------------------------------------------------- sqlite index
+
+#: FTS5 columns in ``dataset_fts`` after the unindexed id, in the order the
+#: ``bm25()`` weights in ``store.py`` refer to them.
+FTS_COLUMNS: tuple[str, ...] = (
+    "name",
+    "keywords",
+    "description",
+    "institution",
+    "prose",
+    "field_text",
+)
+
+_SCHEMA = """
+CREATE TABLE meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+CREATE TABLE dataset (
+    dataset_id            TEXT PRIMARY KEY,
+    name                  TEXT NOT NULL,
+    category              TEXT NOT NULL,
+    status                TEXT NOT NULL,
+    implementation_state  TEXT NOT NULL,
+    version               TEXT,
+    access                TEXT NOT NULL,
+    license_text          TEXT,
+    license_url           TEXT,
+    publish_fold_csvs     INTEGER NOT NULL,
+    signal_format         TEXT,
+    leads                 INTEGER,
+    lead_names            TEXT,     -- JSON array or NULL
+    sampling_rates        TEXT,     -- JSON array or NULL
+    default_sampling_rate INTEGER,
+    duration_s            REAL,
+    units                 TEXT,
+    records               INTEGER,
+    patients              INTEGER,
+    records_display       TEXT NOT NULL,
+    patients_display      TEXT NOT NULL,
+    has_patient_id        INTEGER,
+    n_folds               INTEGER,
+    predefined_column     TEXT,
+    url                   TEXT NOT NULL,
+    download_url          TEXT,
+    paper_doi             TEXT,
+    origin_institution    TEXT NOT NULL,
+    origin_country        TEXT,
+    document              TEXT NOT NULL  -- the full DatasetMeta as JSON
+);
+CREATE TABLE alias (
+    alias      TEXT PRIMARY KEY COLLATE NOCASE,
+    dataset_id TEXT NOT NULL REFERENCES dataset(dataset_id)
+);
+CREATE TABLE fact (
+    dataset_id  TEXT NOT NULL REFERENCES dataset(dataset_id),
+    key         TEXT NOT NULL,
+    value       TEXT,             -- JSON-encoded
+    source      TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    observed_at TEXT
+);
+CREATE INDEX fact_dataset_key ON fact(dataset_id, key);
+CREATE TABLE field (                -- populated from Phase 3 (field inventory)
+    dataset_id  TEXT NOT NULL REFERENCES dataset(dataset_id),
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    description TEXT,
+    unit        TEXT,
+    vocabulary  TEXT,             -- JSON array or NULL
+    nullable    INTEGER,
+    example     TEXT,
+    source      TEXT
+);
+CREATE TABLE relation (
+    src            TEXT NOT NULL REFERENCES dataset(dataset_id),
+    dst            TEXT NOT NULL,
+    relation       TEXT NOT NULL,
+    shares_records INTEGER,       -- NULL when unknown
+    verified       INTEGER NOT NULL,
+    note           TEXT NOT NULL,
+    derived        INTEGER NOT NULL
+);
+CREATE TABLE artefact (             -- populated from Phase 4 (snapshots)
+    dataset_id       TEXT NOT NULL REFERENCES dataset(dataset_id),
+    kind             TEXT NOT NULL,
+    version          TEXT,
+    sha256           TEXT,
+    n_records        INTEGER,
+    ecgbench_version TEXT,
+    created          TEXT
+);
+"""
+
+_FTS_SCHEMA = (
+    "CREATE VIRTUAL TABLE dataset_fts USING fts5("
+    "dataset_id UNINDEXED, " + ", ".join(FTS_COLUMNS) + ", tokenize='porter unicode61')"
+)
+
+
+def fts5_available() -> bool:
+    """Whether the runtime SQLite can create an FTS5 table.
+
+    Probed by doing it, in memory, rather than by reading ``PRAGMA
+    compile_options``: a loadable-extension build lists nothing there.
+    """
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE probe USING fts5(x)")
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
+def _fts_row(meta: DatasetMeta) -> tuple[str, ...]:
+    keywords = " ".join((meta.search_keywords, *meta.aliases, meta.dataset_id))
+    institution = " ".join(p for p in (meta.origin_institution, meta.origin_country or "") if p)
+    return (
+        meta.dataset_id,
+        meta.name,
+        keywords,
+        meta.description,
+        institution,
+        meta.prose,
+        "",  # field_text — Phase 3
+    )
+
+
+def _dataset_row(meta: DatasetMeta) -> tuple:
+    s, a, sp = meta.signal, meta.access, meta.split
+    return (
+        meta.dataset_id,
+        meta.name,
+        meta.category,
+        meta.status,
+        meta.implementation_state,
+        meta.version,
+        a.access,
+        a.license_text,
+        a.license_url,
+        int(a.publish_fold_csvs),
+        s.format if s else None,
+        s.leads if s else None,
+        json.dumps(list(s.lead_names)) if s and s.lead_names is not None else None,
+        json.dumps(list(s.sampling_rates)) if s else None,
+        s.default_sampling_rate if s else None,
+        s.duration_seconds if s else None,
+        s.units if s else None,
+        meta.records,
+        meta.patients,
+        meta.records_display,
+        meta.patients_display,
+        int(sp.has_patient_id) if sp else None,
+        sp.n_folds if sp else None,
+        sp.predefined_column if sp else None,
+        a.url,
+        a.download_url,
+        meta.paper_doi,
+        meta.origin_institution,
+        meta.origin_country,
+        json.dumps(meta.to_dict(), sort_keys=True, ensure_ascii=False),
+    )
+
+
+def _ecgbench_version() -> str:
+    try:
+        from ecgbench import __version__
+    except ImportError:  # pragma: no cover
+        return "0.0.0.dev0"
+    return __version__
+
+
+def write_sqlite(
+    model: tuple[DatasetMeta, ...],
+    path: Path | str = SQLITE_PATH,
+    built_at: str | None = None,
+) -> str:
+    """Write the SQLite index for ``model`` to ``path`` atomically.
+
+    The relational tables mirror the JSON export (``dataset.document`` holds
+    each record whole); ``dataset_fts`` is the FTS5 index behind ranked search.
+    When the runtime SQLite lacks FTS5 everything but the virtual table is
+    written and ``meta.fts`` is ``"none"``, which the store reads as "use the
+    substring path".
+
+    The file is written to a sibling temp path and renamed into place, so a
+    reader holding the old file open with ``mode=ro`` never sees a partial one.
+
+    Returns:
+        The FTS state recorded in ``meta``: ``"fts5"`` or ``"none"``.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    if tmp.exists():
+        tmp.unlink()
+    fts = "fts5" if fts5_available() else "none"
+    conn = sqlite3.connect(tmp)
+    try:
+        conn.executescript(_SCHEMA)
+        if fts == "fts5":
+            conn.execute(_FTS_SCHEMA)
+        ordered = sorted(model, key=lambda m: m.dataset_id)
+        conn.executemany(
+            "INSERT INTO dataset VALUES (" + ",".join("?" * 30) + ")",
+            [_dataset_row(m) for m in ordered],
+        )
+        conn.executemany(
+            "INSERT INTO alias VALUES (?, ?)",
+            [(alias, m.dataset_id) for m in ordered for alias in dict.fromkeys(m.aliases)],
+        )
+        conn.executemany(
+            "INSERT INTO fact VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    m.dataset_id,
+                    f.key,
+                    json.dumps(f.value, ensure_ascii=False),
+                    f.provenance.source,
+                    f.provenance.source_path,
+                    f.provenance.observed_at,
+                )
+                for m in ordered
+                for f in m.facts
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO relation VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    m.dataset_id,
+                    r.target,
+                    r.relation,
+                    None if r.shares_records is None else int(r.shares_records),
+                    int(r.verified),
+                    r.note,
+                    int(r.derived),
+                )
+                for m in ordered
+                for r in m.relations
+            ],
+        )
+        if fts == "fts5":
+            conn.executemany(
+                "INSERT INTO dataset_fts VALUES (" + ",".join("?" * (len(FTS_COLUMNS) + 1)) + ")",
+                [_fts_row(m) for m in ordered],
+            )
+        conn.executemany(
+            "INSERT INTO meta VALUES (?, ?)",
+            [
+                ("schema_version", str(SCHEMA_VERSION)),
+                ("content_digest", content_digest(model)),
+                ("built_at", built_at or datetime.now(timezone.utc).isoformat(timespec="seconds")),
+                ("ecgbench_version", _ecgbench_version()),
+                ("fts", fts),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    os.replace(tmp, target)
+    return fts
+
+
+def read_sqlite_meta(path: Path | str = SQLITE_PATH) -> dict[str, str]:
+    """The ``meta`` table of an index as a dict; empty if the file is unreadable."""
+    target = Path(path)
+    if not target.is_file():
+        return {}
+    try:
+        conn = sqlite3.connect(f"{target.resolve().as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return {}
+    try:
+        return dict(conn.execute("SELECT key, value FROM meta").fetchall())
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- staleness
+
+
+def is_source_checkout() -> bool:
+    """Whether the package runs from the repository rather than an installed wheel.
+
+    A wheel carries the catalogue at ``ecgbench/_datasets/`` (hatch force-include);
+    a checkout has it at ``docs/_datasets/`` next to ``pyproject.toml``.
+    """
+    return (
+        not (_PACKAGE_DIR / "_datasets").is_dir()
+        and (_REPO_ROOT / "docs" / "_datasets").is_dir()
+        and (_REPO_ROOT / "pyproject.toml").is_file()
+    )
+
+
+def source_fingerprint() -> dict[str, list[int]]:
+    """``{relative path: [mtime_ns, size]}`` for every file the build reads.
+
+    Catalogue Markdown, config YAML and the label modules whose presence sets
+    ``implementation_state``. Cheap (one ``stat`` per file) and sufficient to
+    notice an edit; a rebuild it triggers is a no-op on the JSON when the
+    content digest has not changed.
+    """
+    files: list[Path] = []
+    files += sorted(catalogue._datasets_dir().glob("*.md"))
+    files += sorted(p for p in _CONFIGS_DIR.glob("*.yaml") if not p.stem.startswith("_"))
+    files += sorted(p for p in _LABELS_DIR.glob("*.py") if not p.stem.startswith("_"))
+    out: dict[str, list[int]] = {}
+    for path in files:
+        try:
+            key = path.relative_to(_REPO_ROOT).as_posix()
+        except ValueError:
+            key = path.name
+        st = path.stat()
+        out[key] = [st.st_mtime_ns, st.st_size]
+    return out
+
+
+def read_sources(path: Path | str = SOURCES_PATH) -> dict[str, list[int]] | None:
+    """The fingerprint recorded by the last build, or ``None`` when there is none."""
+    try:
+        with Path(path).open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def write_sources(path: Path | str = SOURCES_PATH, fingerprint: dict | None = None) -> None:
+    """Record the current source fingerprint next to the index."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(fingerprint if fingerprint is not None else source_fingerprint(), indent=0),
+        encoding="utf-8",
+    )
+
+
+def sources_changed(path: Path | str = SOURCES_PATH) -> bool:
+    """Whether the sources differ from the fingerprint at ``path`` (or none exists)."""
+    return read_sources(path) != source_fingerprint()
+
+
+# --------------------------------------------------------------------------- build_all
+
+
+@dataclass(frozen=True)
+class BuildResult:
+    """What ``build_all`` produced.
+
+    Attributes:
+        json_path: The JSON export.
+        sqlite_path: The SQLite index.
+        content_digest: Digest of the model both files describe.
+        json_written: ``False`` when the export already had this digest and was
+            left untouched.
+        fts: ``"fts5"`` or ``"none"`` — whether the index carries the FTS5 table.
+    """
+
+    json_path: Path
+    sqlite_path: Path
+    content_digest: str
+    json_written: bool
+    fts: str
+
+
+def build_all(
+    output_dir: Path | str | None = None, model: tuple[DatasetMeta, ...] | None = None
+) -> BuildResult:
+    """Build the model and write every derived file: JSON, SQLite, fingerprint.
+
+    Args:
+        output_dir: Directory to write into; defaults to ``ecgbench/data/``.
+        model: A pre-built model, to avoid building twice.
+    """
+    model = build_model() if model is None else model
+    if output_dir is None:
+        json_path, sqlite_path, sources_path = DEFAULT_JSON_PATH, SQLITE_PATH, SOURCES_PATH
+    else:
+        out = Path(output_dir)
+        json_path = out / DEFAULT_JSON_PATH.name
+        sqlite_path = out / SQLITE_PATH.name
+        sources_path = out / SOURCES_PATH.name
+    written = write_json(json_path, model)
+    fts = write_sqlite(model, sqlite_path)
+    write_sources(sources_path)
+    return BuildResult(
+        json_path=json_path,
+        sqlite_path=sqlite_path,
+        content_digest=content_digest(model),
+        json_written=written,
+        fts=fts,
+    )
+
+
+# --------------------------------------------------------------------------- diffing
+
+
+@dataclass(frozen=True)
+class ModelDiff:
+    """Dataset ids whose records differ between two exports."""
+
+    added: tuple[str, ...]
+    removed: tuple[str, ...]
+    changed: tuple[str, ...]
+
+    def __bool__(self) -> bool:
+        return bool(self.added or self.removed or self.changed)
+
+    def summary(self) -> str:
+        parts = []
+        groups = (("added", self.added), ("removed", self.removed), ("changed", self.changed))
+        for label, ids in groups:
+            if ids:
+                parts.append(f"{label} ({len(ids)}): {', '.join(ids)}")
+        return "; ".join(parts) if parts else "no differences"
+
+
+def diff_exports(old: dict, new_model: tuple[DatasetMeta, ...]) -> ModelDiff:
+    """Compare a loaded export document against a freshly built model, by dataset."""
+
+    def canonical(record: dict) -> str:
+        return json.dumps(record, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    before = {d["dataset_id"]: canonical(d) for d in old.get("datasets", [])}
+    after = {m.dataset_id: canonical(m.to_dict()) for m in new_model}
+    return ModelDiff(
+        added=tuple(sorted(set(after) - set(before))),
+        removed=tuple(sorted(set(before) - set(after))),
+        changed=tuple(sorted(k for k in before.keys() & after.keys() if before[k] != after[k])),
+    )

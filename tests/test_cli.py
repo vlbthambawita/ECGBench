@@ -30,20 +30,30 @@ def test_top_level_help_lists_subcommands(capsys):
         main(["--help"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for sub in ("splits", "croissant", "upload", "list", "info", "related"):
+    for sub in ("splits", "croissant", "upload", "list", "search", "info", "related", "metadata"):
         assert sub in out
 
 
-@pytest.mark.parametrize(
-    "sub", ["splits", "croissant", "upload", "list", "info", "related"]
-)
+_SUBCOMMAND_FLAG = {
+    "splits": "--dataset",
+    "croissant": "--dataset",
+    "upload": "--data-dir",
+    "list": "--format",
+    "search": "--limit",
+    "info": "--verbose",
+    "related": "--format",
+    "metadata": "build",
+}
+
+
+@pytest.mark.parametrize("sub", sorted(_SUBCOMMAND_FLAG))
 def test_subcommand_help_parses(sub, capsys):
     with pytest.raises(SystemExit) as exc:
         main([sub, "--help"])
     assert exc.value.code == 0
     out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)  # argparse colour on 3.14
     assert out.startswith("usage: ecgbench " + sub)
-    assert "--dataset" in out or "--data-dir" in out or "--format" in out
+    assert _SUBCOMMAND_FLAG[sub] in out
 
 
 def test_missing_subcommand_fails():

@@ -13,8 +13,9 @@ Typical use::
     meta = metadata.get("mit-bih-arrhythmia-database")   # same as get("mitdb")
     meta.signal.leads, meta.access.license_text, meta.implementation_state
 
-    for m in metadata.search("holter", leads=2, access="open"):
+    for m in metadata.search("holter", leads=2, access="open"):   # FTS5, ranked
         print(m.dataset_id, m.records_display)
+    metadata.search('"atrial fib*" NOT paediatric')             # FTS5 syntax verbatim
 
     metadata.related("ptbxl")   # leakage edges, both directions
 
@@ -26,13 +27,19 @@ from __future__ import annotations
 
 from ecgbench.metadata.build import (
     DEFAULT_JSON_PATH,
+    SQLITE_PATH,
+    BuildResult,
     MetadataBuildError,
+    ModelDiff,
+    build_all,
     build_model,
     content_digest,
+    diff_exports,
     load_json,
     parse_count,
     to_json,
     write_json,
+    write_sqlite,
 )
 from ecgbench.metadata.identity import AliasIndex, UnknownDatasetError, resolve
 from ecgbench.metadata.model import (
@@ -47,7 +54,7 @@ from ecgbench.metadata.model import (
     SignalMeta,
     SplitMeta,
 )
-from ecgbench.metadata.store import MetadataStore, open_store
+from ecgbench.metadata.store import MetadataQueryError, MetadataStore, SearchHit, open_store
 
 
 def get(key: str) -> DatasetMeta:
@@ -58,6 +65,11 @@ def get(key: str) -> DatasetMeta:
 def search(query: str | None = None, **filters) -> list[DatasetMeta]:
     """``open_store().search(query, **filters)`` — see ``MetadataStore.search``."""
     return open_store().search(query, **filters)
+
+
+def search_ranked(query: str | None = None, **filters) -> list[SearchHit]:
+    """``open_store().search_ranked(query, **filters)`` — results with their scores."""
+    return open_store().search_ranked(query, **filters)
 
 
 def related(key: str) -> list[RelationMeta]:
@@ -88,18 +100,27 @@ __all__ = [
     "resolve",
     # store
     "MetadataStore",
+    "MetadataQueryError",
+    "SearchHit",
     "open_store",
     "get",
     "search",
+    "search_ranked",
     "related",
     "list_all",
     # build
     "build_model",
+    "build_all",
     "content_digest",
+    "diff_exports",
     "to_json",
     "write_json",
+    "write_sqlite",
     "load_json",
     "parse_count",
+    "BuildResult",
+    "ModelDiff",
     "MetadataBuildError",
     "DEFAULT_JSON_PATH",
+    "SQLITE_PATH",
 ]

@@ -1,4 +1,4 @@
-"""``ecgbench list``, ``ecgbench info`` and ``ecgbench related``.
+"""``ecgbench list``, ``ecgbench search``, ``ecgbench info`` and ``ecgbench related``.
 
 Read-only views over the metadata store. Each command has a public ``run_*``
 function returning typed objects — the Python API — and a private ``_cli_*``
@@ -16,7 +16,7 @@ from collections.abc import Sequence
 
 from ecgbench.metadata.identity import UnknownDatasetError
 from ecgbench.metadata.model import IMPLEMENTATION_STATES, DatasetMeta, RelationMeta
-from ecgbench.metadata.store import open_store
+from ecgbench.metadata.store import MetadataQueryError, SearchHit, open_store
 
 _FORMATS = ("table", "json", "csv")
 
@@ -38,6 +38,32 @@ def run_list(
         **filters: Any further keyword accepted by ``MetadataStore.search``.
     """
     return open_store().search(None, state=state, category=category, **filters)
+
+
+def run_search(
+    query: str | None = None, *, limit: int | None = None, **filters
+) -> list[DatasetMeta]:
+    """Ranked full-text search with structured filters — ``MetadataStore.search``.
+
+    Args:
+        query: FTS5 query (``"atrial fib*"``, ``holter NOT paediatric``); with the
+            index unavailable, a case-insensitive substring.
+        limit: Keep at most this many results.
+        **filters: ``leads``, ``fs``, ``signal_format``, ``access``, ``license``,
+            ``category``, ``state``, ``min_records``, ``max_records``,
+            ``has_labels``, ``has_patient_id``, ``published``.
+
+    Raises:
+        MetadataQueryError: the index rejected ``query`` as FTS5 syntax.
+    """
+    return open_store().search(query, limit=limit, **filters)
+
+
+def run_search_ranked(
+    query: str | None = None, *, limit: int | None = None, **filters
+) -> list[SearchHit]:
+    """``run_search`` with each hit's ``bm25()`` score attached."""
+    return open_store().search_ranked(query, limit=limit, **filters)
 
 
 def run_info(key: str) -> DatasetMeta:
@@ -122,6 +148,46 @@ def format_list(rows: list[DatasetMeta], fmt: str = "table") -> str:
         writer.writerow(headers)
         writer.writerows([[_cell(v) if v is not None else "" for v in row] for row in table])
         return buffer.getvalue().rstrip("\n")
+    return _table(headers, table)
+
+
+def format_search(hits: list[SearchHit], fmt: str = "table") -> str:
+    """Render ranked hits; the table adds a rank and, when FTS5 ranked them, a score."""
+    if fmt == "json":
+        return json.dumps(
+            [{"rank": i + 1, "score": h.score, **h.meta.to_dict()} for i, h in enumerate(hits)],
+            indent=2,
+            ensure_ascii=False,
+        )
+    ranked = any(h.score is not None for h in hits)
+    headers = ["rank", *(["score"] if ranked else []), "dataset_id", "name", "state", "records",
+               "leads", "format", "access"]
+    table = []
+    for i, h in enumerate(hits, start=1):
+        m = h.meta
+        row: list[object] = [i]
+        if ranked:
+            row.append(f"{h.score:.3g}" if h.score is not None else None)
+        row += [
+            m.dataset_id,
+            m.name,
+            m.implementation_state,
+            m.records_display,
+            _leads(m),
+            m.signal.format if m.signal else None,
+            m.access.access,
+        ]
+        table.append(row)
+    if fmt == "csv":
+        import io
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerow(headers)
+        writer.writerows([[_cell(v) if v is not None else "" for v in row] for row in table])
+        return buffer.getvalue().rstrip("\n")
+    if not hits:
+        return "no datasets match"
     return _table(headers, table)
 
 
@@ -259,6 +325,31 @@ def _cli_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cli_search(args: argparse.Namespace) -> int:
+    try:
+        hits = run_search_ranked(
+            args.query,
+            limit=args.limit,
+            leads=args.leads,
+            fs=args.fs,
+            signal_format=args.signal_format,
+            access=args.access,
+            license=args.license,
+            category=args.category,
+            state=args.state,
+            min_records=args.min_records,
+            max_records=args.max_records,
+            has_labels=args.labels,
+            has_patient_id=args.patient_id,
+            published=args.published,
+        )
+    except MetadataQueryError as exc:
+        print(f"ecgbench: {exc}", file=sys.stderr)
+        return 1
+    print(format_search(hits, args.format))
+    return 0
+
+
 def _cli_info(args: argparse.Namespace) -> int:
     try:
         meta = run_info(args.dataset)
@@ -278,7 +369,7 @@ def _cli_related(args: argparse.Namespace) -> int:
 
 
 def add_subparser(subparsers) -> argparse.ArgumentParser:
-    """Register ``list``, ``info`` and ``related``; returns the ``list`` parser."""
+    """Register ``list``, ``search``, ``info`` and ``related``; returns the ``list`` parser."""
     p_list = subparsers.add_parser(
         "list",
         help="List every dataset in the catalogue with its implementation state",
@@ -293,6 +384,51 @@ def add_subparser(subparsers) -> argparse.ArgumentParser:
     p_list.add_argument("--category", default=None, help="Keep only this catalogue category")
     p_list.add_argument("--format", choices=_FORMATS, default="table", help="Output format")
     p_list.set_defaults(func=_cli_list)
+
+    p_search = subparsers.add_parser(
+        "search",
+        help="Ranked full-text search over every dataset, with structured filters",
+        description=(
+            "QUERY is FTS5 syntax passed through verbatim: words are ANDed, `fib*` is a "
+            'prefix, "..." is a phrase, NOT/OR/AND combine terms. Omit QUERY to filter '
+            "only. Results are ranked by bm25 with the name weighted highest."
+        ),
+    )
+    p_search.add_argument("query", nargs="?", default=None, help="FTS5 query (optional)")
+    p_search.add_argument("--leads", type=int, default=None, help="Exact lead count")
+    p_search.add_argument("--fs", type=int, default=None, help="A sampling rate the release ships")
+    p_search.add_argument(
+        "--signal-format", default=None, help="Signal format (wfdb, csv, edf, mat, hdf5, …)"
+    )
+    p_search.add_argument(
+        "--access", default=None, choices=("open", "credentialed", "restricted")
+    )
+    p_search.add_argument("--license", default=None, help="Substring of the licence name or URL")
+    p_search.add_argument("--category", default=None, help="Exact catalogue category")
+    p_search.add_argument("--state", default=None, choices=IMPLEMENTATION_STATES)
+    p_search.add_argument("--min-records", type=int, default=None)
+    p_search.add_argument("--max-records", type=int, default=None)
+    p_search.add_argument(
+        "--labels",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Only datasets with (or, --no-labels, without) a label loader",
+    )
+    p_search.add_argument(
+        "--patient-id",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Only datasets whose folds are (or are not) patient-grouped",
+    )
+    p_search.add_argument(
+        "--published",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Only datasets whose fold CSVs are (or are not) on the Hub",
+    )
+    p_search.add_argument("--limit", type=int, default=None, help="Keep at most N results")
+    p_search.add_argument("--format", choices=_FORMATS, default="table")
+    p_search.set_defaults(func=_cli_search)
 
     p_info = subparsers.add_parser(
         "info",

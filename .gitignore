@@ -210,3 +210,9 @@ marimo/_lsp/
 __marimo__/
 
 output/
+
+# Derived metadata index (rebuilt by hatch_build.py / ecgbench metadata build);
+# metadata.json IS committed, these two are not.
+ecgbench/data/metadata.sqlite
+ecgbench/data/metadata.sqlite.tmp
+ecgbench/data/metadata.sources.json

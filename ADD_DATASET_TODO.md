@@ -125,6 +125,7 @@ about is a field that silently does nothing on the other.
 - [ ] Set `order` (int) — controls sort position within the category.
 - [ ] Add a `sections:` list for the detail page. Each entry's `type` must have a matching partial in `docs/_includes/sections/`: `description`, `table`, `code`, `links`, `notebook`, `plot`.
 - [ ] Add a `related:` block if the dataset overlaps any other — see below.
+- [ ] Run `ecgbench metadata build` and commit the updated `ecgbench/data/metadata.json`. The export is derived from the front matter and the config; `tests/test_metadata.py` fails while it is stale, and `ecgbench metadata build --check` is the CI form of the same test.
 - [ ] Verify it shows up: `python -c "import ecgbench; print(ecgbench.get_dataset('<Name>'))"`.
 - [ ] Verify the count went up: `python -c "import ecgbench; print(len(ecgbench.list_datasets()))"`.
 

@@ -1476,7 +1476,7 @@ ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version
 ## CLI
 <!-- --8<-- [start:cli] -->
 
-Installing `ecgbench` adds a single `ecgbench` console command with six subcommands:
+Installing `ecgbench` adds a single `ecgbench` console command with eight subcommands:
 
 ```bash
 ecgbench --help               # top-level help
@@ -1490,10 +1490,12 @@ ecgbench --version            # package version
 | `croissant` | Generate Croissant 1.1 JSON-LD for an already-split dataset directory |
 | `upload` | Upload fold CSVs and metadata to HuggingFace Hub (requires `ecgbench[hf]`) |
 | `list` | List every dataset with its implementation state, merged from the catalogue and the configs |
+| `search` | Ranked full-text search (FTS5 syntax) over every dataset, with structured filters |
 | `info` | Show one dataset's merged metadata; accepts either slug or the display name |
 | `related` | Show a dataset's relationships to others, with the `shares_records` leakage flag |
+| `metadata` | Rebuild or verify (`build --check`) the derived metadata files |
 
-Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_info`, `run_related`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
+Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_search`, `run_info`, `run_related`, `run_metadata_build`, `run_metadata_check`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
 
 ### `ecgbench splits`
 
@@ -1634,6 +1636,39 @@ ecgbench list --format json | jq '.[] | select(.signal.leads == 2) | .dataset_id
 | `--category` | str | all | Keep only one catalogue category (e.g. `two-lead`) |
 | `--format` | `table`&vert;`json`&vert;`csv` | `table` | Output format; `json` writes one document to stdout and nothing else |
 
+### `ecgbench search`
+
+Ranked full-text search over all 64 datasets — name, aliases, keywords, description, institution and the full text of each dataset page — with structured filters. The query is [SQLite FTS5 syntax](https://www.sqlite.org/fts5.html#full_text_query_syntax) passed through verbatim: words are ANDed, `fib*` is a prefix, `"..."` is a phrase, `NOT`/`OR`/`AND` combine terms. Results are ranked by bm25 with the name weighted highest, then a small prior that puts an implemented dataset ahead of a catalogue-only entry at near-equal relevance. Omit the query to filter only.
+
+```bash
+ecgbench search "atrial fib*"                         # prefix: afdb, ltafdb, shdb_af, …
+ecgbench search "holter NOT paediatric" --leads 2     # boolean + structured filter
+ecgbench search '"sleep apnea"'                        # phrase (quote it for the shell too)
+ecgbench search --fs 500 --patient-id --published     # structured only
+ecgbench search brazil --format json | jq '.[].dataset_id'
+```
+
+A query containing punctuation must be quoted as a phrase — `ecgbench search '"ptb-xl"'` — because `ptb-xl` is a column reference in FTS5 syntax; the error message says so.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `QUERY` | str | none | FTS5 query; omit to filter only |
+| `--leads` | int | any | Exact lead count |
+| `--fs` | int | any | A sampling rate the release ships |
+| `--signal-format` | str | any | `wfdb`, `csv`, `edf`, `mat`, `hdf5`, … |
+| `--access` | `open`&vert;`credentialed`&vert;`restricted` | any | Access type |
+| `--license` | str | any | Substring of the licence name or URL |
+| `--category` | str | any | Exact catalogue category |
+| `--state` | implementation state | any | `catalogue_only`, `config`, `config_labels`, `published` |
+| `--min-records` / `--max-records` | int | any | Bounds on the parsed record count (unparsed counts are excluded) |
+| `--labels` / `--no-labels` | flag | any | Whether a label loader exists |
+| `--patient-id` / `--no-patient-id` | flag | any | Whether folds are patient-grouped |
+| `--published` / `--no-published` | flag | any | Whether fold CSVs are on the Hub |
+| `--limit` | int | all | Keep at most N results |
+| `--format` | `table`&vert;`json`&vert;`csv` | `table` | Output format; the table shows rank and bm25 score |
+
+When this Python's SQLite lacks FTS5, or the index is unavailable, the query falls back to a case-insensitive substring match over the same fields and a warning says so once.
+
 ### `ecgbench info`
 
 Everything ECGBench knows about one dataset. The argument is any alias — the dashed catalogue slug (`ptb-xl`), the underscored config slug (`ptbxl`) or the display name — and an unknown one exits non-zero naming the closest matches. A dagger (`†`) marks a value on which the catalogue and the config disagree; `--verbose` lists every fact with its source file, most trustworthy first.
@@ -1672,9 +1707,27 @@ ecgbench.related_metadata("ptbxl")                             # list[RelationMe
 
 # or the exact CLI equivalents
 ecgbench.run_list(state="published")
+ecgbench.run_search("atrial fib*", leads=2, limit=5)
 ecgbench.run_info("ptb-xl")
 ecgbench.run_related("ptbxl")
 ```
+
+### `ecgbench metadata build`
+
+Maintenance of the derived metadata files. `ecgbench/data/metadata.json` is committed and `metadata.sqlite` (the FTS5 index) is generated; both are compiled from the catalogue front matter and the YAML configs, and the packaging hook rebuilds them into every wheel. Run `build` after editing any `docs/_datasets/*.md` or config, and `build --check` in CI: it exits 1 and names the added, removed and changed dataset ids when the committed export no longer matches a fresh build.
+
+```bash
+ecgbench metadata build            # rewrite metadata.json (if changed) and metadata.sqlite
+ecgbench metadata build --check    # exit 1 if metadata.json is stale; prints the diff
+ecgbench metadata build --output /tmp/meta/
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--check` | flag | off | Verify instead of writing; non-zero exit on drift |
+| `--output` | path | `ecgbench/data/` | Directory to write into (or, with `--check`, to verify) |
+
+In a source checkout the index is also refreshed automatically: `open_store()` fingerprints the source files (mtime and size) and rebuilds when they changed, so `ecgbench search` never runs against a stale index there.
 
 <!-- --8<-- [end:cli] -->
 

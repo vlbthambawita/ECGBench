@@ -14,6 +14,11 @@ fails when its digest no longer matches a fresh build, which is the signal to ru
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sqlite3
+import stat
+import warnings
 from pathlib import Path
 
 import pytest
@@ -26,25 +31,32 @@ from ecgbench.metadata import (
     DEFAULT_JSON_PATH,
     IMPLEMENTATION_STATES,
     SCHEMA_VERSION,
+    SQLITE_PATH,
     AccessMeta,
     AliasIndex,
     DatasetMeta,
     Fact,
+    MetadataQueryError,
     MetadataStore,
     Provenance,
     RelationMeta,
+    SearchHit,
     SignalMeta,
     SplitMeta,
     UnknownDatasetError,
+    build_all,
     build_model,
     content_digest,
+    diff_exports,
     load_json,
     open_store,
     parse_count,
     to_json,
     write_json,
+    write_sqlite,
 )
 from ecgbench.metadata import build as build_module
+from ecgbench.metadata import store as store_module
 
 
 @pytest.fixture(scope="module")
@@ -599,3 +611,318 @@ class TestPublicApi:
             [sys.executable, "-c", code], capture_output=True, text=True, check=True
         )
         assert out.stdout.strip() == "[]"
+
+
+# --------------------------------------------------------------------------- Phase 2: SQLite
+
+
+
+def _copy_export(tmp_path: Path, with_index: bool = True) -> Path:
+    """Copy the bundled export (and optionally its index) into ``tmp_path``."""
+    json_path = tmp_path / "metadata.json"
+    shutil.copy(DEFAULT_JSON_PATH, json_path)
+    if with_index:
+        if not SQLITE_PATH.is_file():
+            open_store()  # builds it
+        shutil.copy(SQLITE_PATH, tmp_path / "metadata.sqlite")
+    return json_path
+
+
+class TestSqliteIndex:
+    def test_write_sqlite_creates_the_schema_and_rows(self, model, tmp_path: Path):
+        path = tmp_path / "m.sqlite"
+        fts = write_sqlite(model, path)
+        assert fts == "fts5"
+        conn = sqlite3.connect(path)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"meta", "dataset", "alias", "fact", "field", "relation", "artefact",
+                "dataset_fts"} <= tables
+        assert conn.execute("SELECT count(*) FROM dataset").fetchone()[0] == 64
+        assert conn.execute("SELECT count(*) FROM dataset_fts").fetchone()[0] == 64
+        assert conn.execute("SELECT count(*) FROM field").fetchone()[0] == 0  # Phase 3
+        assert conn.execute("SELECT count(*) FROM artefact").fetchone()[0] == 0  # Phase 4
+        n_facts = sum(len(m.facts) for m in model)
+        assert conn.execute("SELECT count(*) FROM fact").fetchone()[0] == n_facts
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+        assert meta["content_digest"] == content_digest(model)
+        assert meta["schema_version"] == str(SCHEMA_VERSION)
+        assert meta["fts"] == "fts5"
+        assert meta["ecgbench_version"]
+        # aliases are case-insensitive keys, and the document column round-trips
+        row = conn.execute(
+            "SELECT d.document FROM alias a JOIN dataset d USING (dataset_id) WHERE a.alias = ?",
+            ("MIT-BIH ARRHYTHMIA DATABASE",),
+        ).fetchone()
+        assert DatasetMeta.from_dict(json.loads(row[0])).dataset_id == "mitdb"
+        assert not (tmp_path / "m.sqlite.tmp").exists()
+
+    def test_rebuilding_gives_the_same_digest_not_the_same_bytes(self, model, tmp_path: Path):
+        a, b = tmp_path / "a.sqlite", tmp_path / "b.sqlite"
+        write_sqlite(model, a, built_at="2026-01-01T00:00:00+00:00")
+        write_sqlite(model, b, built_at="2026-01-02T00:00:00+00:00")
+        meta_a = dict(sqlite3.connect(a).execute("SELECT key, value FROM meta"))
+        meta_b = dict(sqlite3.connect(b).execute("SELECT key, value FROM meta"))
+        assert meta_a["content_digest"] == meta_b["content_digest"] == content_digest(model)
+        # the bytes are deliberately not compared: SQLite files are not deterministic
+
+    def test_build_all_writes_every_derived_file(self, model, tmp_path: Path):
+        result = build_all(tmp_path, model)
+        assert result.json_path.is_file() and result.sqlite_path.is_file()
+        assert (tmp_path / "metadata.sources.json").is_file()
+        assert result.content_digest == content_digest(model)
+        assert result.json_written is True
+        again = build_all(tmp_path, model)
+        assert again.json_written is False  # unchanged digest leaves the JSON alone
+
+    def test_without_fts5_the_index_is_still_written(self, model, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(build_module, "fts5_available", lambda: False)
+        path = tmp_path / "m.sqlite"
+        assert write_sqlite(model, path) == "none"
+        conn = sqlite3.connect(path)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "dataset_fts" not in tables and "dataset" in tables
+        assert dict(conn.execute("SELECT key, value FROM meta"))["fts"] == "none"
+
+
+class TestRankedSearch:
+    @pytest.fixture(scope="class")
+    def fts_store(self):
+        store = open_store()
+        assert store.fts_enabled, store.fts_fallback_reason
+        return store
+
+    def test_ptb_ranks_ptbxl_first(self, fts_store):
+        hits = fts_store.search("ptb")
+        assert hits[0].dataset_id == "ptbxl"
+        assert {"ptbdb", "ptb-xl-plus"} <= {m.dataset_id for m in hits[:5]}
+
+    def test_prefix_query_includes_both_af_databases(self, fts_store):
+        ids = {m.dataset_id for m in fts_store.search("atrial fib*")}
+        assert {"afdb", "ltafdb"} <= ids
+
+    def test_not_operator_excludes(self, fts_store):
+        ids = {m.dataset_id for m in fts_store.search("holter NOT paediatric")}
+        assert "picsdb" not in ids
+        assert {"mitdb", "nsrdb"} <= ids
+
+    def test_phrase_query(self, fts_store):
+        ids = {m.dataset_id for m in fts_store.search('"sleep apnea"')}
+        assert {"ucddb", "apnea_ecg"} <= ids
+
+    def test_scores_are_ranked_and_carry_the_state_prior(self, fts_store):
+        hits = fts_store.search_ranked("ptb")
+        scores = [h.score for h in hits]
+        assert all(isinstance(s, float) for s in scores)
+        assert scores == sorted(scores)  # more negative first
+        plus = next(h for h in hits if h.meta.dataset_id == "ptb-xl-plus")
+        xl = next(h for h in hits if h.meta.dataset_id == "ptbxl")
+        assert plus.score > xl.score
+
+    def test_structured_filters_apply_after_ranking(self, fts_store):
+        hits = fts_store.search("holter", leads=2, access="open", limit=3)
+        assert 0 < len(hits) <= 3
+        for m in hits:
+            assert m.signal is not None and m.signal.leads == 2 and m.access.access == "open"
+
+    def test_filter_only_query_is_unranked(self, fts_store):
+        hits = fts_store.search_ranked(None, leads=12, signal_format="wfdb", access="open")
+        assert hits and all(h.score is None for h in hits)
+        from ecgbench.config import load_config
+
+        for h in hits:
+            cfg = load_config(h.meta.dataset_id)
+            assert cfg.leads == 12 and cfg.signal_format == "wfdb"
+
+    def test_invalid_fts5_syntax_raises_quoting_sqlite(self, fts_store):
+        with pytest.raises(MetadataQueryError) as exc:
+            fts_store.search("ptb-xl")
+        assert "ptb-xl" in str(exc.value)
+        assert "no such column" in str(exc.value) or "syntax error" in str(exc.value)
+        # the quoted form is the fix the message suggests
+        assert fts_store.search('"ptb-xl"')[0].dataset_id == "ptbxl"
+
+    def test_empty_query_returns_everything(self, fts_store):
+        assert len(fts_store.search("   ")) == 64
+        assert len(fts_store.search(None)) == 64
+
+
+class TestFallbackAndReadOnly:
+    def test_without_fts5_substring_path_is_a_superset(self, tmp_path: Path, monkeypatch):
+        fts_hits = {m.dataset_id for m in open_store().search("holter")}
+        json_path = _copy_export(tmp_path)
+        monkeypatch.setattr(build_module, "fts5_available", lambda: False)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            store = open_store(json_path)
+            assert store.fts_enabled is False
+            assert "FTS5" in (store.fts_fallback_reason or "")
+            substring_hits = {m.dataset_id for m in store.search("holter")}
+            store.search("holter")  # second query must not warn again
+        assert fts_hits <= substring_hits
+        fallback = [w for w in caught if "ranked search unavailable" in str(w.message)]
+        assert len(fallback) == 1
+
+    def test_in_memory_store_never_warns(self, model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MetadataStore(model).search("holter")
+
+    def test_read_only_location_still_opens_with_fts(self, tmp_path: Path):
+        json_path = _copy_export(tmp_path, with_index=True)
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            store = open_store(json_path)
+            assert store.fts_enabled, store.fts_fallback_reason
+            assert store.search("ptb")[0].dataset_id == "ptbxl"
+        finally:
+            os.chmod(tmp_path, stat.S_IRWXU)
+
+    def test_read_only_location_without_index_falls_back(self, tmp_path: Path):
+        json_path = _copy_export(tmp_path, with_index=False)
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                store = open_store(json_path)
+                assert store.fts_enabled is False
+                assert store.get("ptb-xl").dataset_id == "ptbxl"
+                assert "mitdb" in {m.dataset_id for m in store.search("holter")}
+            assert any("ranked search unavailable" in str(w.message) for w in caught)
+        finally:
+            os.chmod(tmp_path, stat.S_IRWXU)
+
+    def test_stale_index_is_rebuilt_beside_a_writable_export(self, model, tmp_path: Path):
+        json_path = _copy_export(tmp_path, with_index=False)
+        # an index built for a different model: one dataset dropped
+        write_sqlite(model[:-1], tmp_path / "metadata.sqlite")
+        store = open_store(json_path)
+        assert store.fts_enabled
+        meta = build_module.read_sqlite_meta(tmp_path / "metadata.sqlite")
+        assert meta["content_digest"] == content_digest(model)
+
+
+class TestStaleness:
+    def test_fingerprint_covers_every_source_kind(self):
+        fp = build_module.source_fingerprint()
+        assert sum(k.endswith(".md") for k in fp) == 64
+        assert sum(k.endswith(".yaml") for k in fp) == len(list_available_configs())
+        assert any(k.endswith("labels/mitdb.py") for k in fp)
+        assert all(isinstance(v, list) and len(v) == 2 for v in fp.values())
+
+    def test_sources_changed_semantics(self, tmp_path: Path):
+        path = tmp_path / "metadata.sources.json"
+        assert build_module.sources_changed(path) is True  # no record yet
+        build_module.write_sources(path)
+        assert build_module.sources_changed(path) is False
+        recorded = build_module.read_sources(path)
+        first = next(iter(recorded))
+        recorded[first][1] += 1
+        path.write_text(json.dumps(recorded), encoding="utf-8")
+        assert build_module.sources_changed(path) is True
+
+    def test_source_checkout_is_detected_here(self):
+        assert build_module.is_source_checkout() is True
+
+    def test_refresh_rebuilds_only_when_stale(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(build_module, "is_source_checkout", lambda: True)
+        monkeypatch.setattr(build_module, "sources_changed", lambda: False)
+        monkeypatch.setattr(build_module, "build_all", lambda: calls.append("built"))
+        store_module._refresh_if_stale()
+        assert calls == []
+        monkeypatch.setattr(build_module, "sources_changed", lambda: True)
+        monkeypatch.setattr(
+            build_module,
+            "build_all",
+            lambda: calls.append("built")
+            or build_module.BuildResult(Path("j"), Path("s"), "sha256:x", False, "fts5"),
+        )
+        store_module._refresh_if_stale()
+        assert calls == ["built"]
+
+
+class TestDiff:
+    def test_diff_exports_names_changed_added_removed(self, model):
+        document = json.loads(to_json(model))
+        assert not diff_exports(document, model)
+        # change one, drop one, add one
+        records = document["datasets"]
+        records[0]["records_display"] = "changed"
+        removed = records.pop(1)["dataset_id"]
+        changed = records[0]["dataset_id"]
+        diff = diff_exports(document, model)
+        assert diff.changed == (changed,)
+        assert diff.added == (removed,)
+        assert diff.removed == ()
+        assert changed in diff.summary() and removed in diff.summary()
+
+
+class TestMetadataCli:
+    def test_build_check_passes_on_a_clean_tree(self, capsys):
+        assert main(["metadata", "build", "--check"]) == 0
+        assert "up to date" in capsys.readouterr().out
+
+    def test_build_check_fails_after_a_catalogue_change(self, capsys, monkeypatch):
+        import dataclasses
+
+        import ecgbench.catalogue as cat
+
+        entries = tuple(
+            dataclasses.replace(e, records="1") if e.slug == "ptb-xl" else e for e in cat._load()
+        )
+        monkeypatch.setattr(cat, "_load", lambda: entries)
+        assert main(["metadata", "build", "--check"]) == 1
+        err = capsys.readouterr().err
+        assert "stale" in err and "changed (1): ptbxl" in err
+
+    def test_build_into_an_output_directory(self, tmp_path: Path, capsys):
+        assert main(["metadata", "build", "--output", str(tmp_path)]) == 0
+        out = capsys.readouterr().out
+        assert (tmp_path / "metadata.json").is_file()
+        assert (tmp_path / "metadata.sqlite").is_file()
+        assert "fts: fts5" in out
+        # and --check against that directory is clean
+        assert main(["metadata", "build", "--check", "--output", str(tmp_path)]) == 0
+
+    def test_metadata_requires_an_action(self):
+        with pytest.raises(SystemExit) as exc:
+            main(["metadata"])
+        assert exc.value.code != 0
+
+
+class TestSearchCli:
+    def test_search_json_is_ranked_and_pure(self, capsys):
+        assert main(["search", "atrial", "--leads", "2", "--format", "json"]) == 0
+        rows = json.loads(capsys.readouterr().out)
+        assert rows and rows[0]["rank"] == 1
+        assert all(r["signal"]["leads"] == 2 for r in rows)
+        assert "afdb" in {r["dataset_id"] for r in rows}
+
+    def test_search_table_and_limit(self, capsys):
+        assert main(["search", "holter", "--limit", "3"]) == 0
+        out = capsys.readouterr().out
+        lines = [line for line in out.splitlines() if line.strip()]
+        assert lines[0].startswith("rank") and "score" in lines[0]
+        assert len(lines) == 2 + 3
+
+    def test_search_filters_only(self, capsys):
+        assert main(["search", "--published", "--no-patient-id", "--format", "csv"]) == 0
+        out = capsys.readouterr().out.strip().splitlines()
+        assert out[0].startswith("rank,dataset_id")
+        assert len(out) > 1
+
+    def test_search_bad_query_exits_nonzero(self, capsys):
+        assert main(["search", "ptb-xl"]) == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "invalid search query" in captured.err
+
+    def test_search_no_match(self, capsys):
+        assert main(["search", "zzzzqqq"]) == 0
+        assert "no datasets match" in capsys.readouterr().out
+
+    def test_python_api(self):
+        from ecgbench.cli import run_search
+
+        assert run_search("ptb")[0].dataset_id == "ptbxl"
+        assert isinstance(ecgbench.metadata.search_ranked("ptb")[0], SearchHit)
