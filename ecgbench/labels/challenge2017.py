@@ -80,6 +80,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -318,3 +320,160 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "signal_path",
+        "string",
+        "training/<A0x>/<record>.mat, relative to the dataset root",
+        nullable=False,
+    ),
+    Field(
+        "class_code",
+        "string",
+        "The label from training/REFERENCE.csv (byte-identical to REFERENCE-v3.csv): N "
+        "normal, A atrial fibrillation, O other rhythm, ~ too noisy to classify. "
+        "Single-label, never empty",
+        vocabulary=("N", "A", "O", "~"),
+        nullable=False,
+    ),
+    Field(
+        "class_name",
+        "string",
+        "class_code spelled out",
+        vocabulary=("normal", "atrial_fibrillation", "other_rhythm", "noisy"),
+        nullable=False,
+    ),
+    Field(
+        "is_af",
+        "boolean",
+        "class_code == A",
+        nullable=False,
+    ),
+    Field(
+        "is_noisy",
+        "boolean",
+        "class_code == ~",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the record, from the header: 2,714 to 18,286 at 300 Hz (1,487 distinct "
+        "lengths)",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples / sampling_rate: 9.05 to 60.95 s. Correlates with the label (noisy "
+        "records average 24.4 s), which is the argument for window=",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Sampling rate from the header (300 Hz throughout)",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Signals in the header (1 throughout)",
+        nullable=False,
+    ),
+    Field(
+        "lead_name",
+        "string",
+        "Channel name from the header (ECG throughout)",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "string",
+        "Gain field from the header, verbatim (1000/mV throughout)",
+        nullable=False,
+    ),
+    Field(
+        "baseline",
+        "integer",
+        "Baseline from the header (1,781 distinct values)",
+        nullable=False,
+    ),
+    Field(
+        "storage_format",
+        "string",
+        "WFDB storage format from the header (16+24 throughout: MATLAB v4 wrapper with a "
+        "24-byte preamble)",
+        nullable=False,
+    ),
+    Field(
+        "header_timestamp",
+        "string",
+        "Time and date from the header, verbatim and de-identified: day always 1, year "
+        "always 2000, and the hour field is not a 24-hour clock. Not a recording time",
+        nullable=False,
+    ),
+    Field(
+        "class_code_v0",
+        "string",
+        "Label under shipped REFERENCE-v0.csv (the paper's V1, unofficial phase Feb-Apr "
+        "2017). Shipped version numbers are one behind the paper's",
+        vocabulary=("N", "A", "O", "~"),
+    ),
+    Field(
+        "class_code_v1",
+        "string",
+        "Label under shipped REFERENCE-v1.csv (not tabulated in the paper)",
+        vocabulary=("N", "A", "O", "~"),
+    ),
+    Field(
+        "class_code_v2",
+        "string",
+        "Label under shipped REFERENCE-v2.csv (the paper's V2, official phase Apr-Sep 2017)",
+        vocabulary=("N", "A", "O", "~"),
+    ),
+    Field(
+        "class_code_v3",
+        "string",
+        "Label under shipped REFERENCE-v3.csv (the paper's V3, final scoring); equal to "
+        "class_code",
+        vocabulary=("N", "A", "O", "~"),
+    ),
+    Field(
+        "in_challenge_validation_subset",
+        "boolean",
+        "True for the 300 records the challenge shipped a duplicate copy of under "
+        "validation/; byte-identical to the training originals, so use it to exclude, never "
+        "to evaluate",
+        nullable=False,
+    ),
+    Field(
+        "n_distinct_labels",
+        "integer",
+        "How many different labels the record was given across the four shipped versions (1 "
+        "for 8,104 records, 2 for 418, 3 for 6); above 1 marks the records the organisers' "
+        "relabelling flagged as contentious",
+        nullable=False,
+    ),
+    Field(
+        "label_revised",
+        "boolean",
+        "class_code_v0 != class_code_v3; True for 412 records",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Equal to class_name: the real label, so training on it is fine",
+        vocabulary=("normal", "atrial_fibrillation", "other_rhythm", "noisy"),
+        nullable=False,
+    ),
+)

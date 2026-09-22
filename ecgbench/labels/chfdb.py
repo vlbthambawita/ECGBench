@@ -91,6 +91,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
 from ecgbench.labels.svdb import AAMI_CLASSES, AAMI_ORDER
 
 if TYPE_CHECKING:
@@ -515,3 +516,314 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Subject age from the header's one comment line; NaN for chf06, whose header says ?",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex from the header (11 M, 4 F)",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "nyha_class",
+        "string",
+        "NYHA class from the header: III-IV for all 15 records",
+        vocabulary=("III-IV",),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the record, from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "Record length, near-uniform at 19.77-20.00 h",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Channel descriptions from the header, pipe-separated (ECG1|ECG2)",
+        nullable=False,
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Time of day the Holter tape started, from the header; no date ships",
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Detector annotations of beat type N (normal beat); unaudited machine output",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Detector annotations of beat type V (premature ventricular contraction); unaudited "
+        "machine output",
+        nullable=False,
+    ),
+    Field(
+        "beat_r",
+        "integer",
+        "Detector annotations of beat type r (R-on-T premature ventricular contraction); "
+        "unaudited machine output",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Detector annotations of beat type S (supraventricular premature or ectopic beat); "
+        "unaudited machine output",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Detector annotations of beat type Q (unclassifiable beat); unaudited machine "
+        "output",
+        nullable=False,
+    ),
+    Field(
+        "beat_E",
+        "integer",
+        "Detector annotations of beat type E (ventricular escape beat); unaudited machine "
+        "output",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "AAMI EC57 class N: normal and bundle branch block beats; prefer these to the raw "
+        "symbols, since r (R-on-T PVC) outnumbers plain V in nine of the 15 records",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "AAMI EC57 class S: supraventricular ectopic beats; prefer these to the raw "
+        "symbols, since r (R-on-T PVC) outnumbers plain V in nine of the 15 records",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "AAMI EC57 class V: ventricular ectopic beats (V, r and E here); prefer these to "
+        "the raw symbols, since r (R-on-T PVC) outnumbers plain V in nine of the 15 records",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "AAMI EC57 class F: fusion beats (none in this release); prefer these to the raw "
+        "symbols, since r (R-on-T PVC) outnumbers plain V in nine of the 15 records",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "AAMI EC57 class Q: unclassifiable beats; prefer these to the raw symbols, since r "
+        "(R-on-T PVC) outnumbers plain V in nine of the 15 records",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Rhythm-change markers (+); present in 4 of 15 records",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "Signal-quality-change markers (~); 0 for every record, this release ships no "
+        "quality layer",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "Isolated artefact markers (|); 0 for every record",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Detector beat annotations, the sum of the beat_* columns (1,622,282 over the "
+        "release)",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .ecg file, beats and markers alike",
+        nullable=False,
+    ),
+    Field(
+        "n_veb",
+        "integer",
+        "Ventricular ectopic beats (aami_V)",
+        nullable=False,
+    ),
+    Field(
+        "veb_fraction",
+        "number",
+        "n_veb / n_beats: 0.00017 (chf12) to 0.2052 (chf02), the most informative "
+        "per-record quantity here",
+    ),
+    Field(
+        "veb_per_hour",
+        "number",
+        "Ventricular ectopic beats per hour of record",
+        unit="1/h",
+    ),
+    Field(
+        "n_sveb",
+        "integer",
+        "Supraventricular ectopic beats (aami_S)",
+        nullable=False,
+    ),
+    Field(
+        "sveb_fraction",
+        "number",
+        "n_sveb / n_beats",
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "n_beats minus aami_N",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_fraction",
+        "number",
+        "n_ectopic_beats / n_beats",
+    ),
+    Field(
+        "af_secs",
+        "number",
+        "Seconds annotated (AF; 0.0 means never assessed for the 11 records without rhythm "
+        "markers, not no AF - check has_rhythm_annotation first",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "af_fraction",
+        "number",
+        "af_secs / duration_secs (chf06 is 80.46% AF)",
+    ),
+    Field(
+        "n_af_episodes",
+        "integer",
+        "Number of (AF episodes",
+        nullable=False,
+    ),
+    Field(
+        "has_rhythm_annotation",
+        "boolean",
+        "Whether the record carries any + rhythm marker (4 of 15); False means the rhythm "
+        "was never assessed",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_asserted_secs",
+        "number",
+        "Seconds from the first rhythm marker to the end of the record",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_head_unasserted_secs",
+        "number",
+        "Seconds before the first marker when that marker is (N, implying the preceding "
+        "span was AF without saying so (1,757.0 s in chf06)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from the first to the last beat annotation",
+        unit="s",
+    ),
+    Field(
+        "unannotated_head_secs",
+        "number",
+        "Record before the first beat annotation (at most 0.60 s)",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Record after the last beat annotation (at most 0.65 s)",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "annotated_secs / duration_secs (at least 0.99998 everywhere)",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 / mean RR interval, RR outside 0.3-2.0 s dropped; a descriptive whole-record "
+        "summary of unaudited beats",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the accepted RR intervals; descriptive only",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences; descriptive only",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s dropped before the HRV summaries",
+        nullable=False,
+    ),
+    Field(
+        "cohort_label",
+        "string",
+        "severe_chf for all 15 records: the one clinical fact the release asserts. This "
+        "database is a positive class, not a classification task",
+        vocabulary=("severe_chf",),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "The subject's sex (U if missing): the only axis with a class large enough for ten "
+        "folds. For fold construction only",
+        vocabulary=("M", "F", "U"),
+        nullable=False,
+    ),
+)

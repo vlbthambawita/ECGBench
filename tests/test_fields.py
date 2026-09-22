@@ -199,6 +199,203 @@ def _build_ecg_arrhythmia(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _build_apnea_ecg(tmp_path: Path) -> Path:
+    wfdb = pytest.importorskip("wfdb")
+    records = {"a01": "A" * 120 + "N" * 20, "c01": "N" * 100}
+    for rec, sequence in records.items():
+        n_minutes = len(sequence)
+        n_samples = n_minutes * 6000
+        (tmp_path / f"{rec}.hea").write_text(
+            f"{rec} 1 100 {n_samples}\n{rec}.dat 16 200 12 0 -12 5827 0 ECG\n", encoding="utf-8"
+        )
+        np.zeros(n_samples, dtype=np.int16).tofile(tmp_path / f"{rec}.dat")
+        wfdb.wrann(
+            rec, "apn",
+            sample=np.arange(n_minutes, dtype=np.int64) * 6000,
+            symbol=list(sequence),
+            fs=100,
+            write_dir=str(tmp_path),
+        )
+        beats = np.arange(1, n_minutes * 60) * 100
+        wfdb.wrann(
+            rec, "qrs",
+            sample=np.concatenate([[50], beats]),
+            symbol=["|"] + ["N"] * len(beats),
+            fs=100,
+            write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("a01\nc01\n", encoding="utf-8")
+    (tmp_path / "additional-information.txt").write_text(
+        "Additional information about the recordings\n\n"
+        "Record\tLength\tnon-apn\tapnea\thours\tAI\tHI\tAHI\tAge\tSex\theight\tweight\n"
+        "\tminutes\tminutes\tminutes\tw/apnea\t\t\t\t\t\t(cm)\t(kg)\n\n"
+        "a01\t490\t20\t470\t9\t12.5\t57.1\t69.6\t51\tM\t175\t102\t\t\n"
+        "c01\t485\t485\t0\t0\t0\t0\t0\t31\tM\t184\t74\t\t\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _build_butqdb(tmp_path: Path) -> Path:
+    n = 1000
+
+    def ann_csv(per_annotator):
+        columns = [[(str(a + 1), str(b), str(k)) for a, b, k in iv] for iv in per_annotator]
+        height = max(len(c) for c in columns)
+        lines = []
+        for row in range(height):
+            fields = []
+            for column in columns:
+                fields.extend(column[row] if row < len(column) else ("", "", ""))
+            lines.append(",".join(fields))
+        return "\n".join(lines) + "\n"
+
+    full = [
+        [(0, 700, 2), (700, 900, 2), (900, 1000, 3)],
+        [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],
+        [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],
+        [(0, 700, 1), (700, 900, 2), (900, 1000, 3)],
+    ]
+    one_block = [[(0, 400, 2), (400, 1000, 0)]] * 4
+    plan = {"200001": (full, 0.99998, 0), "201001": (one_block, 1.996, -12200)}
+    for record_id, (per_annotator, gain, baseline) in plan.items():
+        directory = tmp_path / record_id
+        directory.mkdir()
+        (directory / f"{record_id}_ECG.hea").write_text(
+            f"{record_id}_ECG 1 1000 {n}\n"
+            f"{record_id}_ECG.dat 16 {gain}({baseline})/uV 0 0 0 0 0 ECG\n#ECG\n"
+        )
+        samples = np.arange(n, dtype="<i2")
+        samples[0] = samples[1] = 32767
+        samples[2] = samples[3] = -32767
+        (directory / f"{record_id}_ECG.dat").write_bytes(samples.tobytes())
+        (directory / f"{record_id}_ANN.csv").write_text(ann_csv(per_annotator))
+    (tmp_path / "RECORDS").write_text(
+        "\n".join(f"{r}/{r}_{kind}" for r in plan for kind in ("ACC", "ECG")) + "\n"
+    )
+    (tmp_path / "subject-info.csv").write_text(
+        "ID;Gender;Age;Height;Weight;Smoker\n200001;F;30;170;65;0\n201001;M;44;180;80;1\n"
+    )
+    return tmp_path
+
+
+def _build_challenge2017(tmp_path: Path) -> Path:
+    training = tmp_path / "training"
+    records = {"A00/A00001": "N", "A00/A00002": "A"}
+    for relative, code in records.items():
+        (training / relative).parent.mkdir(parents=True, exist_ok=True)
+        name = relative.rsplit("/", 1)[-1]
+        (training / f"{relative}.hea").write_text(
+            f"{name} 1 300 9000 05:05:15 1/05/2000 \n"
+            f"{name}.mat 16+24 1000/mV 16 0 -127 0 0 ECG \n",
+            encoding="utf-8",
+        )
+    (training / "RECORDS").write_text("".join(f"{r}\n" for r in records), encoding="utf-8")
+    for version in (0, 1, 2, 3):
+        (training / f"REFERENCE-v{version}.csv").write_text(
+            "".join(f"{r},{c}\n" for r, c in records.items()), encoding="utf-8"
+        )
+    (training / "REFERENCE.csv").write_text(
+        "".join(f"{r},{c}\n" for r, c in records.items()), encoding="utf-8"
+    )
+    (tmp_path / "validation").mkdir()
+    (tmp_path / "validation" / "RECORDS").write_text("A00/A00001\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_chfdb(tmp_path: Path) -> Path:
+    wfdb = pytest.importorskip("wfdb")
+    (tmp_path / "RECORDS").write_text("chf01\n", encoding="utf-8")
+    (tmp_path / "chf01.hea").write_text(
+        "chf01 2 250 2500 10:00:00\n"
+        "chf01.dat 212 0 12 0 127 17579 0 ECG1\n"
+        "chf01.dat 212 0 12 0 -128 21162 0 ECG2\n"
+        "#Age: 71  Sex: M  NYHA class: III-IV\n",
+        encoding="utf-8",
+    )
+    wfdb.wrann(
+        "chf01", "ecg",
+        sample=np.array([100, 350, 600, 850, 1100, 1350, 1600, 1850]),
+        symbol=["N", "r", "N", "V", "S", "+", "N", "N"],
+        subtype=np.zeros(8, dtype=int),
+        aux_note=["", "", "", "", "", "(AF", "", ""],
+        fs=250,
+        write_dir=str(tmp_path),
+    )
+    return tmp_path
+
+
+def _build_code15(tmp_path: Path) -> Path:
+    pd.DataFrame({
+        "exam_id": [1, 2, 3],
+        "age": [50, 61, 44],
+        "is_male": [True, False, True],
+        "nn_predicted_age": [51.0, 60.2, 45.1],
+        "1dAVb": [False, True, False],
+        "RBBB": [False, False, False],
+        "LBBB": [False, False, False],
+        "SB": [False, False, True],
+        "ST": [False, False, False],
+        "AF": [False, True, False],
+        "patient_id": [100, 101, 100],
+        "death": ["False", None, "True"],
+        "timey": [1.0, None, 3.5],
+        "normal_ecg": [True, False, False],
+        "trace_file": ["exams_part0.hdf5"] * 3,
+    }).to_csv(tmp_path / "exams.csv", index=False)
+    return tmp_path
+
+
+def _build_code_test(tmp_path: Path) -> Path:
+    from ecgbench.labels.code_test import ABNORMALITIES, ANNOTATORS, N_RECORDS
+
+    (tmp_path / "annotations").mkdir()
+    (tmp_path / "attributes.csv").write_text(
+        "age,sex\n" + "".join(f"{30 + i % 50},{'MF'[i % 2]}\n" for i in range(N_RECORDS)),
+        encoding="utf-8",
+    )
+    for name in ANNOTATORS:
+        header = ("," if name == "dnn" else "") + ",".join(ABNORMALITIES)
+        lines = [header]
+        for i in range(N_RECORDS):
+            cells = ["1" if (i % 7 == j) else "0" for j in range(len(ABNORMALITIES))]
+            lines.append(",".join(([str(i)] if name == "dnn" else []) + cells))
+        (tmp_path / "annotations" / f"{name}.csv").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
+    return tmp_path
+
+
+def _build_cpsc_2018(tmp_path: Path) -> Path:
+    d = tmp_path / "Training_WFDB"
+    d.mkdir()
+    _write_hea(d / "A0001.hea", "A0001", dx="164889003,59118001", age="60")
+    _write_hea(d / "A0002.hea", "A0002", dx="426783006", sex="Female", age="-1")
+    return tmp_path
+
+
+def _build_chapman_shaoxing(tmp_path: Path) -> Path:
+    pd.DataFrame({
+        "FileName": ["MUSE_A", "MUSE_B"],
+        "Rhythm": ["AFIB", "SB"],
+        "Beat": ["RBBB TWC", "NONE"],
+        "PatientAge": [85, 59],
+        "Gender": ["MALE", "FEMALE"],
+        "VentricularRate": [117, 52],
+        "AtrialRate": [234, 52],
+        "QRSDuration": [114, 92],
+        "QTInterval": [356, 432],
+        "QTCorrected": [496, 402],
+        "RAxis": [81, 61],
+        "TAxis": [-27, 50],
+        "QRSCount": [19, 9],
+        "QOnset": [208, 214],
+        "QOffset": [265, 260],
+        "TOffset": [386, 430],
+    }).to_csv(tmp_path / "Diagnostics.csv", index=False)
+    return tmp_path
+
+
 #: Dataset -> builder writing a minimal synthetic source tree into tmp_path.
 BUILDERS = {
     "ptbxl": _build_ptbxl,
@@ -209,12 +406,20 @@ BUILDERS = {
     "mimic_iv_ecg": _build_mimic_iv_ecg,
     "brugada_huca": _build_brugada_huca,
     "ecg_arrhythmia": _build_ecg_arrhythmia,
+    # batch 2
+    "apnea_ecg": _build_apnea_ecg,
+    "butqdb": _build_butqdb,
+    "challenge2017": _build_challenge2017,
+    "chapman_shaoxing": _build_chapman_shaoxing,
+    "chfdb": _build_chfdb,
+    "code15": _build_code15,
+    "code_test": _build_code_test,
+    "cpsc_2018": _build_cpsc_2018,
 }
 
 #: Label-bearing datasets whose fields are not declared yet (later Phase 3 batches).
 PENDING = {
-    "apnea_ecg", "butqdb", "challenge2017", "chapman_shaoxing", "chfdb", "code15",
-    "code_test", "cpsc_2018", "ecg_capable_smartwatches", "ecgcipa", "ecgdmmld", "ecgiddb",
+    "ecg_capable_smartwatches", "ecgcipa", "ecgdmmld", "ecgiddb",
     "ecgrdvq", "echonext", "edb", "edgar", "ikem", "incartdb", "leipzig_heart_center_ecg",
     "ltafdb", "ltstdb", "ludb", "medalcare_xl", "mhd_effect_ecg_mri", "ningbo_iva",
     "norwegian_athlete_ecg", "nsrdb", "picsdb", "ptbdb", "qtdb", "sami_trop", "sddb",

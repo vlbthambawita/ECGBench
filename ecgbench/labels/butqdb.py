@@ -99,6 +99,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -718,3 +720,326 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_id")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "subject_id",
+        "string",
+        "First three digits of the six-digit record name, which the release documents as "
+        "the subject identifier; 15 subjects for 18 records (100 recorded twice, 103 three "
+        "times). The fold grouping key",
+        nullable=False,
+    ),
+    Field(
+        "session_index",
+        "integer",
+        "Last three digits of the record name: the measurement number of this subject",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "<record>/<record>_ECG: the wfdb stem, relative to the dataset root",
+        nullable=False,
+    ),
+    Field(
+        "acc_path",
+        "string",
+        "<record>/<record>_ACC: the companion 3-axis accelerometer record (100 Hz, "
+        "milli-g), which gets no ECGBench records of its own",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "From subject-info.csv (Gender); U when the file has no row for the record",
+        vocabulary=("F", "M", "U"),
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Subject age from subject-info.csv; -1 when missing",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Subject height from subject-info.csv",
+        unit="cm",
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Subject weight from subject-info.csv",
+        unit="kg",
+    ),
+    Field(
+        "bmi",
+        "number",
+        "weight_kg / height_cm^2",
+        unit="kg/m^2",
+    ),
+    Field(
+        "smoker",
+        "boolean",
+        "Smoking status from subject-info.csv",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the ECG record, from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "Record length; not uniform, 24.01 h to 38.65 h",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Sampling rate from the header (1000 Hz throughout)",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "number",
+        "ADC gain from the header, in ADC units per microvolt (e.g. 1.996)",
+        nullable=False,
+    ),
+    Field(
+        "adc_baseline",
+        "integer",
+        "ADC baseline from the header (the value representing 0 uV)",
+        nullable=False,
+    ),
+    Field(
+        "signal_units",
+        "string",
+        "Physical unit named in the header gain field (uV)",
+        nullable=False,
+    ),
+    Field(
+        "min_mv",
+        "number",
+        "Minimum sample value after the header's own conversion, invalid markers excluded",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "max_mv",
+        "number",
+        "Maximum sample value after the header's own conversion, invalid markers excluded",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "clipped_samples",
+        "integer",
+        "Samples at either 16-bit ADC rail (-32767 or 32767); every record attains both "
+        "rails, which is why amplitude_outlier cannot fire here",
+        nullable=False,
+    ),
+    Field(
+        "clipped_fraction",
+        "number",
+        "clipped_samples / n_samples: the saturation measure that replaces "
+        "amplitude_outlier for this dataset",
+    ),
+    Field(
+        "n_invalid_samples",
+        "integer",
+        "Occurrences of WFDB's invalid-sample marker -32768, which becomes NaN on read; 0 "
+        "in the 1.0.0 release",
+        nullable=False,
+    ),
+    Field(
+        "annotated_samples",
+        "integer",
+        "Samples the consensus graded (class 1-3); read this first — 15 of the 18 records "
+        "are graded for 40-80 minutes of a 24-hour recording",
+        nullable=False,
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "annotated_samples / 1000",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "annotated_samples / n_samples; 20.8% release-wide",
+    ),
+    Field(
+        "fully_annotated",
+        "boolean",
+        "True for the three records (100001, 105001, 111001) graded end to end",
+        nullable=False,
+    ),
+    Field(
+        "same_coverage_all_annotators",
+        "boolean",
+        "Whether the three experts and the consensus graded exactly the same samples (True "
+        "for every shipped record)",
+        nullable=False,
+    ),
+    Field(
+        "expert_1_class1_fraction",
+        "number",
+        "Fraction of annotated samples expert 1 graded class 1 (all significant waveforms "
+        "(P, QRS, T) clearly visible, onsets and offsets reliably detectable)",
+    ),
+    Field(
+        "expert_1_class2_fraction",
+        "number",
+        "Fraction of annotated samples expert 1 graded class 2 (noise increased and "
+        "significant points unclear, but QRS complexes clearly visible and reliably "
+        "detectable)",
+    ),
+    Field(
+        "expert_1_class3_fraction",
+        "number",
+        "Fraction of annotated samples expert 1 graded class 3 (QRS complexes cannot be "
+        "detected reliably; unsuitable for any analysis)",
+    ),
+    Field(
+        "expert_2_class1_fraction",
+        "number",
+        "Fraction of annotated samples expert 2 graded class 1 (all significant waveforms "
+        "(P, QRS, T) clearly visible, onsets and offsets reliably detectable)",
+    ),
+    Field(
+        "expert_2_class2_fraction",
+        "number",
+        "Fraction of annotated samples expert 2 graded class 2 (noise increased and "
+        "significant points unclear, but QRS complexes clearly visible and reliably "
+        "detectable)",
+    ),
+    Field(
+        "expert_2_class3_fraction",
+        "number",
+        "Fraction of annotated samples expert 2 graded class 3 (QRS complexes cannot be "
+        "detected reliably; unsuitable for any analysis)",
+    ),
+    Field(
+        "expert_3_class1_fraction",
+        "number",
+        "Fraction of annotated samples expert 3 graded class 1 (all significant waveforms "
+        "(P, QRS, T) clearly visible, onsets and offsets reliably detectable)",
+    ),
+    Field(
+        "expert_3_class2_fraction",
+        "number",
+        "Fraction of annotated samples expert 3 graded class 2 (noise increased and "
+        "significant points unclear, but QRS complexes clearly visible and reliably "
+        "detectable)",
+    ),
+    Field(
+        "expert_3_class3_fraction",
+        "number",
+        "Fraction of annotated samples expert 3 graded class 3 (QRS complexes cannot be "
+        "detected reliably; unsuitable for any analysis)",
+    ),
+    Field(
+        "consensus_class1_fraction",
+        "number",
+        "Fraction of annotated samples the expert consensus graded class 1 (all significant "
+        "waveforms (P, QRS, T) clearly visible, onsets and offsets reliably detectable); "
+        "over annotated samples, not the record",
+    ),
+    Field(
+        "consensus_class2_fraction",
+        "number",
+        "Fraction of annotated samples the expert consensus graded class 2 (noise increased "
+        "and significant points unclear, but QRS complexes clearly visible and reliably "
+        "detectable); over annotated samples, not the record",
+    ),
+    Field(
+        "consensus_class3_fraction",
+        "number",
+        "Fraction of annotated samples the expert consensus graded class 3 (QRS complexes "
+        "cannot be detected reliably; unsuitable for any analysis); over annotated samples, "
+        "not the record",
+    ),
+    Field(
+        "consensus_class1_secs",
+        "number",
+        "Seconds the consensus graded class 1",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "consensus_class2_secs",
+        "number",
+        "Seconds the consensus graded class 2",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "consensus_class3_secs",
+        "number",
+        "Seconds the consensus graded class 3",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "mean_expert_agreement",
+        "number",
+        "Mean pairwise agreement between the three experts over annotated samples",
+    ),
+    Field(
+        "expert_unanimous_fraction",
+        "number",
+        "Fraction of annotated samples all three experts graded identically (69.4% "
+        "release-wide)",
+    ),
+    Field(
+        "expert_majority_fraction",
+        "number",
+        "Fraction of annotated samples on which at least two experts agree",
+    ),
+    Field(
+        "consensus_matches_majority",
+        "number",
+        "Fraction of majority-graded samples where the consensus equals the majority vote: "
+        "the evidence that the fourth column triple is a majority vote of the other three",
+    ),
+    Field(
+        "dominant_consensus_class",
+        "integer",
+        "Modal consensus class over annotated samples, and the config's label_column. A "
+        "reduction, not the ground truth: 1 for 15 of the 18 records, describing 40 minutes "
+        "of 24 hours for most of them. Do not train on it",
+        vocabulary=("1", "2", "3"),
+        nullable=False,
+    ),
+    Field(
+        "n_annotated_blocks",
+        "integer",
+        "Contiguous annotated stretches of the record (touching intervals merged); 1 for "
+        "the fully annotated records, 2-4 otherwise",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "class3_high when more than 1% of annotated time is class 3 (6 records), else "
+        "class3_low; the fold label, arbitrary anywhere in [0.4%, 2.8%] because the release "
+        "has a gap there. Not a training target",
+        vocabulary=("class3_high", "class3_low"),
+        nullable=False,
+    ),
+)

@@ -96,6 +96,70 @@ labels:
   source_csv: "Diagnostics.csv"
   join_column: "FileName"
   columns: null  # null -> every column except the join key
+  # The fifteen columns of Diagnostics.xlsx/.csv besides FileName, typed. Names as
+  # the release spells them (Zheng et al. 2020, Table 3); the eleven measurements
+  # are the GE MUSE system's automated values.
+  fields:
+    Rhythm:
+      type: string
+      description: >
+        Single-label rhythm diagnosis, one of 11 codes (SB, SR, AFIB, ST, AF, SA, SVT,
+        AT, AVNRT, AVRT, SAAWR); the stratification target and the config's label_column.
+      nullable: false
+    Beat:
+      type: string
+      description: >
+        Space-separated multi-label beat and morphology annotation over 57 codes, NONE
+        when there is none.
+      nullable: false
+    PatientAge:
+      type: integer
+      description: "Patient age in years"
+      unit: year
+    Gender:
+      type: string
+      description: "Patient sex as the release spells it"
+      vocabulary: ["MALE", "FEMALE"]
+    VentricularRate:
+      type: integer
+      description: "Ventricular rate, MUSE automated measurement"
+      unit: bpm
+    AtrialRate:
+      type: integer
+      description: "Atrial rate, MUSE automated measurement"
+      unit: bpm
+    QRSDuration:
+      type: integer
+      description: "QRS duration, MUSE automated measurement"
+      unit: ms
+    QTInterval:
+      type: integer
+      description: "QT interval, MUSE automated measurement"
+      unit: ms
+    QTCorrected:
+      type: integer
+      description: "Corrected QT interval (QTc), MUSE automated measurement"
+      unit: ms
+    RAxis:
+      type: integer
+      description: "R-wave (QRS) axis, MUSE automated measurement"
+      unit: degree
+    TAxis:
+      type: integer
+      description: "T-wave axis, MUSE automated measurement"
+      unit: degree
+    QRSCount:
+      type: integer
+      description: "Number of QRS complexes in the 10 s record"
+    QOnset:
+      type: integer
+      description: "Q-wave onset sample (fiducial offset into the record, 500 Hz)"
+    QOffset:
+      type: integer
+      description: "QRS offset sample (fiducial offset into the record, 500 Hz)"
+    TOffset:
+      type: integer
+      description: "T-wave offset sample (fiducial offset into the record, 500 Hz)"
 
 # --- Croissant Metadata ---
 croissant:

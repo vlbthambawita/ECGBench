@@ -85,6 +85,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -683,3 +685,266 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     merged = merged.set_index("record_name")
     merged.index.name = config.record_id_column
     return merged
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the ECG record, from the header (100 Hz)",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "Record length; not uniform, 6.75 h (x17) to 9.62 h (a12)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "duration_hours",
+        "number",
+        "duration_secs / 3600",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "number",
+        "Sampling rate from the header (100 Hz throughout)",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Channel names from the header, pipe-separated (ECG for every record)",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+        nullable=False,
+    ),
+    Field(
+        "challenge_set",
+        "string",
+        "The PhysioNet/CinC Challenge 2000 division: learning (a/b/c records) or test (x "
+        "records). NOT ECGBench's split and not safe as one: 18 of the 30 subjects have "
+        "records on both sides",
+        vocabulary=("learning", "test"),
+        nullable=False,
+    ),
+    Field(
+        "apnea_sequence",
+        "string",
+        "The ground truth: one character per minute, A (apnea in progress at the beginning "
+        "of that minute) or N, in record order, straight from the .apn file",
+        nullable=False,
+    ),
+    Field(
+        "n_annotated_minutes",
+        "integer",
+        "Length of apnea_sequence (34,313 minutes over the release)",
+        nullable=False,
+    ),
+    Field(
+        "n_apnea_minutes",
+        "integer",
+        "Minutes annotated A (13,064 over the release)",
+        nullable=False,
+    ),
+    Field(
+        "n_nonapnea_minutes",
+        "integer",
+        "Minutes annotated N",
+        nullable=False,
+    ),
+    Field(
+        "apnea_minute_fraction",
+        "number",
+        "n_apnea_minutes / n_annotated_minutes",
+    ),
+    Field(
+        "n_qrs_beats",
+        "integer",
+        "Beat detections (N) in the unaudited machine-generated .qrs file; not a "
+        "beat-detection reference",
+        nullable=False,
+    ),
+    Field(
+        "n_qrs_artifacts",
+        "integer",
+        "QRS-like artefact markers (|) in the .qrs file; never enter an RR interval",
+        nullable=False,
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 / mean RR interval over the .qrs beats, RR outside 0.3-2.0 s dropped; a "
+        "whole-night descriptive summary",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the accepted RR intervals; descriptive only",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences; descriptive only",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s dropped before the HRV summaries",
+        nullable=False,
+    ),
+    Field(
+        "has_respiration",
+        "boolean",
+        "True for the 8 records whose *r/*er companions (chest, abdominal and nasal "
+        "respiration plus SpO2) are present; those companions are not in the partition "
+        "because their ECG is the same bytes",
+        nullable=False,
+    ),
+    Field(
+        "published_minutes",
+        "integer",
+        "Record length in minutes as scored for the challenge (additional-information.txt); "
+        "c07 and c08 ship 25 and 22 minutes less signal than this",
+        unit="min",
+        nullable=False,
+    ),
+    Field(
+        "published_nonapnea_minutes",
+        "integer",
+        "Non-apnea minutes as scored for the challenge",
+        unit="min",
+        nullable=False,
+    ),
+    Field(
+        "published_apnea_minutes",
+        "integer",
+        "Apnea minutes as scored for the challenge",
+        unit="min",
+        nullable=False,
+    ),
+    Field(
+        "published_hours_with_apnea",
+        "integer",
+        "Hours containing apnea as scored for the challenge",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "ai",
+        "number",
+        "Apnea index from additional-information.txt",
+        unit="events/h",
+        nullable=False,
+    ),
+    Field(
+        "hi",
+        "number",
+        "Hypopnea index from additional-information.txt",
+        unit="events/h",
+        nullable=False,
+    ),
+    Field(
+        "ahi",
+        "number",
+        "Apnea-hypopnea index from additional-information.txt",
+        unit="events/h",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Subject age from additional-information.txt; one of the four fields that recover "
+        "subject_id",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex from additional-information.txt",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "integer",
+        "Subject height from additional-information.txt",
+        unit="cm",
+        nullable=False,
+    ),
+    Field(
+        "weight_kg",
+        "integer",
+        "Subject weight from additional-information.txt",
+        unit="kg",
+        nullable=False,
+    ),
+    Field(
+        "apnea_class",
+        "string",
+        "The release's own class derived from n_apnea_minutes: C under 5 minutes of apnea, "
+        "A at least 100, B between. Reproduces the letter in every learning-set record name "
+        "and supplies it for the 35 xNN records",
+        vocabulary=("A", "B", "C"),
+        nullable=False,
+    ),
+    Field(
+        "apnea_class_name",
+        "string",
+        "apnea_class spelled out",
+        vocabulary=("apnea", "borderline", "control"),
+        nullable=False,
+    ),
+    Field(
+        "ahi_severity",
+        "string",
+        "ahi binned at the conventional clinical cut-points 5/15/30; descriptive, folds are "
+        "not balanced on it (its bins split 25/3/11/31)",
+        vocabulary=("normal", "mild", "moderate", "severe"),
+        nullable=False,
+    ),
+    Field(
+        "bmi",
+        "number",
+        "weight_kg / height_cm^2",
+        unit="kg/m^2",
+        nullable=False,
+    ),
+    Field(
+        "subject_id",
+        "string",
+        "subj_<lowest record name in the group>: the recovered subject grouping the release "
+        "never states — records sharing age, sex, height and weight, merged further by two "
+        "verified duplicate recordings. 30 subjects for 70 records; the fold grouping key",
+        nullable=False,
+    ),
+    Field(
+        "duplicate_of",
+        "string",
+        "The record this one is a second release of (x35 -> x22, c06 -> c05), verified "
+        "sample for sample; empty otherwise",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Equal to apnea_class; the fold stratification label",
+        vocabulary=("A", "B", "C"),
+        nullable=False,
+    ),
+)

@@ -65,6 +65,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -261,3 +263,493 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int((df["n_abnormalities"] > 0).sum()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Age from attributes.csv, joined by row position (this release has no record "
+        "identifiers)",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from attributes.csv",
+        vocabulary=("M", "F"),
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "4096 for every record (7 s and 10 s acquisitions zero-padded)",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "4096 / 400 = 10.24 s for every record",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "400 Hz for every record",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_1dAVb",
+        "boolean",
+        "first-degree AV block as read by the gold standard (two cardiologists, "
+        "disagreements settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_RBBB",
+        "boolean",
+        "right bundle branch block as read by the gold standard (two cardiologists, "
+        "disagreements settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_LBBB",
+        "boolean",
+        "left bundle branch block as read by the gold standard (two cardiologists, "
+        "disagreements settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_SB",
+        "boolean",
+        "sinus bradycardia as read by the gold standard (two cardiologists, disagreements "
+        "settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_AF",
+        "boolean",
+        "atrial fibrillation as read by the gold standard (two cardiologists, disagreements "
+        "settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_ST",
+        "boolean",
+        "sinus tachycardia as read by the gold standard (two cardiologists, disagreements "
+        "settled by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_abnormality_codes",
+        "string",
+        "Comma-separated flags set by the gold standard (two cardiologists, disagreements "
+        "settled by a third senior specialist) - the evaluation target; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "gold_standard_n_abnormalities",
+        "integer",
+        "Number of flags set by the gold standard (two cardiologists, disagreements settled "
+        "by a third senior specialist) - the evaluation target",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_1dAVb",
+        "boolean",
+        "first-degree AV block as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_RBBB",
+        "boolean",
+        "right bundle branch block as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_LBBB",
+        "boolean",
+        "left bundle branch block as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_SB",
+        "boolean",
+        "sinus bradycardia as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_AF",
+        "boolean",
+        "atrial fibrillation as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_ST",
+        "boolean",
+        "sinus tachycardia as read by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_abnormality_codes",
+        "string",
+        "Comma-separated flags set by cardiologist 1, one of the two reads the gold "
+        "standard was built from (not independent of it); empty when none",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist1_n_abnormalities",
+        "integer",
+        "Number of flags set by cardiologist 1, one of the two reads the gold standard was "
+        "built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_1dAVb",
+        "boolean",
+        "first-degree AV block as read by cardiologist 2, the other read the gold standard "
+        "was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_RBBB",
+        "boolean",
+        "right bundle branch block as read by cardiologist 2, the other read the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_LBBB",
+        "boolean",
+        "left bundle branch block as read by cardiologist 2, the other read the gold "
+        "standard was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_SB",
+        "boolean",
+        "sinus bradycardia as read by cardiologist 2, the other read the gold standard was "
+        "built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_AF",
+        "boolean",
+        "atrial fibrillation as read by cardiologist 2, the other read the gold standard "
+        "was built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_ST",
+        "boolean",
+        "sinus tachycardia as read by cardiologist 2, the other read the gold standard was "
+        "built from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_abnormality_codes",
+        "string",
+        "Comma-separated flags set by cardiologist 2, the other read the gold standard was "
+        "built from (not independent of it); empty when none",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist2_n_abnormalities",
+        "integer",
+        "Number of flags set by cardiologist 2, the other read the gold standard was built "
+        "from (not independent of it)",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_1dAVb",
+        "boolean",
+        "first-degree AV block as read by two 4th-year cardiology residents, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_RBBB",
+        "boolean",
+        "right bundle branch block as read by two 4th-year cardiology residents, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_LBBB",
+        "boolean",
+        "left bundle branch block as read by two 4th-year cardiology residents, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_SB",
+        "boolean",
+        "sinus bradycardia as read by two 4th-year cardiology residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_AF",
+        "boolean",
+        "atrial fibrillation as read by two 4th-year cardiology residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_ST",
+        "boolean",
+        "sinus tachycardia as read by two 4th-year cardiology residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_abnormality_codes",
+        "string",
+        "Comma-separated flags set by two 4th-year cardiology residents, each annotating "
+        "half the set; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "cardiology_residents_n_abnormalities",
+        "integer",
+        "Number of flags set by two 4th-year cardiology residents, each annotating half the "
+        "set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_1dAVb",
+        "boolean",
+        "first-degree AV block as read by two 3rd-year emergency residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_RBBB",
+        "boolean",
+        "right bundle branch block as read by two 3rd-year emergency residents, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_LBBB",
+        "boolean",
+        "left bundle branch block as read by two 3rd-year emergency residents, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_SB",
+        "boolean",
+        "sinus bradycardia as read by two 3rd-year emergency residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_AF",
+        "boolean",
+        "atrial fibrillation as read by two 3rd-year emergency residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_ST",
+        "boolean",
+        "sinus tachycardia as read by two 3rd-year emergency residents, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_abnormality_codes",
+        "string",
+        "Comma-separated flags set by two 3rd-year emergency residents, each annotating "
+        "half the set; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "emergency_residents_n_abnormalities",
+        "integer",
+        "Number of flags set by two 3rd-year emergency residents, each annotating half the "
+        "set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_1dAVb",
+        "boolean",
+        "first-degree AV block as read by two 5th-year medical students, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_RBBB",
+        "boolean",
+        "right bundle branch block as read by two 5th-year medical students, each "
+        "annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_LBBB",
+        "boolean",
+        "left bundle branch block as read by two 5th-year medical students, each annotating "
+        "half the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_SB",
+        "boolean",
+        "sinus bradycardia as read by two 5th-year medical students, each annotating half "
+        "the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_AF",
+        "boolean",
+        "atrial fibrillation as read by two 5th-year medical students, each annotating half "
+        "the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_ST",
+        "boolean",
+        "sinus tachycardia as read by two 5th-year medical students, each annotating half "
+        "the set",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_abnormality_codes",
+        "string",
+        "Comma-separated flags set by two 5th-year medical students, each annotating half "
+        "the set; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "medical_students_n_abnormalities",
+        "integer",
+        "Number of flags set by two 5th-year medical students, each annotating half the set",
+        nullable=False,
+    ),
+    Field(
+        "dnn_1dAVb",
+        "boolean",
+        "first-degree AV block as read by the paper's neural network thresholded to "
+        "maximise F1 - a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_RBBB",
+        "boolean",
+        "right bundle branch block as read by the paper's neural network thresholded to "
+        "maximise F1 - a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_LBBB",
+        "boolean",
+        "left bundle branch block as read by the paper's neural network thresholded to "
+        "maximise F1 - a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_SB",
+        "boolean",
+        "sinus bradycardia as read by the paper's neural network thresholded to maximise F1 "
+        "- a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_AF",
+        "boolean",
+        "atrial fibrillation as read by the paper's neural network thresholded to maximise "
+        "F1 - a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_ST",
+        "boolean",
+        "sinus tachycardia as read by the paper's neural network thresholded to maximise F1 "
+        "- a model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "dnn_abnormality_codes",
+        "string",
+        "Comma-separated flags set by the paper's neural network thresholded to maximise F1 "
+        "- a model output, not a human read; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "dnn_n_abnormalities",
+        "integer",
+        "Number of flags set by the paper's neural network thresholded to maximise F1 - a "
+        "model output, not a human read",
+        nullable=False,
+    ),
+    Field(
+        "1dAVb",
+        "boolean",
+        "Gold-standard flag: first-degree AV block (equal to gold_standard_1dAVb)",
+        nullable=False,
+    ),
+    Field(
+        "RBBB",
+        "boolean",
+        "Gold-standard flag: right bundle branch block (equal to gold_standard_RBBB)",
+        nullable=False,
+    ),
+    Field(
+        "LBBB",
+        "boolean",
+        "Gold-standard flag: left bundle branch block (equal to gold_standard_LBBB)",
+        nullable=False,
+    ),
+    Field(
+        "SB",
+        "boolean",
+        "Gold-standard flag: sinus bradycardia (equal to gold_standard_SB)",
+        nullable=False,
+    ),
+    Field(
+        "AF",
+        "boolean",
+        "Gold-standard flag: atrial fibrillation (equal to gold_standard_AF)",
+        nullable=False,
+    ),
+    Field(
+        "ST",
+        "boolean",
+        "Gold-standard flag: sinus tachycardia (equal to gold_standard_ST)",
+        nullable=False,
+    ),
+    Field(
+        "abnormality_codes",
+        "string",
+        "The gold standard's flags as a comma-separated list (equal to "
+        "gold_standard_abnormality_codes); the evaluation target. Empty for 681 of 827 "
+        "records - none of the six, which is not the same as normal",
+        nullable=False,
+    ),
+    Field(
+        "n_abnormalities",
+        "integer",
+        "Number of gold-standard flags set (12 records carry more than one)",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Single-label reduction: the rarest gold-standard abnormality the record carries, "
+        "else NONE. For fold construction only",
+        vocabulary=("1dAVb", "RBBB", "LBBB", "SB", "AF", "ST", "NONE"),
+        nullable=False,
+    ),
+)

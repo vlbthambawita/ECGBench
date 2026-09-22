@@ -63,6 +63,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -228,3 +230,152 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int(df["has_followup"].sum()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "integer",
+        "Patient identifier: 233,770 patients over 345,779 records, 66,929 with more than "
+        "one; the fold grouping key",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age in years from exams.csv",
+        unit="year",
+    ),
+    Field(
+        "is_male",
+        "boolean",
+        "Sex flag as shipped",
+        nullable=False,
+    ),
+    Field(
+        "nn_predicted_age",
+        "number",
+        "Age predicted from the tracing by the network of Lima et al.; a model output, not "
+        "an observation",
+        unit="year",
+    ),
+    Field(
+        "normal_ecg",
+        "boolean",
+        "Whether the exam was flagged normal (134,657 records). Not the complement of the "
+        "six flags: 173,347 records have neither a flag nor this",
+        nullable=False,
+    ),
+    Field(
+        "trace_file",
+        "string",
+        "Which exams_part<N>.hdf5 holds the waveform",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "is_male as M/F",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "1dAVb",
+        "boolean",
+        "Abnormality flag: first-degree AV block",
+        nullable=False,
+    ),
+    Field(
+        "RBBB",
+        "boolean",
+        "Abnormality flag: right bundle branch block",
+        nullable=False,
+    ),
+    Field(
+        "LBBB",
+        "boolean",
+        "Abnormality flag: left bundle branch block",
+        nullable=False,
+    ),
+    Field(
+        "SB",
+        "boolean",
+        "Abnormality flag: sinus bradycardia",
+        nullable=False,
+    ),
+    Field(
+        "ST",
+        "boolean",
+        "Abnormality flag: sinus tachycardia",
+        nullable=False,
+    ),
+    Field(
+        "AF",
+        "boolean",
+        "Abnormality flag: atrial fibrillation",
+        nullable=False,
+    ),
+    Field(
+        "death",
+        "boolean",
+        "Mortality outcome; missing (not False) for the 112,132 records without follow-up",
+    ),
+    Field(
+        "has_followup",
+        "boolean",
+        "Whether mortality follow-up exists; without it death and followup_years are "
+        "missing, not survived",
+        nullable=False,
+    ),
+    Field(
+        "followup_years",
+        "number",
+        "Follow-up time (timey in exams.csv); missing without follow-up",
+        unit="year",
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "4096 for every record",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "4096 / 400 = 10.24 s for every record",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "400 Hz for every record",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "abnormality_codes",
+        "string",
+        "The six flags as a comma-separated list, empty for the 308,004 records carrying "
+        "none; the multi-label training target, together with normal_ecg",
+        nullable=False,
+    ),
+    Field(
+        "n_abnormalities",
+        "integer",
+        "Number of flags set (3,671 records carry more than one)",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Single-label reduction: the rarest abnormality the record carries, else NORMAL "
+        "when normal_ecg, else OTHER. For fold construction only",
+        vocabulary=("1dAVb", "RBBB", "LBBB", "SB", "ST", "AF", "NORMAL", "OTHER"),
+        nullable=False,
+    ),
+)

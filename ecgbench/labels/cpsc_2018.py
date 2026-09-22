@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from ecgbench.labels._challenge_headers import parse_header
+from ecgbench.labels._fields import Field
 
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
@@ -250,3 +251,114 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int((df["n_dx"] > 1).sum()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_leads",
+        "integer",
+        "Signals declared in the header (12 throughout)",
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Sampling rate from the header (500 Hz in all 6,877 records)",
+        unit="Hz",
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per lead, from the header; 6 s to 144 s of signal, 1,650 distinct lengths",
+    ),
+    Field(
+        "age",
+        "string",
+        "Age as shipped, as text: blank for 5 records whose header says NaN, and the "
+        "sentinel -1 (4 records) is kept - see AGE_SENTINELS. Ages above 89 are unredacted "
+        "here (Challenge 2020 rails them to 92)",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the header; complete, 3,699 Male and 3,178 Female",
+        vocabulary=("Male", "Female"),
+        nullable=False,
+    ),
+    Field(
+        "dx",
+        "string",
+        "Comma-separated SNOMED-CT codes from the header's #Dx line, in the shipped order "
+        "(a sort by CPSC class index, not a primary-first order). The ground truth: "
+        "multi-label (476 records carry more than one class), never empty, exactly nine "
+        "codes occur",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Training_WFDB/<record>.mat, relative to the dataset root",
+        nullable=False,
+    ),
+    Field(
+        "n_dx",
+        "integer",
+        "Number of codes in dx",
+        nullable=False,
+    ),
+    Field(
+        "dx_abbreviations",
+        "string",
+        "dx as CPSC's own abbreviations, comma-separated",
+        nullable=False,
+    ),
+    Field(
+        "dx_names",
+        "string",
+        "dx as CPSC's class names, pipe-separated",
+        nullable=False,
+    ),
+    Field(
+        "dx_class_indices",
+        "string",
+        "dx as CPSC's 1-9 class numbers, comma-separated",
+        nullable=False,
+    ),
+    Field(
+        "stratify_dx",
+        "string",
+        "Single-label reduction: the globally rarest class the record carries, ties to the "
+        "lowest CPSC class index. Stratification only - the First/Second/Third labelling "
+        "did not survive the WFDB conversion",
+        vocabulary=(
+            "426783006",
+            "164889003",
+            "270492004",
+            "164909002",
+            "59118001",
+            "284470004",
+            "164884008",
+            "429622005",
+            "164931005",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "stratify_dx_abbreviation",
+        "string",
+        "Abbreviation of stratify_dx",
+        vocabulary=("NSR", "AF", "IAVB", "LBBB", "RBBB", "PAC", "PVC", "STD", "STE"),
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples / sampling_rate, rounded to 3 decimals: 6 to 144 s, median 12 s (27 "
+        "records exceed the challenge page's claimed 60 s maximum)",
+        unit="s",
+    ),
+)
