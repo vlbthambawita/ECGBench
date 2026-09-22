@@ -113,6 +113,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -449,3 +451,219 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_id")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "device",
+        "string",
+        "Directory name of the recording device: the Philips TC30 reference "
+        "electrocardiograph or one of four consumer smartwatches. Kept verbatim so paths "
+        "stay traceable - the Apple directory says 'serie8' although the release names the "
+        "Series 9.",
+        vocabulary=(
+            "philips_tc30",
+            "applewatch_serie8",
+            "samsunggalaxy6",
+            "fitbitsense2",
+            "withingsscanwatch",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "device_model",
+        "string",
+        "The release's own name for the device; corrects the Apple directory and the Fitbit "
+        "headers, all 181 of which mis-name the device as a Withings ScanWatch.",
+        vocabulary=(
+            "Apple Watch Series 9",
+            "Fitbit Sense 2",
+            "Philips TC30",
+            "Samsung Galaxy Watch 6",
+            "Withings ScanWatch",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "device_role",
+        "string",
+        "'reference' for the 195 Philips 12-lead records, 'smartwatch' for the other 720",
+        vocabulary=("reference", "smartwatch"),
+        nullable=False,
+    ),
+    Field(
+        "derivation",
+        "string",
+        "What the stored channel physically is. Every smartwatch header names its channel "
+        "'II', but the watches record arm-to-arm lead I (LA-RA); only the Philips records "
+        "hold a genuine standard 12-lead set. Filter on this before comparing morphology "
+        "across devices.",
+        vocabulary=("standard 12-lead", "lead I (LA-RA)"),
+        nullable=False,
+    ),
+    Field(
+        "setting_id",
+        "string",
+        "Simulator setting the record was measured at, lowercased so Fitbit's upper-case "
+        "'ST-m1' directories join the other devices' 'st-m1'; 36 settings: amp500..amp2000, "
+        "f30..f300 (15 rates), st-m1..st-m8, st-p1..st-p8 and sqr-2hz. The config's "
+        "patient_id_column: folds group by setting, not by any person.",
+        nullable=False,
+        example="st-m1",
+    ),
+    Field(
+        "setting_dir",
+        "string",
+        "The setting directory name as shipped, case preserved (Fitbit: 'ST-m1')",
+        nullable=False,
+    ),
+    Field(
+        "family",
+        "string",
+        "Experiment family the setting belongs to: R-amplitude, heart-rate, ST-segment or "
+        "the 2 Hz square-wave test with no ECG parameter at all",
+        vocabulary=("amp_test", "freq_test", "st-segment", "sqr-2hz"),
+        nullable=False,
+    ),
+    Field(
+        "nominal_rate_bpm",
+        "integer",
+        "Simulator heart-rate setting, 30-300 bpm over 15 settings; missing outside the "
+        "freq_test family",
+        unit="bpm",
+    ),
+    Field(
+        "nominal_r_amplitude_uv",
+        "integer",
+        "Simulator R-wave amplitude setting: 500, 1000, 1500 or 2000 uV; missing outside "
+        "the amp_test family",
+        unit="uV",
+        vocabulary=("500", "1000", "1500", "2000"),
+    ),
+    Field(
+        "nominal_st_offset_uv",
+        "integer",
+        "Simulator ST-segment offset setting, -800 to +800 uV in 100 uV steps with no zero "
+        "(st-m8..st-m1, st-p1..st-p8); missing outside the st-segment family",
+        unit="uV",
+    ),
+    Field(
+        "replicate",
+        "integer",
+        "Repetition index from the record name suffix, 0-4 for the quintuplicate protocol; "
+        "5 marks the sixth acquisition that 17 settings carry",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record path relative to the version directory, without extension",
+        nullable=False,
+        example="philips_tc30/amp_test/amp1000/amp1000_0",
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Channels stored: 12 for the Philips reference, 1 for every smartwatch",
+        vocabulary=("1", "12"),
+        nullable=False,
+    ),
+    Field(
+        "lead_names_stored",
+        "string",
+        "Channel names as the header declares them, pipe-separated ('II' for every "
+        "smartwatch record even though the channel is lead I)",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate: 500 Hz Philips and Samsung, 512 Apple, 250 Fitbit, 300 "
+        "Withings",
+        unit="Hz",
+        vocabulary=("250", "300", "500", "512"),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record as decoded: 5,500 Philips, 15,360 Apple (one record 13,968), "
+        "15,001 Samsung, 7,500 Fitbit, 9,000 Withings (six records 8,999). Lengths are not "
+        "uniform, so a window in samples is not a window in time.",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over the sampling rate: 11.0 s Philips (not the 10 s the Methods state), "
+        "30 s Apple, Samsung and Withings, 30 s Fitbit",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "nan_samples",
+        "integer",
+        "Samples wfdb returned as NaN (WFDB invalid-sample marker): 1 for every Samsung "
+        "record, 0 elsewhere",
+        nullable=False,
+    ),
+    Field(
+        "trailing_invalid_sample",
+        "boolean",
+        "True when the only NaN is the record's final sample - all 179 Samsung Galaxy Watch "
+        "6 records, which end in digital -32768 and therefore fail check_nan_values and are "
+        "absent from the clean version; window=(0, 15000) reads them without NaN",
+        nullable=False,
+    ),
+    Field(
+        "min_mv",
+        "number",
+        "Minimum finite sample value in millivolts. Every record was rescaled to fill "
+        "int16, so the extremes are where the record's own range was mapped, not clipping.",
+        unit="mV",
+    ),
+    Field(
+        "max_mv",
+        "number",
+        "Maximum finite sample value in millivolts",
+        unit="mV",
+    ),
+    Field(
+        "span_mv",
+        "number",
+        "max_mv minus min_mv",
+        unit="mV",
+    ),
+    Field(
+        "variance_mv2",
+        "number",
+        "Variance of the first stored channel over finite samples",
+        unit="mV^2",
+        nullable=False,
+    ),
+    Field(
+        "header_comment",
+        "string",
+        "First header comment line; every Fitbit header carries the erroneous 'Withings "
+        "Scanwatch reading METRON PS-440 patient simulator', and Apple's say 'Serie 8'",
+        nullable=False,
+    ),
+    Field(
+        "is_extra_replicate",
+        "boolean",
+        "replicate >= 5: one of the 17 sixth acquisitions, kept because no two records in "
+        "the release share a signal",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Fold-construction label: the experiment family",
+        vocabulary=("amp_test", "freq_test", "st-segment", "sqr-2hz"),
+        nullable=False,
+    ),
+)

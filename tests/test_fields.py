@@ -15,7 +15,9 @@ the same change (``test_every_declaration_has_a_consistency_builder``).
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -396,6 +398,281 @@ def _build_chapman_shaoxing(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _build_ecg_capable_smartwatches(tmp_path: Path) -> Path:
+    """One record per device, covering the three layouts the scan distinguishes.
+
+    A 12-lead Philips reference, four single-lead watches; a 4-part
+    ``<device>/<family>/<setting>/<name>`` path and the 3-part ``sqr-2hz`` one;
+    Fitbit's upper-case ST directory (so ``setting_id`` is lowercased) and the
+    Samsung record ending in WFDB's invalid-sample marker.
+    """
+    wfdb = pytest.importorskip("wfdb")
+    from ecgbench.labels.ecg_capable_smartwatches import DEVICES
+
+    twelve = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    records = {
+        "philips_tc30": ("amp_test/amp1000/amp1000_0", twelve, 500, 5500, False),
+        "applewatch_serie8": ("freq_test/f80/f80_0", ["II"], 512, 15360, False),
+        "samsunggalaxy6": ("st-segment/st-p8/st-p8_0", ["II"], 500, 15001, True),
+        "fitbitsense2": ("st-segment/ST-m1/ST-m1_5", ["II"], 250, 7500, False),
+        "withingsscanwatch": ("sqr-2hz/sqr-2hz_0", ["II"], 300, 9000, False),
+    }
+    assert set(records) == set(DEVICES)
+    index = []
+    for device, (relative, leads, fs, n_samples, trailing_invalid) in records.items():
+        path = tmp_path / device / relative
+        path.parent.mkdir(parents=True)
+        digital = np.tile(
+            (np.arange(n_samples) % 200 - 100).astype(np.int16)[:, None], (1, len(leads))
+        )
+        if trailing_invalid:
+            digital[-1, :] = -32768
+        wfdb.wrsamp(
+            path.name,
+            fs=fs,
+            units=["mV"] * len(leads),
+            sig_name=leads,
+            d_signal=digital,
+            fmt=["16"] * len(leads),
+            adc_gain=[20000.0] * len(leads),
+            baseline=[0] * len(leads),
+            comments=[f"{DEVICES[device]['model']} reading METRON PS-440 patient simulator"],
+            write_dir=str(path.parent),
+        )
+        index.append(f"{device}/{relative}")
+    (tmp_path / "RECORDS").write_text("\n".join(index) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_ecgcipa(tmp_path: Path) -> Path:
+    """Three records of two subjects across the four CDISC tables and RECORDS."""
+    from ecgbench.labels.ecgcipa import (
+        ANALYTE_COLUMNS,
+        CONTEXT_COLUMNS,
+        INTERVAL_COLUMNS,
+        SUBJECT_COLUMNS,
+        VITAL_COLUMNS,
+    )
+
+    records = {"1001": ["AAAA-0001", "AAAA-0002"], "1002": ["BBBB-0001"]}
+    (tmp_path / "RECORDS").write_text(
+        "".join(f"raw/{s}/{r}\nmedians/{s}/{r}\n" for s, recs in records.items() for r in recs),
+        encoding="utf-8",
+    )
+    adeg = []
+    for subject, recs in records.items():
+        context = {
+            "STUDYID": "CiPA", "USUBJID": subject, "TRTA": "Dofetilide", "TRTP": "Dofetilide",
+            "TRTSEQA": "ABCDE", "APERIOD": 1, "APERIODC": "Period 1", "ATPT": "2 hrs",
+            "ATPTN": 2, "NRRLT": 2.0, "ARRLT": 2.1, "ADTM": "2015-01-01T10:00",
+            "ADY": 1, "APERDAY": 1,
+        }
+        assert set(context) == set(CONTEXT_COLUMNS)
+        for i, rec in enumerate(recs):
+            for code in INTERVAL_COLUMNS:
+                adeg.append({
+                    "EGREFID": rec, "PARAMCD": code, "AVAL": 100.0, "DTYPE": None,
+                    "AEGBLFL": "Y" if i == 0 else None, "ECGPCFL": "Y", "EGREPNUM": i + 1,
+                    **context,
+                })
+        adeg.append({
+            "EGREFID": None, "PARAMCD": "QT", "AVAL": 400.0, "DTYPE": "AVERAGE",
+            "AEGBLFL": None, "ECGPCFL": None, "EGREPNUM": None, **context,
+        })
+    pd.DataFrame(adeg).to_csv(tmp_path / "adeg.csv", index=False)
+    pd.DataFrame([
+        {
+            "USUBJID": subject, "APERIOD": 1, "ATPTN": 2, "PARAMCD": code,
+            "AVAL": 0.0 if code == "DOF" and subject == "1002" else 12.5,
+            "LLOQFL": "Y" if code == "DOF" and subject == "1002" else None,
+        }
+        for subject in records
+        for code in ANALYTE_COLUMNS
+    ]).to_csv(tmp_path / "adpc.csv", index=False)
+    subject_values = ["30", "M", " WHITE", "NOT HISPANIC", "A", "A"]
+    pd.DataFrame({
+        "USUBJID": list(records),
+        **{k: subject_values[i] for i, k in enumerate(SUBJECT_COLUMNS)},
+    }).to_csv(tmp_path / "adsl.csv", index=False)
+    pd.DataFrame([
+        {"USUBJID": subject, "PARAMCD": code, "AVAL": 70.0}
+        for subject in records
+        for code in VITAL_COLUMNS
+    ]).to_csv(tmp_path / "addm.csv", index=False)
+    return tmp_path
+
+
+def _clinical_rows(module, extra: dict, sequence: str) -> pd.DataFrame:
+    """Three rows of one subject-period for the two FDA crossover releases."""
+    rows = []
+    timepoints = [("R-1", -0.5, "Y"), ("R-2", 2.0, "N"), ("R-3", 6.5, "N")]
+    for i, (rec, tpt, baseline) in enumerate(timepoints):
+        rows.append({
+            "EGREFID": rec, "BASELINE": baseline, "RANDID": 1001, "ARMCD": sequence,
+            "VISIT": "PERIOD-1-DOSING", "TPT": tpt,
+            "RR": 900.0, "PR": 150.0, "QRS": 90.0 if i else None, "QT": 400.0,
+            "JTPEAK": 200.0, "TPEAKTEND": 80.0, "TPEAKTPEAKP": None,
+            "ERD_30": 30.0, "LRD_30": 40.0,
+            "Twave_amplitude": 400.0, "Twave_asymmetry": 1.2, "Twave_flatness": 0.4,
+            "SEX": "M", "AGE": 30, "HGHT": 180.0, "WGHT": 75.0, "SYSBP": 120, "DIABP": 80,
+            "RACE": "WHITE", "ETHNIC": "NOT HISPANIC",
+            **{k: (v if i else None) for k, v in extra.items()},
+        })
+    df = pd.DataFrame(rows)
+    expected = {
+        "EGREFID", "BASELINE", *module.CONTEXT_COLUMNS, *module.INTERVAL_COLUMNS,
+        *module.MORPHOLOGY_COLUMNS, *module.SUBJECT_COLUMNS, *module.ANALYTE_COLUMNS,
+    }
+    assert set(df.columns) == expected, sorted(set(df.columns) ^ expected)
+    return df
+
+
+def _build_ecgdmmld(tmp_path: Path) -> Path:
+    from ecgbench.labels import ecgdmmld
+
+    df = _clinical_rows(
+        ecgdmmld,
+        {
+            "TRTA": "Mexiletine + Dofetilide", "DOF": None, "LIDO": None, "MEXI": 500.0,
+            "MOXI": None, "MOXI.M2": None, "DILT": None,
+        },
+        sequence="C-A-B-D-E",
+    )
+    df["TRTA"] = "Mexiletine + Dofetilide"
+    df.to_csv(tmp_path / ecgdmmld.CLINICAL_CSV, index=False)
+    return tmp_path
+
+
+def _build_ecgrdvq(tmp_path: Path) -> Path:
+    from ecgbench.labels import ecgrdvq
+
+    df = _clinical_rows(
+        ecgrdvq,
+        {
+            "EXTRT": "Dofetilide", "EXDOSE": 500, "EXDOSU": "ug", "PCTEST": "Dofetilide",
+            "PCSTRESN": 1500.0, "PCSTRESU": "pg/mL",
+        },
+        sequence="B,A,C,D,E",
+    )
+    df[["EXTRT", "EXDOSE", "EXDOSU"]] = ["Dofetilide", 500, "ug"]
+    df.loc[2, "PR"] = -4294966951.0  # the 32-bit wrap the loader repairs
+    df.to_csv(tmp_path / ecgrdvq.CLINICAL_CSV, index=False)
+    return tmp_path
+
+
+def _build_ecgiddb(tmp_path: Path) -> Path:
+    """Two subjects, one with two sessions; ten N/t annotation pairs per record."""
+    wfdb = pytest.importorskip("wfdb")
+    records = {
+        "Person_01": [("rec_1", "07.12.2004", "male"), ("rec_2", "12.05.2005", "male")],
+        "Person_02": [("rec_1", "07.12.2004", "female")],
+    }
+    index = []
+    for subject, recs in records.items():
+        d = tmp_path / subject
+        d.mkdir()
+        for name, date, sex in recs:
+            (d / f"{name}.hea").write_text(
+                f"{name} 2 500 10000\n"
+                f"{name}.dat 16 200 12 0 0 0 0 ECG I\n"
+                f"{name}.dat 16 200 12 0 0 0 0 ECG I filtered\n"
+                f"# Age: 25\n# Sex: {sex}\n# ECG date: {date}\n",
+                encoding="utf-8",
+            )
+            beats = np.arange(10) * 400 + 300
+            wfdb.wrann(
+                name, "atr",
+                sample=np.sort(np.concatenate([beats, beats + 150])),
+                symbol=["N", "t"] * 10,
+                fs=500,
+                write_dir=str(d),
+            )
+            index.append(f"{subject}/{name}")
+    (tmp_path / "RECORDS").write_text("\n".join(index) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_echonext(tmp_path: Path) -> Path:
+    from ecgbench.labels.echonext import (
+        CONTINUOUS_COLUMNS,
+        FLAG_COLUMNS,
+        ORDINAL_LEVELS,
+        SOURCE_CSV,
+    )
+
+    frame = {"ecg_key": ["e1", "e2", "e3"]}
+    frame.update({flag: [0, 1, 0] for flag in FLAG_COLUMNS})
+    frame.update({col: [levels[0], levels[-1], None] for col, levels in ORDINAL_LEVELS.items()})
+    frame.update({col: [1.5, None, 2.5] for col in CONTINUOUS_COLUMNS})
+    frame.update({
+        "patient_key": ["p1", "p2", "p1"], "age_at_ecg": [60, 71, 62],
+        "sex": ["Male", "Female", "Male"], "acquisition_year": [2018, 2019, 2020],
+        "location_setting": ["inpatient", "outpatient", "ED"],
+        "race_ethnicity": ["White", "Hispanic", "Other"], "most_recent_ecg": [0, 1, 1],
+        "ventricular_rate": [70, 80, 90], "atrial_rate": [70, 80, 90],
+        "pr_interval": [160, 170, 150], "qrs_duration": [90, 100, 95],
+        "qt_corrected": [420, 430, 410],
+        "split": ["train", "val", "no_split"],
+    })
+    pd.DataFrame(frame).to_csv(tmp_path / SOURCE_CSV, index=False)
+    return tmp_path
+
+
+def _build_edb(tmp_path: Path) -> Path:
+    """Two records with identical headers (one reconstructed subject), one ST and one T episode."""
+    wfdb = pytest.importorskip("wfdb")
+    header = (
+        "{name} 2 250 1800000\n"
+        "{name}.dat 212 200 12 0 91 0 0 V4\n"
+        "{name}.dat 212 200 12 0 751 0 0 MLIII\n"
+        "\n"
+        "#Age: 62  Sex: M\n#Mixed angina\n#1-vessel disease (RCA)\n"
+        "#Medications: nitrates, diltiazem\n#Recorder type: ICR 7200\n"
+    )
+    for name in ("e0103", "e0104"):
+        (tmp_path / f"{name}.hea").write_text(header.format(name=name), encoding="utf-8")
+        wfdb.wrann(
+            name, "atr",
+            sample=np.array(
+                [2, 300, 600, 900, 1200, 1500, 2000, 4000, 6000, 8000, 9000, 10000, 12000]
+            ),
+            symbol=["+", "N", "N", "V", "S", "~", "s", "s", "s", '"', "T", "T", "T"],
+            subtype=np.array([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]),
+            aux_note=[
+                "(N", "", "", "", "", "", "(ST0+", "AST0+600", "ST0+)", "BUTTON",
+                "(T1-", "AT1-350", "T1-)",
+            ],
+            fs=250,
+            write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("e0103\ne0104\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_edgar(tmp_path: Path) -> Path:
+    """One authoritative archive per experiment, each holding one potvals struct.
+
+    Goes through ``extract_archives`` and ``scan_records`` for real rather than
+    through the ``ecgbench_metadata.csv`` cache, which would make the test compare
+    the declaration against a CSV this builder wrote.
+    """
+    scipy_io = pytest.importorskip("scipy.io")
+    from ecgbench.labels.edgar import EXPERIMENTS
+
+    buffer = io.BytesIO()
+    scipy_io.savemat(buffer, {"ts": {"potvals": np.zeros((30, 30)), "unit": "mV", "fs": 2000.0}})
+    payload = buffer.getvalue()
+    for exp in EXPERIMENTS.values():
+        patterns = [p for p in exp.surfaces if not any(tok in p for tok in exp.exclude)]
+        pattern = max(patterns, key=len)
+        member = pattern.replace("*", "x") + ("" if pattern.endswith("/") else "_") + "rec.mat"
+        archive = tmp_path / exp.post / exp.archive
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive, "w") as handle:
+            handle.writestr(member, payload)
+    return tmp_path
+
+
 #: Dataset -> builder writing a minimal synthetic source tree into tmp_path.
 BUILDERS = {
     "ptbxl": _build_ptbxl,
@@ -415,16 +692,23 @@ BUILDERS = {
     "code15": _build_code15,
     "code_test": _build_code_test,
     "cpsc_2018": _build_cpsc_2018,
+    # batch 3
+    "ecg_capable_smartwatches": _build_ecg_capable_smartwatches,
+    "ecgcipa": _build_ecgcipa,
+    "ecgdmmld": _build_ecgdmmld,
+    "ecgiddb": _build_ecgiddb,
+    "ecgrdvq": _build_ecgrdvq,
+    "echonext": _build_echonext,
+    "edb": _build_edb,
+    "edgar": _build_edgar,
 }
 
 #: Label-bearing datasets whose fields are not declared yet (later Phase 3 batches).
 PENDING = {
-    "ecg_capable_smartwatches", "ecgcipa", "ecgdmmld", "ecgiddb",
-    "ecgrdvq", "echonext", "edb", "edgar", "ikem", "incartdb", "leipzig_heart_center_ecg",
-    "ltafdb", "ltstdb", "ludb", "medalcare_xl", "mhd_effect_ecg_mri", "ningbo_iva",
-    "norwegian_athlete_ecg", "nsrdb", "picsdb", "ptbdb", "qtdb", "sami_trop", "sddb",
-    "shdb_af", "sph", "staffiii", "stdb", "svdb", "szdb", "tollet", "ucddb", "wctecgdb",
-    "zzu_pecg",
+    "ikem", "incartdb", "leipzig_heart_center_ecg", "ltafdb", "ltstdb", "ludb",
+    "medalcare_xl", "mhd_effect_ecg_mri", "ningbo_iva", "norwegian_athlete_ecg", "nsrdb",
+    "picsdb", "ptbdb", "qtdb", "sami_trop", "sddb", "shdb_af", "sph", "staffiii", "stdb",
+    "svdb", "szdb", "tollet", "ucddb", "wctecgdb", "zzu_pecg",
 }
 
 

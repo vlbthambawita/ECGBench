@@ -92,6 +92,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 #: AAMI EC57 five-class beat reduction, shared with the other MIT-BIH-family databases
 #: in this catalogue rather than copied, so the reductions cannot drift apart. ``n``
 #: (supraventricular escape) occurs only here, which is why it is in that table.
@@ -873,3 +875,653 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Subject age from the '#Age:' header line, 30-84; NaN for e0166 and e0418 whose "
+        "header says '-'",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex from the header; 70 men, 8 women, empty when missing",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "recorder_type",
+        "string",
+        "Holter recorder model from the '#Recorder type:' line, one of ten; "
+        "recorder-specific artefact is a real confounder. Empty when absent.",
+        nullable=False,
+        example="ICR 7200",
+    ),
+    Field(
+        "medications",
+        "string",
+        "Pipe-joined lowercased drug names from the '#Medications:' line, with the "
+        "release's 'nidefipine' corrected to nifedipine; empty when none",
+        nullable=False,
+        example="nitrates|diltiazem",
+    ),
+    Field(
+        "angina_type",
+        "string",
+        "Angina classification parsed from the clinical findings; empty when no angina line",
+        vocabulary=("", "resting", "mixed", "effort", "unspecified"),
+        nullable=False,
+    ),
+    Field(
+        "myocardial_infarction",
+        "boolean",
+        "A myocardial infarction line appears in the header findings",
+        nullable=False,
+    ),
+    Field(
+        "mi_location",
+        "string",
+        "Infarct location parsed from the findings; empty when none",
+        vocabulary=("", "unspecified", "inferior", "anterior", "infero-lateral", "non-Q"),
+        nullable=False,
+    ),
+    Field(
+        "n_diseased_vessels",
+        "integer",
+        "From '<n>-vessel disease'; 0 when the findings state normal coronary arteries; NaN "
+        "when the header says neither",
+    ),
+    Field(
+        "diseased_vessels",
+        "string",
+        "Pipe-joined uppercased vessel names from the parenthesis after '<n>-vessel "
+        "disease'; empty when none named",
+        nullable=False,
+        example="RCA|LAD",
+    ),
+    Field(
+        "lca_main_stem",
+        "boolean",
+        "Left main stem disease named in the findings",
+        nullable=False,
+    ),
+    Field(
+        "normal_coronary_arteries",
+        "boolean",
+        "The findings state normal coronary arteries or no coronary artery disease",
+        nullable=False,
+    ),
+    Field(
+        "coronary_angiography",
+        "boolean",
+        "False only when the header says no coronary angiography was performed; True "
+        "otherwise, including when it is not mentioned",
+        nullable=False,
+    ),
+    Field(
+        "hypertension",
+        "boolean",
+        "Hypertension named in the findings",
+        nullable=False,
+    ),
+    Field(
+        "bypass_graft",
+        "boolean",
+        "A bypass graft named in the findings",
+        nullable=False,
+    ),
+    Field(
+        "other_findings",
+        "string",
+        "Pipe-joined header finding lines matched by none of the parsers; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "clinical_findings",
+        "string",
+        "Every clinical header comment line verbatim, pipe-joined - the text the other "
+        "header columns were parsed from",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "The two leads this record stores, pipe-separated, from the header signal lines. "
+        "Fifteen orderings of eleven lead pairs across the release; no lead is present in "
+        "all 90 records.",
+        nullable=False,
+        example="V4|MLIII",
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference beats annotated 'S' (supraventricular premature or ectopic beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference beats annotated 'F' (fusion of ventricular and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference beats annotated 'Q' (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_n",
+        "integer",
+        "Reference beats annotated 'n' (supraventricular escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Reference beats annotated 'J' (nodal (junctional) premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Reference beats annotated 'a' (aberrated atrial premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "Beats in AAMI EC57 class N (N), the same beats reduced to five classes for "
+        "comparison with mitdb, svdb and incartdb",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "Beats in AAMI EC57 class S (S), the same beats reduced to five classes for "
+        "comparison with mitdb, svdb and incartdb",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "Beats in AAMI EC57 class V (V), the same beats reduced to five classes for "
+        "comparison with mitdb, svdb and incartdb",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "Beats in AAMI EC57 class F (F), the same beats reduced to five classes for "
+        "comparison with mitdb, svdb and incartdb",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "Beats in AAMI EC57 class Q (Q), the same beats reduced to five classes for "
+        "comparison with mitdb, svdb and incartdb",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Count of rhythm-change ('+') annotations",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "Count of signal-quality-change ('~') annotations; 89 of 90 records carry some, "
+        "none at sample 0, e0121 none at all",
+        nullable=False,
+    ),
+    Field(
+        "n_st_annotations",
+        "integer",
+        "Count of ST-change ('s') annotations, three per ST episode (onset, extremum, end)",
+        nullable=False,
+    ),
+    Field(
+        "n_t_annotations",
+        "integer",
+        "Count of T-change ('T') annotations: three per T episode plus the 400 uV threshold "
+        "crossings counted in n_extreme_t_markers",
+        nullable=False,
+    ),
+    Field(
+        "n_comment_annotations",
+        "integer",
+        "Count of comment ('\"') annotations: event-button presses, tape slippage and the "
+        "lower-case axis-shift spans",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "Count of isolated QRS-like artefact ('|') annotations",
+        nullable=False,
+    ),
+    Field(
+        "note_BUTTON",
+        "integer",
+        "Comment annotations reading 'BUTTON': patient-activated event button pressed",
+        nullable=False,
+    ),
+    Field(
+        "note_TS",
+        "integer",
+        "Comment annotations reading 'TS': tape slippage",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_N",
+        "number",
+        "Seconds annotated as rhythm (N), normal sinus rhythm. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_VT",
+        "number",
+        "Seconds annotated as rhythm (VT), ventricular tachycardia. Every record opens with "
+        "a rhythm annotation inside its first second, so the rhythm_secs_* columns cover "
+        "the whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_T",
+        "number",
+        "Seconds annotated as rhythm (T), ventricular trigeminy. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_B",
+        "number",
+        "Seconds annotated as rhythm (B), ventricular bigeminy. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AB",
+        "number",
+        "Seconds annotated as rhythm (AB), atrial bigeminy. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SVTA",
+        "number",
+        "Seconds annotated as rhythm (SVTA), supraventricular tachyarrhythmia. Every record "
+        "opens with a rhythm annotation inside its first second, so the rhythm_secs_* "
+        "columns cover the whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SAB",
+        "number",
+        "Seconds annotated as rhythm (SAB), sino-atrial block. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SBR",
+        "number",
+        "Seconds annotated as rhythm (SBR), sinus bradycardia. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFIB",
+        "number",
+        "Seconds annotated as rhythm (AFIB), atrial fibrillation. Every record opens with a "
+        "rhythm annotation inside its first second, so the rhythm_secs_* columns cover the "
+        "whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_B3",
+        "number",
+        "Seconds annotated as rhythm (B3), third degree heart block. Every record opens "
+        "with a rhythm annotation inside its first second, so the rhythm_secs_* columns "
+        "cover the whole 7,200 s recording.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_st_episodes",
+        "integer",
+        "ST-segment change episodes (onset, extremum, end triple), 368 across the release. "
+        "Lower-case axis-shift spans are excluded; unterminated episodes are closed at the "
+        "record end and counted.",
+        nullable=False,
+    ),
+    Field(
+        "n_st_episodes_sig0",
+        "integer",
+        "ST-segment episodes annotated on signal 0 (the two signals are annotated "
+        "independently)",
+        nullable=False,
+    ),
+    Field(
+        "n_st_episodes_sig1",
+        "integer",
+        "ST-segment episodes annotated on signal 1",
+        nullable=False,
+    ),
+    Field(
+        "n_st_up",
+        "integer",
+        "ST-segment episodes with a positive deviation (ST elevation)",
+        nullable=False,
+    ),
+    Field(
+        "n_st_down",
+        "integer",
+        "ST-segment episodes with a negative deviation (ST depression)",
+        nullable=False,
+    ),
+    Field(
+        "st_episode_secs",
+        "number",
+        "Summed duration of ST-segment episodes over both signals; can exceed the 7,200 s "
+        "record because the signals are annotated independently",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "st_secs_any_signal",
+        "number",
+        "Seconds during which a ST-segment episode is open on either signal (bounded union)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "peak_st_deviation_uv",
+        "integer",
+        "Largest annotated ST-segment extremum in microvolts, measured against the "
+        "subject's own reference waveform from the first 30 s, not an absolute isoelectric "
+        "line; 0 when no episode",
+        unit="uV",
+        nullable=False,
+    ),
+    Field(
+        "n_t_episodes",
+        "integer",
+        "T-wave change episodes (onset, extremum, end triple), 401 across the release. "
+        "Lower-case axis-shift spans are excluded; unterminated episodes are closed at the "
+        "record end and counted.",
+        nullable=False,
+    ),
+    Field(
+        "n_t_episodes_sig0",
+        "integer",
+        "T-wave episodes annotated on signal 0 (the two signals are annotated "
+        "independently)",
+        nullable=False,
+    ),
+    Field(
+        "n_t_episodes_sig1",
+        "integer",
+        "T-wave episodes annotated on signal 1",
+        nullable=False,
+    ),
+    Field(
+        "n_t_up",
+        "integer",
+        "T-wave episodes with a positive deviation (increased T amplitude)",
+        nullable=False,
+    ),
+    Field(
+        "n_t_down",
+        "integer",
+        "T-wave episodes with a negative deviation (decreased T amplitude)",
+        nullable=False,
+    ),
+    Field(
+        "t_episode_secs",
+        "number",
+        "Summed duration of T-wave episodes over both signals; can exceed the 7,200 s "
+        "record because the signals are annotated independently",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "t_secs_any_signal",
+        "number",
+        "Seconds during which a T-wave episode is open on either signal (bounded union)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "peak_t_deviation_uv",
+        "integer",
+        "Largest annotated T-wave extremum in microvolts, measured against the subject's "
+        "own reference waveform from the first 30 s, not an absolute isoelectric line; 0 "
+        "when no episode",
+        unit="uV",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Total beat annotations (sum of the beat_* columns)",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Total annotations of every kind in the .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_extreme_t_markers",
+        "integer",
+        "Extra 'T' marks ('++'/'--') where a T episode's deviation crosses 400 uV; 166 in "
+        "the release and not episodes",
+        nullable=False,
+    ),
+    Field(
+        "n_axis_shift_episodes",
+        "integer",
+        "Lower-case '(st0+'-style comment spans marking positional axis shifts that mimic "
+        "ischaemia - recognised artefact, excluded from the episode counts; 21 in six "
+        "records",
+        nullable=False,
+    ),
+    Field(
+        "n_unterminated_episodes",
+        "integer",
+        "Episodes with an onset and extremum but no end annotation, closed here at the "
+        "record end; 12 in the release, including e0409's two ST depressions",
+        nullable=False,
+    ),
+    Field(
+        "rhythms",
+        "string",
+        "Pipe-joined rhythm codes present, in descending duration",
+        nullable=False,
+        example="N|SVTA",
+    ),
+    Field(
+        "dominant_rhythm",
+        "string",
+        "Rhythm code with the longest duration; empty when none",
+        vocabulary=("N", "VT", "T", "B", "AB", "SVTA", "SAB", "SBR", "AFIB", "B3", ""),
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm_fraction",
+        "number",
+        "Fraction of the record spent in dominant_rhythm",
+    ),
+    Field(
+        "quality_head_unasserted_secs",
+        "number",
+        "Seconds before the first '~' annotation, counted as clean by implication (a '~' "
+        "marks a change); median 9.3 min",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "first_beat_secs",
+        "number",
+        "Time of the first beat annotation",
+        unit="s",
+    ),
+    Field(
+        "last_beat_secs",
+        "number",
+        "Time of the last beat annotation",
+        unit="s",
+    ),
+    Field(
+        "sig0_clean_secs",
+        "number",
+        "Seconds signal 0 is neither noisy nor unreadable, from the '~' subtype read as a "
+        "bitmask (decode_quality) rather than the shipped nine-value table, which disagrees "
+        "with the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sig0_noisy_secs",
+        "number",
+        "Seconds signal 0 is flagged noisy (unreadable also sets noisy), from the '~' "
+        "subtype read as a bitmask (decode_quality) rather than the shipped nine-value "
+        "table, which disagrees with the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sig0_unreadable_secs",
+        "number",
+        "Seconds signal 0 is flagged unreadable, from the '~' subtype read as a bitmask "
+        "(decode_quality) rather than the shipped nine-value table, which disagrees with "
+        "the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sig1_clean_secs",
+        "number",
+        "Seconds signal 1 is neither noisy nor unreadable, from the '~' subtype read as a "
+        "bitmask (decode_quality) rather than the shipped nine-value table, which disagrees "
+        "with the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sig1_noisy_secs",
+        "number",
+        "Seconds signal 1 is flagged noisy (unreadable also sets noisy), from the '~' "
+        "subtype read as a bitmask (decode_quality) rather than the shipped nine-value "
+        "table, which disagrees with the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sig1_unreadable_secs",
+        "number",
+        "Seconds signal 1 is flagged unreadable, from the '~' subtype read as a bitmask "
+        "(decode_quality) rather than the shipped nine-value table, which disagrees with "
+        "the files",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; the release is a flat directory",
+        nullable=False,
+        example="e0103",
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "Reconstructed, not released: records agreeing on age, sex, recorder, medications "
+        "and the set of clinical findings are one subject (plus the e0206/e0210 merge), "
+        "giving the published 79 subjects over 90 records. Named by the group's first "
+        "record.",
+        nullable=False,
+        example="e0118",
+    ),
+    Field(
+        "pvc_fraction",
+        "number",
+        "beat_V over n_beats; NaN when no beats",
+    ),
+    Field(
+        "sveb_fraction",
+        "number",
+        "aami_S over n_beats; NaN when no beats",
+    ),
+    Field(
+        "ischaemic_fraction",
+        "number",
+        "st_secs_any_signal over the 7,200 s record",
+        nullable=False,
+    ),
+    Field(
+        "usable_fraction",
+        "number",
+        "1 minus the shorter of the two channels' unreadable time over 7,200 s",
+        nullable=False,
+    ),
+    Field(
+        "st_burden_band",
+        "string",
+        "Band of n_st_episodes, for fold construction",
+        vocabulary=("none", "1-2", "3-5", "6+"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Fold-construction label: the ST-episode-count band. Not a clinical label.",
+        vocabulary=("none", "1-2", "3-5", "6+"),
+        nullable=False,
+    ),
+    Field(
+        "st_t_class",
+        "string",
+        "Which change types the record holds - a record-level summary, not the fold label",
+        vocabulary=("st_and_t", "st_only", "t_only", "none"),
+        nullable=False,
+    ),
+)

@@ -116,6 +116,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -569,3 +571,283 @@ def _fiducials(marks: list[tuple[int, str]]) -> dict[str, object]:
     if after:
         out["t_offset_ms"] = int(after[-1])
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "is_baseline",
+        "boolean",
+        "BASELINE == 'Y': one of the three pre-dose records (timepoint_hours == -0.5) of "
+        "the subject-period, whose mean is the baseline that load_baseline_deltas subtracts",
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "Subject identifier (RANDID), string throughout because it is also the raw/ "
+        "directory name; 22 healthy volunteers",
+        nullable=False,
+        example="1001",
+    ),
+    Field(
+        "treatment_sequence",
+        "string",
+        "Randomised arm sequence (ARMCD), dash-separated arm codes A-E in period order",
+        nullable=False,
+    ),
+    Field(
+        "period_label",
+        "string",
+        "Visit label (VISIT), 'PERIOD-<n>-DOSING'",
+        nullable=False,
+        example="PERIOD-1-DOSING",
+    ),
+    Field(
+        "timepoint_hours",
+        "number",
+        "Nominal hours since the period's dose (TPT); -0.5 is pre-dose",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "rr_ms",
+        "number",
+        "RR interval from the raw rhythm strip; complete for all 4,211 records",
+        unit="ms",
+        nullable=False,
+    ),
+    Field(
+        "pr_ms",
+        "number",
+        "PR interval measured on the median beat",
+        unit="ms",
+    ),
+    Field(
+        "qrs_ms",
+        "number",
+        "QRS duration on the median beat; NA for the 9 records with no QRS-offset "
+        "annotation",
+        unit="ms",
+    ),
+    Field(
+        "qt_ms",
+        "number",
+        "QT interval on the median beat; complete for all 4,211 records",
+        unit="ms",
+    ),
+    Field(
+        "jtpeak_ms",
+        "number",
+        "J point (QRS offset) to T peak on the median beat; NA for the 9 records with no "
+        "QRS-offset annotation",
+        unit="ms",
+    ),
+    Field(
+        "tpeak_tend_ms",
+        "number",
+        "T peak to T end on the median beat; complete for all 4,211 records",
+        unit="ms",
+    ),
+    Field(
+        "tpeak_tpeakp_ms",
+        "number",
+        "Tpeak to secondary T peak (TPEAKTPEAKP): documented, but empty in all 4,211 rows "
+        "of v1.0.0 and no .atr marks a secondary peak - exposed so the absence is visible "
+        "(ALWAYS_EMPTY_COLUMNS)",
+        unit="ms",
+    ),
+    Field(
+        "erd_30_ms",
+        "number",
+        "Early repolarisation duration at 30% (ERD_30)",
+        unit="ms",
+    ),
+    Field(
+        "lrd_30_ms",
+        "number",
+        "Late repolarisation duration at 30% (LRD_30)",
+        unit="ms",
+    ),
+    Field(
+        "twave_amplitude_uv",
+        "number",
+        "T-wave amplitude on the median beat's vector-magnitude lead, in microvolts while "
+        "the waveforms are millivolts",
+        unit="uV",
+    ),
+    Field(
+        "twave_asymmetry",
+        "number",
+        "T-wave asymmetry index on the vector-magnitude lead (dimensionless)",
+    ),
+    Field(
+        "twave_flatness",
+        "number",
+        "T-wave flatness index on the vector-magnitude lead (dimensionless)",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex (SEX)",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "age_years",
+        "integer",
+        "Subject age (AGE)",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Height (HGHT)",
+        unit="cm",
+        nullable=False,
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Weight (WGHT)",
+        unit="kg",
+        nullable=False,
+    ),
+    Field(
+        "systolic_bp_mmhg",
+        "number",
+        "Systolic blood pressure (SYSBP)",
+        unit="mmHg",
+        nullable=False,
+    ),
+    Field(
+        "diastolic_bp_mmhg",
+        "number",
+        "Diastolic blood pressure (DIABP)",
+        unit="mmHg",
+        nullable=False,
+    ),
+    Field(
+        "race",
+        "string",
+        "Subject race (RACE)",
+        nullable=False,
+    ),
+    Field(
+        "ethnicity",
+        "string",
+        "Subject ethnicity (ETHNIC)",
+        nullable=False,
+    ),
+    Field(
+        "treatment",
+        "string",
+        "Randomisation arm of the whole period (TRTA), not the drug in the blood: within a "
+        "period the agents were staged hours apart, so a 'Mexiletine + Dofetilide' record "
+        "at 2 h is mexiletine-only. Train on the plasma_* columns or on treatment crossed "
+        "with timepoint_hours, never on treatment alone. Stratification label.",
+        vocabulary=(
+            "Dofetilide",
+            "Lidocaine + Dofetilide",
+            "Mexiletine + Dofetilide",
+            "Moxifloxacin + Diltiazem",
+            "Placebo",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "plasma_dofetilide_pg_ml",
+        "number",
+        "Plasma dofetilide concentration (source column DOF), in pg/mL, a thousand times "
+        "the scale of the other five analytes. NA means not dosed, not drawn or below "
+        "quantification - the release does not distinguish them and nothing is 0.",
+        unit="pg/mL",
+    ),
+    Field(
+        "plasma_lidocaine_ng_ml",
+        "number",
+        "Plasma lidocaine concentration (source column LIDO), in ng/mL. NA means not dosed, "
+        "not drawn or below quantification - the release does not distinguish them and "
+        "nothing is 0.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_mexiletine_ng_ml",
+        "number",
+        "Plasma mexiletine concentration (source column MEXI), in ng/mL. NA means not "
+        "dosed, not drawn or below quantification - the release does not distinguish them "
+        "and nothing is 0.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_moxifloxacin_ng_ml",
+        "number",
+        "Plasma moxifloxacin concentration (source column MOXI), in ng/mL. NA means not "
+        "dosed, not drawn or below quantification - the release does not distinguish them "
+        "and nothing is 0.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_moxifloxacin_m2_ng_ml",
+        "number",
+        "Plasma moxifloxacin M2 metabolite concentration (source column MOXI.M2), in ng/mL. "
+        "NA means not dosed, not drawn or below quantification - the release does not "
+        "distinguish them and nothing is 0.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_diltiazem_ng_ml",
+        "number",
+        "Plasma diltiazem concentration (source column DILT), in ng/mL. NA means not dosed, "
+        "not drawn or below quantification - the release does not distinguish them and "
+        "nothing is 0.",
+        unit="ng/mL",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never "
+        "the median beat",
+        nullable=False,
+    ),
+    Field(
+        "median_beat_path",
+        "string",
+        "WFDB path of the derived 16-channel median beat, medians/<subject>/<uuid> (12 "
+        "leads plus VCGMAG, vx, vy, vz at 1 kHz). It gets no fold of its own.",
+        nullable=False,
+    ),
+    Field(
+        "period",
+        "integer",
+        "Crossover period 1-5, parsed from period_label",
+        nullable=False,
+    ),
+    Field(
+        "hr_bpm",
+        "number",
+        "Derived: 60000 / rr_ms; the release ships no heart rate (observed 42-105 bpm)",
+        unit="bpm",
+        nullable=False,
+    ),
+    Field(
+        "qtcf_ms",
+        "number",
+        "Derived Fridericia correction, qt_ms / cbrt(rr_ms / 1000); the release ships no "
+        "corrected QT (observed 353.7-499.1 ms against an uncorrected 288-522). No "
+        "rate-corrected J-Tpeak is provided - the study's fitted exponent is in the paper.",
+        unit="ms",
+    ),
+    Field(
+        "median_beat_readable",
+        "boolean",
+        "False for the 3 records whose median-beat header is corrupt (a channel's .dat "
+        "filename has gain digits spliced in) and raises IndexError in wfdb.rdrecord; their "
+        "raw/ records are intact (MEDIAN_HEADER_CORRUPT)",
+        nullable=False,
+    ),
+)

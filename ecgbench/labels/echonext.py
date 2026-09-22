@@ -57,6 +57,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -275,3 +277,367 @@ def load_tabular_features(data_path: Path | str, split: str = "train") -> pd.Dat
             "may have changed — re-verify against the metadata before trusting it."
         )
     return pd.DataFrame(array, columns=list(TABULAR_FEATURE_COLUMNS))
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "lvef_lte_45_flag",
+        "integer",
+        "Echo finding: LVEF <= 45%, thresholded from lvef_value. 0/1 with no nulls, but a "
+        "missing measurement is recorded as 0, not as missing. Unmeasured for 8,944 "
+        "records, all of which read 0. Mask on lvef_lte_45_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "lvwt_gte_13_flag",
+        "integer",
+        "Echo finding: LV wall thickness >= 13 mm (IVS or LVPW), thresholded from "
+        "ivs_measurement, lvpw_measurement. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "lvwt_gte_13_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "aortic_stenosis_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: aortic stenosis moderate or greater, thresholded from "
+        "aortic_stenosis_value. 0/1 with no nulls, but a missing measurement is recorded as "
+        "0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "aortic_stenosis_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "aortic_regurgitation_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: aortic regurgitation moderate or greater, thresholded from "
+        "aortic_regurgitation_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "aortic_regurgitation_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "mitral_regurgitation_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: mitral regurgitation moderate or greater, thresholded from "
+        "mitral_regurgitation_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "mitral_regurgitation_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "tricuspid_regurgitation_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: tricuspid regurgitation moderate or greater, thresholded from "
+        "tricuspid_regurgitation_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "tricuspid_regurgitation_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "pulmonary_regurgitation_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: pulmonary regurgitation moderate or greater, thresholded from "
+        "pulmonary_regurgitation_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "pulmonary_regurgitation_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "rv_systolic_dysfunction_moderate_or_greater_flag",
+        "integer",
+        "Echo finding: RV systolic dysfunction moderate or greater, thresholded from "
+        "rv_systolic_function_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on "
+        "rv_systolic_dysfunction_moderate_or_greater_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "pericardial_effusion_moderate_large_flag",
+        "integer",
+        "Echo finding: pericardial effusion moderate or large, thresholded from "
+        "pericardial_effusion_value. 0/1 with no nulls, but a missing measurement is "
+        "recorded as 0, not as missing. Unmeasured for 11,823 records, all of which read 0. "
+        "Mask on pericardial_effusion_moderate_large_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "pasp_gte_45_flag",
+        "integer",
+        "Echo finding: pulmonary artery systolic pressure >= 45 mmHg, thresholded from "
+        "pasp_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as "
+        "missing. Unmeasured for 43,424 records, all of which read 0. Mask on "
+        "pasp_gte_45_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "tr_max_gte_32_flag",
+        "integer",
+        "Echo finding: peak tricuspid regurgitation velocity >= 3.2 m/s, thresholded from "
+        "tr_max_velocity_value. 0/1 with no nulls, but a missing measurement is recorded as "
+        "0, not as missing. Unmeasured for 54,996 records, all of which read 0. Mask on "
+        "tr_max_gte_32_flag_measured.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "shd_moderate_or_greater_flag",
+        "integer",
+        "Structural heart disease moderate or greater: the composite of the other eleven "
+        "flags that the dataset is built around, and the config's label column. No single "
+        "measurement behind it, so no _measured companion.",
+        vocabulary=("0", "1"),
+        nullable=False,
+    ),
+    Field(
+        "lvef_lte_45_flag_measured",
+        "boolean",
+        "Derived: lvef_value present, so a 0 in lvef_lte_45_flag is a measured negative "
+        "rather than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "lvwt_gte_13_flag_measured",
+        "boolean",
+        "Derived: ivs_measurement and lvpw_measurement present, so a 0 in lvwt_gte_13_flag "
+        "is a measured negative rather than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "aortic_stenosis_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: aortic_stenosis_value present, so a 0 in "
+        "aortic_stenosis_moderate_or_greater_flag is a measured negative rather than an "
+        "unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "aortic_regurgitation_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: aortic_regurgitation_value present, so a 0 in "
+        "aortic_regurgitation_moderate_or_greater_flag is a measured negative rather than "
+        "an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "mitral_regurgitation_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: mitral_regurgitation_value present, so a 0 in "
+        "mitral_regurgitation_moderate_or_greater_flag is a measured negative rather than "
+        "an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "tricuspid_regurgitation_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: tricuspid_regurgitation_value present, so a 0 in "
+        "tricuspid_regurgitation_moderate_or_greater_flag is a measured negative rather "
+        "than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "pulmonary_regurgitation_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: pulmonary_regurgitation_value present, so a 0 in "
+        "pulmonary_regurgitation_moderate_or_greater_flag is a measured negative rather "
+        "than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "rv_systolic_dysfunction_moderate_or_greater_flag_measured",
+        "boolean",
+        "Derived: rv_systolic_function_value present, so a 0 in "
+        "rv_systolic_dysfunction_moderate_or_greater_flag is a measured negative rather "
+        "than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "pericardial_effusion_moderate_large_flag_measured",
+        "boolean",
+        "Derived: pericardial_effusion_value present, so a 0 in "
+        "pericardial_effusion_moderate_large_flag is a measured negative rather than an "
+        "unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "pasp_gte_45_flag_measured",
+        "boolean",
+        "Derived: pasp_value present, so a 0 in pasp_gte_45_flag is a measured negative "
+        "rather than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "tr_max_gte_32_flag_measured",
+        "boolean",
+        "Derived: tr_max_velocity_value present, so a 0 in tr_max_gte_32_flag is a measured "
+        "negative rather than an unimaged one",
+        nullable=False,
+    ),
+    Field(
+        "aortic_stenosis_value",
+        "string",
+        "Aortic stenosis severity from the echo report; 'presumed none' (6,561 records) is "
+        "a report-parser inference, kept distinct from a measured 'none' (ordered "
+        "categorical)",
+        vocabulary=("presumed none", "none", "mild", "moderate", "severe"),
+    ),
+    Field(
+        "aortic_regurgitation_value",
+        "string",
+        "Aortic regurgitation severity; 'presumed none' is a parser inference distinct from "
+        "'none' (ordered categorical)",
+        vocabulary=("presumed none", "none", "mild", "moderate", "severe"),
+    ),
+    Field(
+        "mitral_regurgitation_value",
+        "string",
+        "Mitral regurgitation severity; 'presumed none' is a parser inference distinct from "
+        "'none' (ordered categorical)",
+        vocabulary=("presumed none", "none", "mild", "moderate", "severe"),
+    ),
+    Field(
+        "tricuspid_regurgitation_value",
+        "string",
+        "Tricuspid regurgitation severity; 'presumed none' is a parser inference distinct "
+        "from 'none' (ordered categorical)",
+        vocabulary=("presumed none", "none", "mild", "moderate", "severe"),
+    ),
+    Field(
+        "pulmonary_regurgitation_value",
+        "string",
+        "Pulmonary regurgitation severity; 'presumed none' is a parser inference distinct "
+        "from 'none' (ordered categorical)",
+        vocabulary=("presumed none", "none", "mild", "moderate", "severe"),
+    ),
+    Field(
+        "rv_systolic_function_value",
+        "string",
+        "Right-ventricular systolic function grade (ordered categorical)",
+        vocabulary=("normal", "mildly_reduced", "moderately_reduced", "severely_reduced"),
+    ),
+    Field(
+        "pericardial_effusion_value",
+        "string",
+        "Pericardial effusion size (ordered categorical)",
+        vocabulary=("none", "trace", "small", "moderate", "large"),
+    ),
+    Field(
+        "lvef_value",
+        "number",
+        "Left-ventricular ejection fraction; missing for 8,944 records",
+        unit="%",
+    ),
+    Field(
+        "ivs_measurement",
+        "number",
+        "Interventricular septum thickness",
+        unit="cm",
+    ),
+    Field(
+        "lvpw_measurement",
+        "number",
+        "LV posterior wall thickness",
+        unit="cm",
+    ),
+    Field(
+        "pasp_value",
+        "number",
+        "Pulmonary artery systolic pressure; missing for 43,424 records",
+        unit="mmHg",
+    ),
+    Field(
+        "tr_max_velocity_value",
+        "number",
+        "Peak tricuspid regurgitation velocity; missing for 54,996 records",
+        unit="m/s",
+    ),
+    Field(
+        "patient_key",
+        "string",
+        "De-identified patient key; the config's patient_id_column",
+        nullable=False,
+    ),
+    Field(
+        "age_at_ecg",
+        "integer",
+        "Age at the ECG",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Patient sex as shipped",
+    ),
+    Field(
+        "acquisition_year",
+        "integer",
+        "Year the ECG was acquired",
+        unit="year",
+    ),
+    Field(
+        "location_setting",
+        "string",
+        "Care setting the ECG was acquired in",
+    ),
+    Field(
+        "race_ethnicity",
+        "string",
+        "Race/ethnicity as shipped",
+    ),
+    Field(
+        "most_recent_ecg",
+        "integer",
+        "1 if this is the patient's most recent ECG in the release",
+        vocabulary=("0", "1"),
+    ),
+    Field(
+        "ventricular_rate",
+        "number",
+        "Machine-read ventricular rate",
+        unit="bpm",
+    ),
+    Field(
+        "atrial_rate",
+        "number",
+        "Machine-read atrial rate",
+        unit="bpm",
+    ),
+    Field(
+        "pr_interval",
+        "number",
+        "Machine-read PR interval",
+        unit="ms",
+    ),
+    Field(
+        "qrs_duration",
+        "number",
+        "Machine-read QRS duration",
+        unit="ms",
+    ),
+    Field(
+        "qt_corrected",
+        "number",
+        "Machine-read corrected QT",
+        unit="ms",
+    ),
+    Field(
+        "split",
+        "string",
+        "The release's own split; 17,457 'no_split' records are excluded from ECGBench's "
+        "partition",
+        vocabulary=("train", "val", "test", "no_split"),
+    ),
+)

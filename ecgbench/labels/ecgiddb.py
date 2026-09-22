@@ -82,6 +82,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -571,3 +573,261 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_id")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "subject_id",
+        "string",
+        "Person_NN directory, the label of this database: it was collected to identify who "
+        "produced a recording. Also the config's patient_id_column, so ECGBench's folds "
+        "group by subject and cannot be used for the identification task.",
+        nullable=False,
+        example="Person_01",
+    ),
+    Field(
+        "record_name",
+        "string",
+        "Bare record name, rec_N, numbered from 1 within every subject - so 'rec_1' names "
+        "90 different recordings",
+        nullable=False,
+    ),
+    Field(
+        "subject_number",
+        "integer",
+        "Trailing integer of subject_id, 1-90",
+        nullable=False,
+    ),
+    Field(
+        "record_number",
+        "integer",
+        "Trailing integer of record_name, 1-22",
+        nullable=False,
+    ),
+    Field(
+        "n_channels",
+        "integer",
+        "Channels in the header: 2, the raw Lead I and its filtered copy",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record: 10,000",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over the sampling rate: 20.0 s",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "number",
+        "Header sampling rate: 500 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_descriptions",
+        "string",
+        "Header channel names, pipe-separated: 'ECG I|ECG I filtered'",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "number",
+        "ADC gain of the first channel from the header: 200",
+        unit="adu/mV",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age from the '# Age:' header comment, 13-75; constant within a subject even across "
+        "156 days, so a subject attribute. NaN only if a header fails to parse (none do).",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the '# Sex:' header comment, lowercased as the release spells it; 44 men "
+        "and 46 women. Empty if absent.",
+        vocabulary=("male", "female", ""),
+        nullable=False,
+    ),
+    Field(
+        "ecg_date",
+        "date",
+        "Recording date from the '# ECG date:' comment as ISO YYYY-MM-DD. Only ten "
+        "acquisition days exist, 2004-12-07 to 2005-05-24, and 2005-05-12 holds 134 of the "
+        "310 records, so this is a session identifier as much as a date. Empty if unparsed.",
+        nullable=False,
+    ),
+    Field(
+        "ecg_date_raw",
+        "string",
+        "The date as written in the header, DD.MM.YYYY",
+        nullable=False,
+        example="07.12.2004",
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Annotations in the .atr: exactly 20 in all 310 files",
+        nullable=False,
+    ),
+    Field(
+        "n_r_peaks",
+        "integer",
+        "'N' R-peak annotations: 10 per record",
+        nullable=False,
+    ),
+    Field(
+        "n_t_peaks",
+        "integer",
+        "'t' T-peak annotations: 10 per record",
+        nullable=False,
+    ),
+    Field(
+        "annotation_source",
+        "string",
+        "Constant, from the shipped ANNOTATORS file: the marks come from an unaudited "
+        "automated detector, so this is not a beat-detection reference",
+        vocabulary=("unaudited automated detector",),
+        nullable=False,
+    ),
+    Field(
+        "first_annotation_sample",
+        "integer",
+        "Sample of the first annotation",
+    ),
+    Field(
+        "last_annotation_sample",
+        "integer",
+        "Sample of the last annotation, 2,542 to 5,869 of 10,000: the marks cover only the "
+        "first ten beats",
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "last_annotation_sample in seconds, 5.1 to 11.7 s",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "last_annotation_sample over the record length; only 18 records exceed 0.5",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last annotation that carry no mark",
+        unit="s",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "Mean heart rate over the RR intervals kept by RR_RANGE_SECS (0.3-2.0 s); an "
+        "estimate over ten machine-detected beats",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_used",
+        "integer",
+        "RR intervals inside RR_RANGE_SECS",
+        nullable=False,
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside RR_RANGE_SECS",
+        nullable=False,
+    ),
+    Field(
+        "mean_rt_interval_ms",
+        "number",
+        "Mean R-peak to following T-peak interval over the annotated beats",
+        unit="ms",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record path as listed in RECORDS, Person_NN/rec_N",
+        nullable=False,
+        example="Person_01/rec_1",
+    ),
+    Field(
+        "n_records_for_subject",
+        "integer",
+        "Records this subject contributed, 1 (Person_74) to 22 (Person_02) - the README's "
+        "'2 to 20' is wrong",
+        nullable=False,
+    ),
+    Field(
+        "n_sessions_for_subject",
+        "integer",
+        "Distinct ecg_date values for the subject; 70 of 90 subjects have 1",
+        nullable=False,
+    ),
+    Field(
+        "days_since_first_session",
+        "integer",
+        "Days between this record's date and the subject's first session",
+        unit="day",
+        nullable=False,
+    ),
+    Field(
+        "session_span_days",
+        "integer",
+        "Days between the subject's first and last sessions; 0 for single-session subjects, "
+        "156 for Person_02",
+        unit="day",
+        nullable=False,
+    ),
+    Field(
+        "session_index",
+        "integer",
+        "1-based rank of this record's date among the subject's sessions",
+        nullable=False,
+    ),
+    Field(
+        "is_multi_session",
+        "boolean",
+        "True for the 20 subjects recorded on more than one day - the only ones on whom the "
+        "longitudinal identification question rests",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Fold-construction label: sex and an age cut at 30 years",
+        vocabulary=(
+            "female_le30",
+            "female_gt30",
+            "male_le30",
+            "male_gt30",
+            "female_age_unknown",
+            "male_age_unknown",
+        ),
+        nullable=False,
+    ),
+)

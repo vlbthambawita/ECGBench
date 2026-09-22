@@ -101,6 +101,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -609,3 +611,350 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int(df["has_matching_pk"].sum()),
     )
     return df.set_index(config.record_id_column)
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "Subject identifier (USUBJID), also the raw/ directory name; 60 healthy volunteers",
+        nullable=False,
+        example="1001",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never "
+        "the median beat",
+        nullable=False,
+    ),
+    Field(
+        "median_beat_path",
+        "string",
+        "WFDB path of the derived 16-channel median beat for the same acquisition, "
+        "medians/<subject>/<uuid> (12 leads plus VCGMAG, X, Y, Z at 1 kHz). Exposed for "
+        "load_median_beat_fiducials; it gets no fold of its own.",
+        nullable=False,
+    ),
+    Field(
+        "study_id",
+        "string",
+        "STUDYID as shipped",
+        nullable=False,
+    ),
+    Field(
+        "treatment",
+        "string",
+        "Actual treatment of the period (TRTA): one of the seven drug regimens or placebo. "
+        "The stratification label. All subjects were healthy, so this is exposure, not "
+        "diagnosis.",
+        nullable=False,
+    ),
+    Field(
+        "planned_treatment",
+        "string",
+        "Planned treatment of the period (TRTP)",
+        nullable=False,
+    ),
+    Field(
+        "treatment_sequence",
+        "string",
+        "Randomised treatment sequence (TRTSEQA)",
+        nullable=False,
+    ),
+    Field(
+        "period",
+        "integer",
+        "Crossover period number (APERIOD)",
+        nullable=False,
+    ),
+    Field(
+        "period_label",
+        "string",
+        "Period label as shipped (APERIODC)",
+        nullable=False,
+    ),
+    Field(
+        "timepoint",
+        "string",
+        "Nominal timepoint label counted from the period's first dose (ATPT), e.g. '54 hrs' "
+        "- a different clock from nominal_hours_from_reference",
+        nullable=False,
+    ),
+    Field(
+        "timepoint_n",
+        "integer",
+        "Numeric timepoint code (ATPTN)",
+        nullable=False,
+    ),
+    Field(
+        "nominal_hours_from_reference",
+        "number",
+        "Nominal hours since that day's reference dose, the 'Morning fasted dose' (NRRLT). "
+        "A record on study day 3 reads timepoint '54 hrs' and 6 here.",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "actual_hours_from_reference",
+        "number",
+        "Actual hours since the reference dose (ARRLT)",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "acquisition_datetime",
+        "datetime",
+        "Acquisition date-time (ADTM)",
+        nullable=False,
+    ),
+    Field(
+        "study_day",
+        "integer",
+        "Study day (ADY)",
+        nullable=False,
+    ),
+    Field(
+        "period_day",
+        "integer",
+        "Day within the period (APERDAY)",
+        nullable=False,
+    ),
+    Field(
+        "used_for_baseline",
+        "boolean",
+        "AEGBLFL == 'Y': the record entered the study's baseline average",
+        nullable=False,
+    ),
+    Field(
+        "has_matching_pk",
+        "boolean",
+        "ECGPCFL == 'Y': a plasma sample was drawn at this timepoint",
+        nullable=False,
+    ),
+    Field(
+        "replicate_number",
+        "integer",
+        "Index within the triplicate (EGREPNUM), anchored on the HR row because in 4 "
+        "records the interval rows are numbered one apart",
+        nullable=False,
+    ),
+    Field(
+        "replicate_number_inconsistent",
+        "boolean",
+        "True for the 4 records whose 9 ADEG rows disagree on EGREPNUM",
+        nullable=False,
+    ),
+    Field(
+        "nominal_hours_from_period_start",
+        "number",
+        "timepoint parsed to a number (' hrs' stripped)",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "hr_bpm",
+        "number",
+        "Heart rate (ADEG PARAMCD HR); present for all 5,749 records",
+        unit="bpm",
+        nullable=False,
+    ),
+    Field(
+        "rr_ms",
+        "number",
+        "RR interval (PARAMCD RR); present for all 5,749 records",
+        unit="ms",
+        nullable=False,
+    ),
+    Field(
+        "pr_ms",
+        "number",
+        "PR interval (PARAMCD PR); missing for the 10 records where no P onset could be "
+        "annotated",
+        unit="ms",
+    ),
+    Field(
+        "qrs_ms",
+        "number",
+        "QRS duration (PARAMCD QRS); present for all 5,749 records",
+        unit="ms",
+        nullable=False,
+    ),
+    Field(
+        "qt_ms",
+        "number",
+        "QT interval (PARAMCD QT); missing for the 9 records with no T annotation",
+        unit="ms",
+    ),
+    Field(
+        "qtcf_ms",
+        "number",
+        "Fridericia-corrected QT (PARAMCD QTCF); missing for the 9 records with no T "
+        "annotation",
+        unit="ms",
+    ),
+    Field(
+        "jtpeak_ms",
+        "number",
+        "J point (QRS offset) to T peak (PARAMCD JTP); missing for 9 records",
+        unit="ms",
+    ),
+    Field(
+        "jtpeakc_ms",
+        "number",
+        "Rate-corrected J-Tpeak (PARAMCD JTPC), the study's own correction; missing for 9 "
+        "records",
+        unit="ms",
+    ),
+    Field(
+        "tpeak_tend_ms",
+        "number",
+        "T peak to T end (PARAMCD TPTE); missing for 9 records",
+        unit="ms",
+    ),
+    Field(
+        "plasma_ranolazine_ng_ml",
+        "number",
+        "Plasma ranolazine concentration at the record's timepoint (ADPC PARAMCD RAN), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_verapamil_ng_ml",
+        "number",
+        "Plasma verapamil concentration at the record's timepoint (ADPC PARAMCD VER), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_lopinavir_ng_ml",
+        "number",
+        "Plasma lopinavir concentration at the record's timepoint (ADPC PARAMCD LOP), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_ritonavir_ng_ml",
+        "number",
+        "Plasma ritonavir concentration at the record's timepoint (ADPC PARAMCD RIT), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_chloroquine_ng_ml",
+        "number",
+        "Plasma chloroquine concentration at the record's timepoint (ADPC PARAMCD CHL), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_diltiazem_ng_ml",
+        "number",
+        "Plasma diltiazem concentration at the record's timepoint (ADPC PARAMCD DIL), in "
+        "ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see "
+        "plasma_below_lloq); missing when no sample matches the timepoint.",
+        unit="ng/mL",
+    ),
+    Field(
+        "plasma_dofetilide_pg_ml",
+        "number",
+        "Plasma dofetilide concentration at the record's timepoint (ADPC PARAMCD DOF), in "
+        "pg/mL - pg/mL, a thousand times the scale of the other six analytes. 0 means below "
+        "the lower limit of quantification, not absent (see plasma_below_lloq); missing "
+        "when no sample matches the timepoint.",
+        unit="pg/mL",
+    ),
+    Field(
+        "plasma_below_lloq",
+        "string",
+        "Semicolon-joined ADPC analyte codes censored below the LLOQ for this record "
+        "(LLOQFL == 'Y'); empty when none. 263 of 1,934 samples. Filter on "
+        "plasma_any_below_lloq rather than on this string - a CSV round-trip reads the "
+        "empty string back as NaN.",
+        nullable=False,
+        example="DOF;RAN",
+    ),
+    Field(
+        "plasma_any_below_lloq",
+        "boolean",
+        "True when any analyte for this record's timepoint is a below-LLOQ zero",
+        nullable=False,
+    ),
+    Field(
+        "age_years",
+        "integer",
+        "Subject age (ADSL AGE)",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex (ADSL SEX)",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "race",
+        "string",
+        "Subject race (ADSL RACE), stripped of its leading space",
+        nullable=False,
+    ),
+    Field(
+        "ethnicity",
+        "string",
+        "Subject ethnicity (ADSL ETHNIC)",
+        nullable=False,
+    ),
+    Field(
+        "planned_arm",
+        "string",
+        "Planned randomisation arm (ADSL ARM)",
+        nullable=False,
+    ),
+    Field(
+        "actual_arm",
+        "string",
+        "Actual randomisation arm (ADSL ACTARM)",
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Height (ADDM HEIGHT)",
+        unit="cm",
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Weight (ADDM WEIGHT)",
+        unit="kg",
+    ),
+    Field(
+        "bmi_kg_m2",
+        "number",
+        "Body-mass index (ADDM BMI)",
+        unit="kg/m^2",
+    ),
+    Field(
+        "systolic_bp_mmhg",
+        "number",
+        "Systolic blood pressure (ADDM SYSBP)",
+        unit="mmHg",
+    ),
+    Field(
+        "diastolic_bp_mmhg",
+        "number",
+        "Diastolic blood pressure (ADDM DIABP)",
+        unit="mmHg",
+    ),
+)

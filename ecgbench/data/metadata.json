@@ -1,6 +1,6 @@
 {
- "built_at": "2026-09-22T10:29:45+00:00",
- "content_digest": "sha256:f82fbd09bb9aeb26b881283d6048ac19c1eaafa9dbabff0dce2cf072f137268a",
+ "built_at": "2026-09-22T14:13:14+00:00",
+ "content_digest": "sha256:c945b460f74534a2aa38d3c2953d7aa5fc3481cf18e1daa2e9088a70a41ac8d0",
  "datasets": [
   {
    "access": {
@@ -9274,7 +9274,309 @@
      "value": false
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Directory name of the recording device: the Philips TC30 reference electrocardiograph or one of four consumer smartwatches. Kept verbatim so paths stay traceable - the Apple directory says 'serie8' although the release names the Series 9.",
+     "example": null,
+     "name": "device",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "philips_tc30",
+      "applewatch_serie8",
+      "samsunggalaxy6",
+      "fitbitsense2",
+      "withingsscanwatch"
+     ]
+    },
+    {
+     "description": "The release's own name for the device; corrects the Apple directory and the Fitbit headers, all 181 of which mis-name the device as a Withings ScanWatch.",
+     "example": null,
+     "name": "device_model",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Apple Watch Series 9",
+      "Fitbit Sense 2",
+      "Philips TC30",
+      "Samsung Galaxy Watch 6",
+      "Withings ScanWatch"
+     ]
+    },
+    {
+     "description": "'reference' for the 195 Philips 12-lead records, 'smartwatch' for the other 720",
+     "example": null,
+     "name": "device_role",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "reference",
+      "smartwatch"
+     ]
+    },
+    {
+     "description": "What the stored channel physically is. Every smartwatch header names its channel 'II', but the watches record arm-to-arm lead I (LA-RA); only the Philips records hold a genuine standard 12-lead set. Filter on this before comparing morphology across devices.",
+     "example": null,
+     "name": "derivation",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "standard 12-lead",
+      "lead I (LA-RA)"
+     ]
+    },
+    {
+     "description": "Simulator setting the record was measured at, lowercased so Fitbit's upper-case 'ST-m1' directories join the other devices' 'st-m1'; 36 settings: amp500..amp2000, f30..f300 (15 rates), st-m1..st-m8, st-p1..st-p8 and sqr-2hz. The config's patient_id_column: folds group by setting, not by any person.",
+     "example": "st-m1",
+     "name": "setting_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The setting directory name as shipped, case preserved (Fitbit: 'ST-m1')",
+     "example": null,
+     "name": "setting_dir",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Experiment family the setting belongs to: R-amplitude, heart-rate, ST-segment or the 2 Hz square-wave test with no ECG parameter at all",
+     "example": null,
+     "name": "family",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "amp_test",
+      "freq_test",
+      "st-segment",
+      "sqr-2hz"
+     ]
+    },
+    {
+     "description": "Simulator heart-rate setting, 30-300 bpm over 15 settings; missing outside the freq_test family",
+     "example": null,
+     "name": "nominal_rate_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Simulator R-wave amplitude setting: 500, 1000, 1500 or 2000 uV; missing outside the amp_test family",
+     "example": null,
+     "name": "nominal_r_amplitude_uv",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "uV",
+     "vocabulary": [
+      "500",
+      "1000",
+      "1500",
+      "2000"
+     ]
+    },
+    {
+     "description": "Simulator ST-segment offset setting, -800 to +800 uV in 100 uV steps with no zero (st-m8..st-m1, st-p1..st-p8); missing outside the st-segment family",
+     "example": null,
+     "name": "nominal_st_offset_uv",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "uV",
+     "vocabulary": null
+    },
+    {
+     "description": "Repetition index from the record name suffix, 0-4 for the quintuplicate protocol; 5 marks the sixth acquisition that 17 settings carry",
+     "example": null,
+     "name": "replicate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record path relative to the version directory, without extension",
+     "example": "philips_tc30/amp_test/amp1000/amp1000_0",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Channels stored: 12 for the Philips reference, 1 for every smartwatch",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "1",
+      "12"
+     ]
+    },
+    {
+     "description": "Channel names as the header declares them, pipe-separated ('II' for every smartwatch record even though the channel is lead I)",
+     "example": null,
+     "name": "lead_names_stored",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate: 500 Hz Philips and Samsung, 512 Apple, 250 Fitbit, 300 Withings",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": [
+      "250",
+      "300",
+      "500",
+      "512"
+     ]
+    },
+    {
+     "description": "Samples per record as decoded: 5,500 Philips, 15,360 Apple (one record 13,968), 15,001 Samsung, 7,500 Fitbit, 9,000 Withings (six records 8,999). Lengths are not uniform, so a window in samples is not a window in time.",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over the sampling rate: 11.0 s Philips (not the 10 s the Methods state), 30 s Apple, Samsung and Withings, 30 s Fitbit",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Samples wfdb returned as NaN (WFDB invalid-sample marker): 1 for every Samsung record, 0 elsewhere",
+     "example": null,
+     "name": "nan_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "True when the only NaN is the record's final sample - all 179 Samsung Galaxy Watch 6 records, which end in digital -32768 and therefore fail check_nan_values and are absent from the clean version; window=(0, 15000) reads them without NaN",
+     "example": null,
+     "name": "trailing_invalid_sample",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Minimum finite sample value in millivolts. Every record was rescaled to fill int16, so the extremes are where the record's own range was mapped, not clipping.",
+     "example": null,
+     "name": "min_mv",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Maximum finite sample value in millivolts",
+     "example": null,
+     "name": "max_mv",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV",
+     "vocabulary": null
+    },
+    {
+     "description": "max_mv minus min_mv",
+     "example": null,
+     "name": "span_mv",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Variance of the first stored channel over finite samples",
+     "example": null,
+     "name": "variance_mv2",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV^2",
+     "vocabulary": null
+    },
+    {
+     "description": "First header comment line; every Fitbit header carries the erroneous 'Withings Scanwatch reading METRON PS-440 patient simulator', and Apple's say 'Serie 8'",
+     "example": null,
+     "name": "header_comment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "replicate >= 5: one of the 17 sixth acquisitions, kept because no two records in the release share a signal",
+     "example": null,
+     "name": "is_extra_replicate",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Fold-construction label: the experiment family",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "amp_test",
+      "freq_test",
+      "st-segment",
+      "sqr-2hz"
+     ]
+    }
+   ],
    "implementation_state": "config_labels",
    "name": "ECG-Capable Smartwatches Dataset",
    "origin_country": "Spain — Madrid",
@@ -9670,7 +9972,511 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Subject identifier (USUBJID), also the raw/ directory name; 60 healthy volunteers",
+     "example": "1001",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never the median beat",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB path of the derived 16-channel median beat for the same acquisition, medians/<subject>/<uuid> (12 leads plus VCGMAG, X, Y, Z at 1 kHz). Exposed for load_median_beat_fiducials; it gets no fold of its own.",
+     "example": null,
+     "name": "median_beat_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "STUDYID as shipped",
+     "example": null,
+     "name": "study_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Actual treatment of the period (TRTA): one of the seven drug regimens or placebo. The stratification label. All subjects were healthy, so this is exposure, not diagnosis.",
+     "example": null,
+     "name": "treatment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Planned treatment of the period (TRTP)",
+     "example": null,
+     "name": "planned_treatment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Randomised treatment sequence (TRTSEQA)",
+     "example": null,
+     "name": "treatment_sequence",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Crossover period number (APERIOD)",
+     "example": null,
+     "name": "period",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Period label as shipped (APERIODC)",
+     "example": null,
+     "name": "period_label",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Nominal timepoint label counted from the period's first dose (ATPT), e.g. '54 hrs' - a different clock from nominal_hours_from_reference",
+     "example": null,
+     "name": "timepoint",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Numeric timepoint code (ATPTN)",
+     "example": null,
+     "name": "timepoint_n",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Nominal hours since that day's reference dose, the 'Morning fasted dose' (NRRLT). A record on study day 3 reads timepoint '54 hrs' and 6 here.",
+     "example": null,
+     "name": "nominal_hours_from_reference",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "Actual hours since the reference dose (ARRLT)",
+     "example": null,
+     "name": "actual_hours_from_reference",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "Acquisition date-time (ADTM)",
+     "example": null,
+     "name": "acquisition_datetime",
+     "nullable": false,
+     "source": "labels",
+     "type": "datetime",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Study day (ADY)",
+     "example": null,
+     "name": "study_day",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Day within the period (APERDAY)",
+     "example": null,
+     "name": "period_day",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AEGBLFL == 'Y': the record entered the study's baseline average",
+     "example": null,
+     "name": "used_for_baseline",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ECGPCFL == 'Y': a plasma sample was drawn at this timepoint",
+     "example": null,
+     "name": "has_matching_pk",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Index within the triplicate (EGREPNUM), anchored on the HR row because in 4 records the interval rows are numbered one apart",
+     "example": null,
+     "name": "replicate_number",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "True for the 4 records whose 9 ADEG rows disagree on EGREPNUM",
+     "example": null,
+     "name": "replicate_number_inconsistent",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "timepoint parsed to a number (' hrs' stripped)",
+     "example": null,
+     "name": "nominal_hours_from_period_start",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "Heart rate (ADEG PARAMCD HR); present for all 5,749 records",
+     "example": null,
+     "name": "hr_bpm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "RR interval (PARAMCD RR); present for all 5,749 records",
+     "example": null,
+     "name": "rr_ms",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "PR interval (PARAMCD PR); missing for the 10 records where no P onset could be annotated",
+     "example": null,
+     "name": "pr_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS duration (PARAMCD QRS); present for all 5,749 records",
+     "example": null,
+     "name": "qrs_ms",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QT interval (PARAMCD QT); missing for the 9 records with no T annotation",
+     "example": null,
+     "name": "qt_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Fridericia-corrected QT (PARAMCD QTCF); missing for the 9 records with no T annotation",
+     "example": null,
+     "name": "qtcf_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "J point (QRS offset) to T peak (PARAMCD JTP); missing for 9 records",
+     "example": null,
+     "name": "jtpeak_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Rate-corrected J-Tpeak (PARAMCD JTPC), the study's own correction; missing for 9 records",
+     "example": null,
+     "name": "jtpeakc_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T peak to T end (PARAMCD TPTE); missing for 9 records",
+     "example": null,
+     "name": "tpeak_tend_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma ranolazine concentration at the record's timepoint (ADPC PARAMCD RAN), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_ranolazine_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma verapamil concentration at the record's timepoint (ADPC PARAMCD VER), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_verapamil_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma lopinavir concentration at the record's timepoint (ADPC PARAMCD LOP), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_lopinavir_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma ritonavir concentration at the record's timepoint (ADPC PARAMCD RIT), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_ritonavir_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma chloroquine concentration at the record's timepoint (ADPC PARAMCD CHL), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_chloroquine_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma diltiazem concentration at the record's timepoint (ADPC PARAMCD DIL), in ng/mL - ng/mL. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_diltiazem_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma dofetilide concentration at the record's timepoint (ADPC PARAMCD DOF), in pg/mL - pg/mL, a thousand times the scale of the other six analytes. 0 means below the lower limit of quantification, not absent (see plasma_below_lloq); missing when no sample matches the timepoint.",
+     "example": null,
+     "name": "plasma_dofetilide_pg_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "pg/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Semicolon-joined ADPC analyte codes censored below the LLOQ for this record (LLOQFL == 'Y'); empty when none. 263 of 1,934 samples. Filter on plasma_any_below_lloq rather than on this string - a CSV round-trip reads the empty string back as NaN.",
+     "example": "DOF;RAN",
+     "name": "plasma_below_lloq",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "True when any analyte for this record's timepoint is a below-LLOQ zero",
+     "example": null,
+     "name": "plasma_any_below_lloq",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject age (ADSL AGE)",
+     "example": null,
+     "name": "age_years",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Subject sex (ADSL SEX)",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Subject race (ADSL RACE), stripped of its leading space",
+     "example": null,
+     "name": "race",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject ethnicity (ADSL ETHNIC)",
+     "example": null,
+     "name": "ethnicity",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Planned randomisation arm (ADSL ARM)",
+     "example": null,
+     "name": "planned_arm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Actual randomisation arm (ADSL ACTARM)",
+     "example": null,
+     "name": "actual_arm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Height (ADDM HEIGHT)",
+     "example": null,
+     "name": "height_cm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight (ADDM WEIGHT)",
+     "example": null,
+     "name": "weight_kg",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Body-mass index (ADDM BMI)",
+     "example": null,
+     "name": "bmi_kg_m2",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg/m^2",
+     "vocabulary": null
+    },
+    {
+     "description": "Systolic blood pressure (ADDM SYSBP)",
+     "example": null,
+     "name": "systolic_bp_mmhg",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Diastolic blood pressure (ADDM DIABP)",
+     "example": null,
+     "name": "diastolic_bp_mmhg",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "CiPA ECG Validation Study",
    "origin_country": "USA",
@@ -10076,7 +10882,397 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "BASELINE == 'Y': one of the three pre-dose records (timepoint_hours == -0.5) of the subject-period, whose mean is the baseline that load_baseline_deltas subtracts",
+     "example": null,
+     "name": "is_baseline",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject identifier (RANDID), string throughout because it is also the raw/ directory name; 22 healthy volunteers",
+     "example": "1001",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Randomised arm sequence (ARMCD), dash-separated arm codes A-E in period order",
+     "example": null,
+     "name": "treatment_sequence",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Visit label (VISIT), 'PERIOD-<n>-DOSING'",
+     "example": "PERIOD-1-DOSING",
+     "name": "period_label",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Nominal hours since the period's dose (TPT); -0.5 is pre-dose",
+     "example": null,
+     "name": "timepoint_hours",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "RR interval from the raw rhythm strip; complete for all 4,211 records",
+     "example": null,
+     "name": "rr_ms",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "PR interval measured on the median beat",
+     "example": null,
+     "name": "pr_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS duration on the median beat; NA for the 9 records with no QRS-offset annotation",
+     "example": null,
+     "name": "qrs_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QT interval on the median beat; complete for all 4,211 records",
+     "example": null,
+     "name": "qt_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "J point (QRS offset) to T peak on the median beat; NA for the 9 records with no QRS-offset annotation",
+     "example": null,
+     "name": "jtpeak_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T peak to T end on the median beat; complete for all 4,211 records",
+     "example": null,
+     "name": "tpeak_tend_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Tpeak to secondary T peak (TPEAKTPEAKP): documented, but empty in all 4,211 rows of v1.0.0 and no .atr marks a secondary peak - exposed so the absence is visible (ALWAYS_EMPTY_COLUMNS)",
+     "example": null,
+     "name": "tpeak_tpeakp_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Early repolarisation duration at 30% (ERD_30)",
+     "example": null,
+     "name": "erd_30_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Late repolarisation duration at 30% (LRD_30)",
+     "example": null,
+     "name": "lrd_30_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave amplitude on the median beat's vector-magnitude lead, in microvolts while the waveforms are millivolts",
+     "example": null,
+     "name": "twave_amplitude_uv",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "uV",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave asymmetry index on the vector-magnitude lead (dimensionless)",
+     "example": null,
+     "name": "twave_asymmetry",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave flatness index on the vector-magnitude lead (dimensionless)",
+     "example": null,
+     "name": "twave_flatness",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject sex (SEX)",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Subject age (AGE)",
+     "example": null,
+     "name": "age_years",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Height (HGHT)",
+     "example": null,
+     "name": "height_cm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight (WGHT)",
+     "example": null,
+     "name": "weight_kg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Systolic blood pressure (SYSBP)",
+     "example": null,
+     "name": "systolic_bp_mmhg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Diastolic blood pressure (DIABP)",
+     "example": null,
+     "name": "diastolic_bp_mmhg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Subject race (RACE)",
+     "example": null,
+     "name": "race",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject ethnicity (ETHNIC)",
+     "example": null,
+     "name": "ethnicity",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Randomisation arm of the whole period (TRTA), not the drug in the blood: within a period the agents were staged hours apart, so a 'Mexiletine + Dofetilide' record at 2 h is mexiletine-only. Train on the plasma_* columns or on treatment crossed with timepoint_hours, never on treatment alone. Stratification label.",
+     "example": null,
+     "name": "treatment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Dofetilide",
+      "Lidocaine + Dofetilide",
+      "Mexiletine + Dofetilide",
+      "Moxifloxacin + Diltiazem",
+      "Placebo"
+     ]
+    },
+    {
+     "description": "Plasma dofetilide concentration (source column DOF), in pg/mL, a thousand times the scale of the other five analytes. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_dofetilide_pg_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "pg/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma lidocaine concentration (source column LIDO), in ng/mL. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_lidocaine_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma mexiletine concentration (source column MEXI), in ng/mL. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_mexiletine_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma moxifloxacin concentration (source column MOXI), in ng/mL. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_moxifloxacin_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma moxifloxacin M2 metabolite concentration (source column MOXI.M2), in ng/mL. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_moxifloxacin_m2_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "Plasma diltiazem concentration (source column DILT), in ng/mL. NA means not dosed, not drawn or below quantification - the release does not distinguish them and nothing is 0.",
+     "example": null,
+     "name": "plasma_diltiazem_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never the median beat",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB path of the derived 16-channel median beat, medians/<subject>/<uuid> (12 leads plus VCGMAG, vx, vy, vz at 1 kHz). It gets no fold of its own.",
+     "example": null,
+     "name": "median_beat_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Crossover period 1-5, parsed from period_label",
+     "example": null,
+     "name": "period",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: 60000 / rr_ms; the release ships no heart rate (observed 42-105 bpm)",
+     "example": null,
+     "name": "hr_bpm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Derived Fridericia correction, qt_ms / cbrt(rr_ms / 1000); the release ships no corrected QT (observed 353.7-499.1 ms against an uncorrected 288-522). No rate-corrected J-Tpeak is provided - the study's fitted exponent is in the paper.",
+     "example": null,
+     "name": "qtcf_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "False for the 3 records whose median-beat header is corrupt (a channel's .dat filename has gain digits spliced in) and raises IndexError in wfdb.rdrecord; their raw/ records are intact (MEDIAN_HEADER_CORRUPT)",
+     "example": null,
+     "name": "median_beat_readable",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)",
    "origin_country": "USA",
@@ -10482,7 +11678,391 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Person_NN directory, the label of this database: it was collected to identify who produced a recording. Also the config's patient_id_column, so ECGBench's folds group by subject and cannot be used for the identification task.",
+     "example": "Person_01",
+     "name": "subject_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Bare record name, rec_N, numbered from 1 within every subject - so 'rec_1' names 90 different recordings",
+     "example": null,
+     "name": "record_name",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Trailing integer of subject_id, 1-90",
+     "example": null,
+     "name": "subject_number",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Trailing integer of record_name, 1-22",
+     "example": null,
+     "name": "record_number",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Channels in the header: 2, the raw Lead I and its filtered copy",
+     "example": null,
+     "name": "n_channels",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples per record: 10,000",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over the sampling rate: 20.0 s",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate: 500 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Header channel names, pipe-separated: 'ECG I|ECG I filtered'",
+     "example": null,
+     "name": "signal_descriptions",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ADC gain of the first channel from the header: 200",
+     "example": null,
+     "name": "adc_gain",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "adu/mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Age from the '# Age:' header comment, 13-75; constant within a subject even across 156 days, so a subject attribute. NaN only if a header fails to parse (none do).",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex from the '# Sex:' header comment, lowercased as the release spells it; 44 men and 46 women. Empty if absent.",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "male",
+      "female",
+      ""
+     ]
+    },
+    {
+     "description": "Recording date from the '# ECG date:' comment as ISO YYYY-MM-DD. Only ten acquisition days exist, 2004-12-07 to 2005-05-24, and 2005-05-12 holds 134 of the 310 records, so this is a session identifier as much as a date. Empty if unparsed.",
+     "example": null,
+     "name": "ecg_date",
+     "nullable": false,
+     "source": "labels",
+     "type": "date",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The date as written in the header, DD.MM.YYYY",
+     "example": "07.12.2004",
+     "name": "ecg_date_raw",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Annotations in the .atr: exactly 20 in all 310 files",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'N' R-peak annotations: 10 per record",
+     "example": null,
+     "name": "n_r_peaks",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'t' T-peak annotations: 10 per record",
+     "example": null,
+     "name": "n_t_peaks",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Constant, from the shipped ANNOTATORS file: the marks come from an unaudited automated detector, so this is not a beat-detection reference",
+     "example": null,
+     "name": "annotation_source",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "unaudited automated detector"
+     ]
+    },
+    {
+     "description": "Sample of the first annotation",
+     "example": null,
+     "name": "first_annotation_sample",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sample of the last annotation, 2,542 to 5,869 of 10,000: the marks cover only the first ten beats",
+     "example": null,
+     "name": "last_annotation_sample",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "last_annotation_sample in seconds, 5.1 to 11.7 s",
+     "example": null,
+     "name": "annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "last_annotation_sample over the record length; only 18 records exceed 0.5",
+     "example": null,
+     "name": "annotated_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last annotation that carry no mark",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Mean heart rate over the RR intervals kept by RR_RANGE_SECS (0.3-2.0 s); an estimate over ten machine-detected beats",
+     "example": null,
+     "name": "mean_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Standard deviation of the kept RR intervals",
+     "example": null,
+     "name": "sdnn_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Root mean square of successive RR differences",
+     "example": null,
+     "name": "rmssd_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "RR intervals inside RR_RANGE_SECS",
+     "example": null,
+     "name": "n_rr_used",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "RR intervals outside RR_RANGE_SECS",
+     "example": null,
+     "name": "n_rr_rejected",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Mean R-peak to following T-peak interval over the annotated beats",
+     "example": null,
+     "name": "mean_rt_interval_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record path as listed in RECORDS, Person_NN/rec_N",
+     "example": "Person_01/rec_1",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Records this subject contributed, 1 (Person_74) to 22 (Person_02) - the README's '2 to 20' is wrong",
+     "example": null,
+     "name": "n_records_for_subject",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Distinct ecg_date values for the subject; 70 of 90 subjects have 1",
+     "example": null,
+     "name": "n_sessions_for_subject",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Days between this record's date and the subject's first session",
+     "example": null,
+     "name": "days_since_first_session",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "day",
+     "vocabulary": null
+    },
+    {
+     "description": "Days between the subject's first and last sessions; 0 for single-session subjects, 156 for Person_02",
+     "example": null,
+     "name": "session_span_days",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "day",
+     "vocabulary": null
+    },
+    {
+     "description": "1-based rank of this record's date among the subject's sessions",
+     "example": null,
+     "name": "session_index",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "True for the 20 subjects recorded on more than one day - the only ones on whom the longitudinal identification question rests",
+     "example": null,
+     "name": "is_multi_session",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Fold-construction label: sex and an age cut at 30 years",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "female_le30",
+      "female_gt30",
+      "male_le30",
+      "male_gt30",
+      "female_age_unknown",
+      "male_age_unknown"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "ECG-ID Database",
    "origin_country": "Russia — St. Petersburg",
@@ -10861,7 +12441,418 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "BASELINE == 'Y': one of the three pre-dose records (timepoint_hours == -0.5) of the subject-period, whose mean is the baseline that load_baseline_deltas subtracts",
+     "example": null,
+     "name": "is_baseline",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject identifier (RANDID), string throughout because it is also the raw/ directory name; 22 healthy volunteers",
+     "example": "1001",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Randomised arm sequence (ARMCD), comma-separated arm codes A-E in period order",
+     "example": null,
+     "name": "treatment_sequence",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Visit label (VISIT), 'PERIOD-<n>-DOSING'",
+     "example": "PERIOD-1-DOSING",
+     "name": "period_label",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Nominal hours since the period's dose (TPT); -0.5 is pre-dose",
+     "example": null,
+     "name": "timepoint_hours",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "RR interval from the raw rhythm strip; complete for all 5,232 records",
+     "example": null,
+     "name": "rr_ms",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "PR interval on the median beat; NA for the 9 records with no median beat. Two records shipped as -4294966951 and -4294966972 (a 32-bit wrap when the P onset fell before the median-beat window) are repaired by adding 2^32 to 345 and 324 ms; see pr_ms_repaired.",
+     "example": null,
+     "name": "pr_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS duration on the median beat; NA for the 9 records with no published median beat",
+     "example": null,
+     "name": "qrs_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QT interval on the median beat; NA for 13 records: the 9 with no median beat plus 4 quinidine records of subject 1004 whose flattened T wave has no end mark",
+     "example": null,
+     "name": "qt_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "J point (QRS offset) to T peak on the median beat; NA for the 9 records with no published median beat",
+     "example": null,
+     "name": "jtpeak_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T peak to T end on the median beat; NA for 13 records: the 9 with no median beat plus 4 quinidine records of subject 1004 whose flattened T wave has no end mark",
+     "example": null,
+     "name": "tpeak_tend_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Tpeak to secondary T peak (TPEAKTPEAKP); populated for 42 records (40 quinidine, 2 dofetilide) each marked by a second 't' in the .atr - unlike ECGDMMLD, where the same column is empty",
+     "example": null,
+     "name": "tpeak_tpeakp_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Early repolarisation duration at 30% (ERD_30)",
+     "example": null,
+     "name": "erd_30_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Late repolarisation duration at 30% (LRD_30)",
+     "example": null,
+     "name": "lrd_30_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave amplitude on the median beat's vector-magnitude lead, in microvolts while the waveforms are millivolts",
+     "example": null,
+     "name": "twave_amplitude_uv",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "uV",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave asymmetry index on the vector-magnitude lead (dimensionless)",
+     "example": null,
+     "name": "twave_asymmetry",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave flatness index on the vector-magnitude lead (dimensionless)",
+     "example": null,
+     "name": "twave_flatness",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject sex (SEX)",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Subject age (AGE)",
+     "example": null,
+     "name": "age_years",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Height (HGHT)",
+     "example": null,
+     "name": "height_cm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight (WGHT)",
+     "example": null,
+     "name": "weight_kg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Systolic blood pressure (SYSBP)",
+     "example": null,
+     "name": "systolic_bp_mmhg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Diastolic blood pressure (DIABP)",
+     "example": null,
+     "name": "diastolic_bp_mmhg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Subject race (RACE)",
+     "example": null,
+     "name": "race",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject ethnicity (ETHNIC)",
+     "example": null,
+     "name": "ethnicity",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Treatment of the period (EXTRT). Each period administered a single agent, so this names both the randomisation arm and the drug on board - usable, unlike ECGDMMLD's. The 327 pre-dose records (is_baseline) carry it while containing no drug. Stratification label.",
+     "example": null,
+     "name": "treatment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Ranolazine",
+      "Dofetilide",
+      "Verapamil HCL",
+      "Quinidine Sulph",
+      "Placebo"
+     ]
+    },
+    {
+     "description": "Dose administered (EXDOSE): 500 for dofetilide, 400-1500 for the others - in different units, see dose_unit; never compare without it",
+     "example": null,
+     "name": "dose",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unit of dose (EXDOSU): 'ug' for dofetilide, 'mg' otherwise",
+     "example": null,
+     "name": "dose_unit",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "ug",
+      "mg"
+     ]
+    },
+    {
+     "description": "Analyte measured at this timepoint (PCTEST); one per record because each period dosed one agent. NA when nothing was dosed or drawn.",
+     "example": null,
+     "name": "plasma_analyte",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Dofetilide",
+      "Quinidine",
+      "Ranolazine",
+      "Verapamil"
+     ]
+    },
+    {
+     "description": "Plasma concentration as shipped (PCSTRESN), in the unit of plasma_concentration_unit - pg/mL for dofetilide, ng/mL for the rest, so pooling across treatments is a 1000x error. NA means not dosed, not drawn or below quantification; nothing is 0.",
+     "example": null,
+     "name": "plasma_concentration",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unit of plasma_concentration (PCSTRESU)",
+     "example": null,
+     "name": "plasma_concentration_unit",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "pg/mL",
+      "ng/mL"
+     ]
+    },
+    {
+     "description": "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never the median beat",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB path of the derived 16-channel median beat, medians/<subject>/<uuid> (12 leads plus VCGMAG, vx, vy, vz at 1 kHz). It gets no fold of its own.",
+     "example": null,
+     "name": "median_beat_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Crossover period 1-5, parsed from period_label",
+     "example": null,
+     "name": "period",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: 60000 / rr_ms; the release ships no heart rate (observed 43-115 bpm)",
+     "example": null,
+     "name": "hr_bpm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Derived Fridericia correction, qt_ms / cbrt(rr_ms / 1000); the release ships no corrected QT (observed 338.6-563.2 ms against an uncorrected 325-579). No rate-corrected J-Tpeak is provided - the study's fitted exponent is in the paper.",
+     "example": null,
+     "name": "qtcf_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "True for the 2 records (subject 1007, verapamil, 1.0 h) whose shipped PR had wrapped past -1e6 and was repaired by adding 2^32",
+     "example": null,
+     "name": "pr_ms_repaired",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: plasma_concentration with the pg/mL dofetilide rows divided by 1000, so all four analytes share one scale",
+     "example": null,
+     "name": "plasma_concentration_ng_ml",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ng/mL",
+     "vocabulary": null
+    },
+    {
+     "description": "False for the 9 records whose median beat was never published although their intervals were measured from it (MEDIAN_BEAT_MISSING); their raw/ records are intact",
+     "example": null,
+     "name": "median_beat_available",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "ECG Effects of Ranolazine, Dofetilide, Verapamil, Quinidine (ECGRDVQ)",
    "origin_country": "USA",
@@ -11265,7 +13256,573 @@
      "value": false
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Echo finding: LVEF <= 45%, thresholded from lvef_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. Unmeasured for 8,944 records, all of which read 0. Mask on lvef_lte_45_flag_measured.",
+     "example": null,
+     "name": "lvef_lte_45_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: LV wall thickness >= 13 mm (IVS or LVPW), thresholded from ivs_measurement, lvpw_measurement. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on lvwt_gte_13_flag_measured.",
+     "example": null,
+     "name": "lvwt_gte_13_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: aortic stenosis moderate or greater, thresholded from aortic_stenosis_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on aortic_stenosis_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "aortic_stenosis_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: aortic regurgitation moderate or greater, thresholded from aortic_regurgitation_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on aortic_regurgitation_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "aortic_regurgitation_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: mitral regurgitation moderate or greater, thresholded from mitral_regurgitation_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on mitral_regurgitation_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "mitral_regurgitation_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: tricuspid regurgitation moderate or greater, thresholded from tricuspid_regurgitation_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on tricuspid_regurgitation_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "tricuspid_regurgitation_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: pulmonary regurgitation moderate or greater, thresholded from pulmonary_regurgitation_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on pulmonary_regurgitation_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "pulmonary_regurgitation_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: RV systolic dysfunction moderate or greater, thresholded from rv_systolic_function_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. 0 is also what an unmeasured record reads. Mask on rv_systolic_dysfunction_moderate_or_greater_flag_measured.",
+     "example": null,
+     "name": "rv_systolic_dysfunction_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: pericardial effusion moderate or large, thresholded from pericardial_effusion_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. Unmeasured for 11,823 records, all of which read 0. Mask on pericardial_effusion_moderate_large_flag_measured.",
+     "example": null,
+     "name": "pericardial_effusion_moderate_large_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: pulmonary artery systolic pressure >= 45 mmHg, thresholded from pasp_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. Unmeasured for 43,424 records, all of which read 0. Mask on pasp_gte_45_flag_measured.",
+     "example": null,
+     "name": "pasp_gte_45_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Echo finding: peak tricuspid regurgitation velocity >= 3.2 m/s, thresholded from tr_max_velocity_value. 0/1 with no nulls, but a missing measurement is recorded as 0, not as missing. Unmeasured for 54,996 records, all of which read 0. Mask on tr_max_gte_32_flag_measured.",
+     "example": null,
+     "name": "tr_max_gte_32_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Structural heart disease moderate or greater: the composite of the other eleven flags that the dataset is built around, and the config's label column. No single measurement behind it, so no _measured companion.",
+     "example": null,
+     "name": "shd_moderate_or_greater_flag",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Derived: lvef_value present, so a 0 in lvef_lte_45_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "lvef_lte_45_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: ivs_measurement and lvpw_measurement present, so a 0 in lvwt_gte_13_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "lvwt_gte_13_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: aortic_stenosis_value present, so a 0 in aortic_stenosis_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "aortic_stenosis_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: aortic_regurgitation_value present, so a 0 in aortic_regurgitation_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "aortic_regurgitation_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: mitral_regurgitation_value present, so a 0 in mitral_regurgitation_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "mitral_regurgitation_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: tricuspid_regurgitation_value present, so a 0 in tricuspid_regurgitation_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "tricuspid_regurgitation_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: pulmonary_regurgitation_value present, so a 0 in pulmonary_regurgitation_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "pulmonary_regurgitation_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: rv_systolic_function_value present, so a 0 in rv_systolic_dysfunction_moderate_or_greater_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "rv_systolic_dysfunction_moderate_or_greater_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: pericardial_effusion_value present, so a 0 in pericardial_effusion_moderate_large_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "pericardial_effusion_moderate_large_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: pasp_value present, so a 0 in pasp_gte_45_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "pasp_gte_45_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived: tr_max_velocity_value present, so a 0 in tr_max_gte_32_flag is a measured negative rather than an unimaged one",
+     "example": null,
+     "name": "tr_max_gte_32_flag_measured",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Aortic stenosis severity from the echo report; 'presumed none' (6,561 records) is a report-parser inference, kept distinct from a measured 'none' (ordered categorical)",
+     "example": null,
+     "name": "aortic_stenosis_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "presumed none",
+      "none",
+      "mild",
+      "moderate",
+      "severe"
+     ]
+    },
+    {
+     "description": "Aortic regurgitation severity; 'presumed none' is a parser inference distinct from 'none' (ordered categorical)",
+     "example": null,
+     "name": "aortic_regurgitation_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "presumed none",
+      "none",
+      "mild",
+      "moderate",
+      "severe"
+     ]
+    },
+    {
+     "description": "Mitral regurgitation severity; 'presumed none' is a parser inference distinct from 'none' (ordered categorical)",
+     "example": null,
+     "name": "mitral_regurgitation_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "presumed none",
+      "none",
+      "mild",
+      "moderate",
+      "severe"
+     ]
+    },
+    {
+     "description": "Tricuspid regurgitation severity; 'presumed none' is a parser inference distinct from 'none' (ordered categorical)",
+     "example": null,
+     "name": "tricuspid_regurgitation_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "presumed none",
+      "none",
+      "mild",
+      "moderate",
+      "severe"
+     ]
+    },
+    {
+     "description": "Pulmonary regurgitation severity; 'presumed none' is a parser inference distinct from 'none' (ordered categorical)",
+     "example": null,
+     "name": "pulmonary_regurgitation_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "presumed none",
+      "none",
+      "mild",
+      "moderate",
+      "severe"
+     ]
+    },
+    {
+     "description": "Right-ventricular systolic function grade (ordered categorical)",
+     "example": null,
+     "name": "rv_systolic_function_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "normal",
+      "mildly_reduced",
+      "moderately_reduced",
+      "severely_reduced"
+     ]
+    },
+    {
+     "description": "Pericardial effusion size (ordered categorical)",
+     "example": null,
+     "name": "pericardial_effusion_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "none",
+      "trace",
+      "small",
+      "moderate",
+      "large"
+     ]
+    },
+    {
+     "description": "Left-ventricular ejection fraction; missing for 8,944 records",
+     "example": null,
+     "name": "lvef_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "%",
+     "vocabulary": null
+    },
+    {
+     "description": "Interventricular septum thickness",
+     "example": null,
+     "name": "ivs_measurement",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "LV posterior wall thickness",
+     "example": null,
+     "name": "lvpw_measurement",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Pulmonary artery systolic pressure; missing for 43,424 records",
+     "example": null,
+     "name": "pasp_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mmHg",
+     "vocabulary": null
+    },
+    {
+     "description": "Peak tricuspid regurgitation velocity; missing for 54,996 records",
+     "example": null,
+     "name": "tr_max_velocity_value",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "m/s",
+     "vocabulary": null
+    },
+    {
+     "description": "De-identified patient key; the config's patient_id_column",
+     "example": null,
+     "name": "patient_key",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age at the ECG",
+     "example": null,
+     "name": "age_at_ecg",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Patient sex as shipped",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Year the ECG was acquired",
+     "example": null,
+     "name": "acquisition_year",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Care setting the ECG was acquired in",
+     "example": null,
+     "name": "location_setting",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Race/ethnicity as shipped",
+     "example": null,
+     "name": "race_ethnicity",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "1 if this is the patient's most recent ECG in the release",
+     "example": null,
+     "name": "most_recent_ecg",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Machine-read ventricular rate",
+     "example": null,
+     "name": "ventricular_rate",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Machine-read atrial rate",
+     "example": null,
+     "name": "atrial_rate",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Machine-read PR interval",
+     "example": null,
+     "name": "pr_interval",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Machine-read QRS duration",
+     "example": null,
+     "name": "qrs_duration",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Machine-read corrected QT",
+     "example": null,
+     "name": "qt_corrected",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "The release's own split; 17,457 'no_split' records are excluded from ECGBench's partition",
+     "example": null,
+     "name": "split",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "train",
+      "val",
+      "test",
+      "no_split"
+     ]
+    }
+   ],
    "implementation_state": "config_labels",
    "name": "EchoNext",
    "origin_country": "USA — New York, NY",
@@ -11655,7 +14212,952 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Subject age from the '#Age:' header line, 30-84; NaN for e0166 and e0418 whose header says '-'",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Subject sex from the header; 70 men, 8 women, empty when missing",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F",
+      ""
+     ]
+    },
+    {
+     "description": "Holter recorder model from the '#Recorder type:' line, one of ten; recorder-specific artefact is a real confounder. Empty when absent.",
+     "example": "ICR 7200",
+     "name": "recorder_type",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Pipe-joined lowercased drug names from the '#Medications:' line, with the release's 'nidefipine' corrected to nifedipine; empty when none",
+     "example": "nitrates|diltiazem",
+     "name": "medications",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Angina classification parsed from the clinical findings; empty when no angina line",
+     "example": null,
+     "name": "angina_type",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "",
+      "resting",
+      "mixed",
+      "effort",
+      "unspecified"
+     ]
+    },
+    {
+     "description": "A myocardial infarction line appears in the header findings",
+     "example": null,
+     "name": "myocardial_infarction",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Infarct location parsed from the findings; empty when none",
+     "example": null,
+     "name": "mi_location",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "",
+      "unspecified",
+      "inferior",
+      "anterior",
+      "infero-lateral",
+      "non-Q"
+     ]
+    },
+    {
+     "description": "From '<n>-vessel disease'; 0 when the findings state normal coronary arteries; NaN when the header says neither",
+     "example": null,
+     "name": "n_diseased_vessels",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Pipe-joined uppercased vessel names from the parenthesis after '<n>-vessel disease'; empty when none named",
+     "example": "RCA|LAD",
+     "name": "diseased_vessels",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Left main stem disease named in the findings",
+     "example": null,
+     "name": "lca_main_stem",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The findings state normal coronary arteries or no coronary artery disease",
+     "example": null,
+     "name": "normal_coronary_arteries",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "False only when the header says no coronary angiography was performed; True otherwise, including when it is not mentioned",
+     "example": null,
+     "name": "coronary_angiography",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Hypertension named in the findings",
+     "example": null,
+     "name": "hypertension",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "A bypass graft named in the findings",
+     "example": null,
+     "name": "bypass_graft",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Pipe-joined header finding lines matched by none of the parsers; empty when none",
+     "example": null,
+     "name": "other_findings",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Every clinical header comment line verbatim, pipe-joined - the text the other header columns were parsed from",
+     "example": null,
+     "name": "clinical_findings",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The two leads this record stores, pipe-separated, from the header signal lines. Fifteen orderings of eleven lead pairs across the release; no lead is present in all 90 records.",
+     "example": "V4|MLIII",
+     "name": "lead_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'N' (normal beat)",
+     "example": null,
+     "name": "beat_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'V' (premature ventricular contraction)",
+     "example": null,
+     "name": "beat_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'S' (supraventricular premature or ectopic beat)",
+     "example": null,
+     "name": "beat_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'F' (fusion of ventricular and normal beat)",
+     "example": null,
+     "name": "beat_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'Q' (unclassifiable beat)",
+     "example": null,
+     "name": "beat_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'n' (supraventricular escape beat)",
+     "example": null,
+     "name": "beat_n",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'J' (nodal (junctional) premature beat)",
+     "example": null,
+     "name": "beat_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'a' (aberrated atrial premature beat)",
+     "example": null,
+     "name": "beat_a",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class N (N), the same beats reduced to five classes for comparison with mitdb, svdb and incartdb",
+     "example": null,
+     "name": "aami_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class S (S), the same beats reduced to five classes for comparison with mitdb, svdb and incartdb",
+     "example": null,
+     "name": "aami_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class V (V), the same beats reduced to five classes for comparison with mitdb, svdb and incartdb",
+     "example": null,
+     "name": "aami_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class F (F), the same beats reduced to five classes for comparison with mitdb, svdb and incartdb",
+     "example": null,
+     "name": "aami_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class Q (Q), the same beats reduced to five classes for comparison with mitdb, svdb and incartdb",
+     "example": null,
+     "name": "aami_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of rhythm-change ('+') annotations",
+     "example": null,
+     "name": "n_rhythm_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of signal-quality-change ('~') annotations; 89 of 90 records carry some, none at sample 0, e0121 none at all",
+     "example": null,
+     "name": "n_quality_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of ST-change ('s') annotations, three per ST episode (onset, extremum, end)",
+     "example": null,
+     "name": "n_st_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of T-change ('T') annotations: three per T episode plus the 400 uV threshold crossings counted in n_extreme_t_markers",
+     "example": null,
+     "name": "n_t_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of comment ('\"') annotations: event-button presses, tape slippage and the lower-case axis-shift spans",
+     "example": null,
+     "name": "n_comment_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Count of isolated QRS-like artefact ('|') annotations",
+     "example": null,
+     "name": "n_isolated_artifacts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations reading 'BUTTON': patient-activated event button pressed",
+     "example": null,
+     "name": "note_BUTTON",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations reading 'TS': tape slippage",
+     "example": null,
+     "name": "note_TS",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (N), normal sinus rhythm. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (VT), ventricular tachycardia. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_VT",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (T), ventricular trigeminy. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_T",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (B), ventricular bigeminy. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_B",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (AB), atrial bigeminy. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_AB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (SVTA), supraventricular tachyarrhythmia. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_SVTA",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (SAB), sino-atrial block. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_SAB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (SBR), sinus bradycardia. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_SBR",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (AFIB), atrial fibrillation. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_AFIB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as rhythm (B3), third degree heart block. Every record opens with a rhythm annotation inside its first second, so the rhythm_secs_* columns cover the whole 7,200 s recording.",
+     "example": null,
+     "name": "rhythm_secs_B3",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "ST-segment change episodes (onset, extremum, end triple), 368 across the release. Lower-case axis-shift spans are excluded; unterminated episodes are closed at the record end and counted.",
+     "example": null,
+     "name": "n_st_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST-segment episodes annotated on signal 0 (the two signals are annotated independently)",
+     "example": null,
+     "name": "n_st_episodes_sig0",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST-segment episodes annotated on signal 1",
+     "example": null,
+     "name": "n_st_episodes_sig1",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST-segment episodes with a positive deviation (ST elevation)",
+     "example": null,
+     "name": "n_st_up",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST-segment episodes with a negative deviation (ST depression)",
+     "example": null,
+     "name": "n_st_down",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Summed duration of ST-segment episodes over both signals; can exceed the 7,200 s record because the signals are annotated independently",
+     "example": null,
+     "name": "st_episode_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds during which a ST-segment episode is open on either signal (bounded union)",
+     "example": null,
+     "name": "st_secs_any_signal",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Largest annotated ST-segment extremum in microvolts, measured against the subject's own reference waveform from the first 30 s, not an absolute isoelectric line; 0 when no episode",
+     "example": null,
+     "name": "peak_st_deviation_uv",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "uV",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave change episodes (onset, extremum, end triple), 401 across the release. Lower-case axis-shift spans are excluded; unterminated episodes are closed at the record end and counted.",
+     "example": null,
+     "name": "n_t_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave episodes annotated on signal 0 (the two signals are annotated independently)",
+     "example": null,
+     "name": "n_t_episodes_sig0",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave episodes annotated on signal 1",
+     "example": null,
+     "name": "n_t_episodes_sig1",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave episodes with a positive deviation (increased T amplitude)",
+     "example": null,
+     "name": "n_t_up",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave episodes with a negative deviation (decreased T amplitude)",
+     "example": null,
+     "name": "n_t_down",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Summed duration of T-wave episodes over both signals; can exceed the 7,200 s record because the signals are annotated independently",
+     "example": null,
+     "name": "t_episode_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds during which a T-wave episode is open on either signal (bounded union)",
+     "example": null,
+     "name": "t_secs_any_signal",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Largest annotated T-wave extremum in microvolts, measured against the subject's own reference waveform from the first 30 s, not an absolute isoelectric line; 0 when no episode",
+     "example": null,
+     "name": "peak_t_deviation_uv",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "uV",
+     "vocabulary": null
+    },
+    {
+     "description": "Total beat annotations (sum of the beat_* columns)",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Total annotations of every kind in the .atr",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Extra 'T' marks ('++'/'--') where a T episode's deviation crosses 400 uV; 166 in the release and not episodes",
+     "example": null,
+     "name": "n_extreme_t_markers",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Lower-case '(st0+'-style comment spans marking positional axis shifts that mimic ischaemia - recognised artefact, excluded from the episode counts; 21 in six records",
+     "example": null,
+     "name": "n_axis_shift_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Episodes with an onset and extremum but no end annotation, closed here at the record end; 12 in the release, including e0409's two ST depressions",
+     "example": null,
+     "name": "n_unterminated_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Pipe-joined rhythm codes present, in descending duration",
+     "example": "N|SVTA",
+     "name": "rhythms",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm code with the longest duration; empty when none",
+     "example": null,
+     "name": "dominant_rhythm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "N",
+      "VT",
+      "T",
+      "B",
+      "AB",
+      "SVTA",
+      "SAB",
+      "SBR",
+      "AFIB",
+      "B3",
+      ""
+     ]
+    },
+    {
+     "description": "Fraction of the record spent in dominant_rhythm",
+     "example": null,
+     "name": "dominant_rhythm_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before the first '~' annotation, counted as clean by implication (a '~' marks a change); median 9.3 min",
+     "example": null,
+     "name": "quality_head_unasserted_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Time of the first beat annotation",
+     "example": null,
+     "name": "first_beat_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Time of the last beat annotation",
+     "example": null,
+     "name": "last_beat_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 0 is neither noisy nor unreadable, from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig0_clean_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 0 is flagged noisy (unreadable also sets noisy), from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig0_noisy_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 0 is flagged unreadable, from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig0_unreadable_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 1 is neither noisy nor unreadable, from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig1_clean_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 1 is flagged noisy (unreadable also sets noisy), from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig1_noisy_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds signal 1 is flagged unreadable, from the '~' subtype read as a bitmask (decode_quality) rather than the shipped nine-value table, which disagrees with the files",
+     "example": null,
+     "name": "sig1_unreadable_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record stem; the release is a flat directory",
+     "example": "e0103",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reconstructed, not released: records agreeing on age, sex, recorder, medications and the set of clinical findings are one subject (plus the e0206/e0210 merge), giving the published 79 subjects over 90 records. Named by the group's first record.",
+     "example": "e0118",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "beat_V over n_beats; NaN when no beats",
+     "example": null,
+     "name": "pvc_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "aami_S over n_beats; NaN when no beats",
+     "example": null,
+     "name": "sveb_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "st_secs_any_signal over the 7,200 s record",
+     "example": null,
+     "name": "ischaemic_fraction",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "1 minus the shorter of the two channels' unreadable time over 7,200 s",
+     "example": null,
+     "name": "usable_fraction",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Band of n_st_episodes, for fold construction",
+     "example": null,
+     "name": "st_burden_band",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "none",
+      "1-2",
+      "3-5",
+      "6+"
+     ]
+    },
+    {
+     "description": "Fold-construction label: the ST-episode-count band. Not a clinical label.",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "none",
+      "1-2",
+      "3-5",
+      "6+"
+     ]
+    },
+    {
+     "description": "Which change types the record holds - a record-level summary, not the fold label",
+     "example": null,
+     "name": "st_t_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "st_and_t",
+      "st_only",
+      "t_only",
+      "none"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "European ST-T Database (EDB)",
    "origin_country": "Italy",
@@ -12118,7 +15620,340 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Curated experiment slug, one per authoritative archive (EXPERIMENTS); 26 electrocardiographic-imaging experiments from ten institutions",
+     "example": null,
+     "name": "experiment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "charles_pat1",
+      "charles_pat2",
+      "charles_pat3",
+      "kit20_clinical",
+      "dalhousie_2006",
+      "valencia_pat1",
+      "valencia_pat2",
+      "nijmegen_2004",
+      "epsol_24",
+      "epsol_26",
+      "epsol_27",
+      "epsol_33",
+      "epsol_36",
+      "utah_2002_cage",
+      "utah_2010_sock",
+      "utah_2018_tank",
+      "bordeaux_2016",
+      "maastricht_2015",
+      "auckland_2012",
+      "valencia_sim",
+      "kit20_sim_ep_endoepi",
+      "kit20_sim_ep_peri",
+      "kit20_sim_tmv_endoepi",
+      "kit20_sim_tmv_fem"
+     ]
+    },
+    {
+     "description": "The portal post's title",
+     "example": null,
+     "name": "experiment_title",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "EDGAR portal post slug the archive was downloaded from - not necessarily the post the data belongs to, because the portal cross-posts whole archives",
+     "example": null,
+     "name": "portal_post",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject (patient, animal or simulated heart) the experiment recorded; the config's patient_id_column. KIT subject 20 is shared by its clinical and four simulation experiments.",
+     "example": null,
+     "name": "subject_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "auckland_pig_2012_06_05",
+      "bordeaux_pig_exp16",
+      "charles_pstov_pat1",
+      "charles_pstov_pat2",
+      "charles_pstov_pat3",
+      "dalhousie_6105",
+      "ep_solutions_pt_24",
+      "ep_solutions_pt_26",
+      "ep_solutions_pt_27",
+      "ep_solutions_pt_33",
+      "ep_solutions_pt_36",
+      "kit_subject20",
+      "maastricht_dog2",
+      "nijmegen_ppd2",
+      "utah_canine_2018_08_09",
+      "utah_dog_2002_05_15",
+      "utah_dog_2010_03_02",
+      "valencia_pat1",
+      "valencia_pat2",
+      "valencia_sim_08_01_2014"
+     ]
+    },
+    {
+     "description": "Species of the subject, or 'simulated'",
+     "example": null,
+     "name": "species",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "dog",
+      "human",
+      "pig",
+      "simulated"
+     ]
+    },
+    {
+     "description": "Experimental setting",
+     "example": null,
+     "name": "setting",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "human_clinical",
+      "insitu_animal",
+      "simulation",
+      "torso_tank"
+     ]
+    },
+    {
+     "description": "Surface the electrode array sat on, resolved from the member path by the experiment's surface rules; the config's label column",
+     "example": null,
+     "name": "recording_surface",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "torso",
+      "epicardium",
+      "endocardium",
+      "intramural",
+      "transmembrane"
+     ]
+    },
+    {
+     "description": "The electrode array or mesh the potentials are defined on, from the surface rules",
+     "example": "120-lead Horacek BSPM array",
+     "name": "electrode_array",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Second component of the member path, the intervention folder; empty when the file sits at the signal-directory root",
+     "example": null,
+     "name": "intervention",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Chamber named by a pacing intervention folder; empty when not a pacing record",
+     "example": null,
+     "name": "pacing_chamber",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "LV",
+      "RV",
+      ""
+     ]
+    },
+    {
+     "description": "Pacing site index named by the intervention folder, an index into the CARTO table; missing when not a pacing record. Numeric on purpose.",
+     "example": null,
+     "name": "pacing_site",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "CARTO x coordinate of the pacing site, the ground truth the four pacing experiments are trained on; missing without a CARTO match",
+     "example": null,
+     "name": "pacing_site_x",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mm",
+     "vocabulary": null
+    },
+    {
+     "description": "CARTO y coordinate of the pacing site",
+     "example": null,
+     "name": "pacing_site_y",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mm",
+     "vocabulary": null
+    },
+    {
+     "description": "CARTO z coordinate of the pacing site",
+     "example": null,
+     "name": "pacing_site_z",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mm",
+     "vocabulary": null
+    },
+    {
+     "description": "Leads in the potential matrix, orientation-aware (Dalhousie stores samples by leads, everyone else leads by samples)",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Frames in the potential matrix; at least MIN_FRAMES (20), which excludes the activation, recovery and integral maps stored in the same field",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sampling rate from the MATLAB struct where declared, else the experiment's documented rate; missing when neither states it",
+     "example": null,
+     "name": "sampling_rate_hz",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over sampling_rate_hz; missing without a rate",
+     "example": null,
+     "name": "duration_s",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Physical unit the samples are read in, from the curated experiment record; Valencia pat1 and pat2 declare mV on samples reaching 5350 and are read as uV per their own README",
+     "example": null,
+     "name": "unit_applied",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "mV",
+      "uV"
+     ]
+    },
+    {
+     "description": "Unit the MATLAB struct itself declares (unit/units field); missing when it has none",
+     "example": "mV",
+     "name": "declared_unit",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Evidence unit_applied rests on: the struct's declaration, the experiment README, or the amplitude when nothing declares it",
+     "example": "declared ts.unit",
+     "name": "unit_source",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Storage orientation of potvals: 'ls' leads by samples (25 experiments), 'sl' samples by leads (Dalhousie). Not recoverable from the shape.",
+     "example": null,
+     "name": "orientation",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "ls",
+      "sl"
+     ]
+    },
+    {
+     "description": "Name of the MATLAB variable holding potvals; 22 names across the contributors",
+     "example": "ts",
+     "name": "matlab_variable",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Leads the struct marks bad (leadinfo, badLeads or bad_leads); missing when the struct carries no such field",
+     "example": null,
+     "name": "n_bad_leads",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The struct's own label or text field, NUL-trimmed; missing when absent",
+     "example": null,
+     "name": "source_label",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Four-part reference the mat reader needs, <file>.mat:<variable>:<orientation>:<unit>, relative to the data path under ecgbench_extracted/<experiment>/, because a MATLAB container declares none of the three reliably",
+     "example": "ecgbench_extracted/dalhousie_2006/Interventions/x/Torso_rec.mat:ts:sl:mV",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "EDGAR (Experimental Data & Geometric Analysis Repository)",
    "origin_country": "Multi-national (USA / Czechia / Germany / Spain / Canada / Netherlands / New Zealand / France / Slovakia / Switzerland)",

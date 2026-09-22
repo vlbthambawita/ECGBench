@@ -146,6 +146,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -684,3 +686,283 @@ def _fiducials(marks: list[tuple[int, str]]) -> dict[str, object]:
     if after:
         out["t_offset_ms"] = int(after[-1])
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "is_baseline",
+        "boolean",
+        "BASELINE == 'Y': one of the three pre-dose records (timepoint_hours == -0.5) of "
+        "the subject-period, whose mean is the baseline that load_baseline_deltas subtracts",
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "Subject identifier (RANDID), string throughout because it is also the raw/ "
+        "directory name; 22 healthy volunteers",
+        nullable=False,
+        example="1001",
+    ),
+    Field(
+        "treatment_sequence",
+        "string",
+        "Randomised arm sequence (ARMCD), comma-separated arm codes A-E in period order",
+        nullable=False,
+    ),
+    Field(
+        "period_label",
+        "string",
+        "Visit label (VISIT), 'PERIOD-<n>-DOSING'",
+        nullable=False,
+        example="PERIOD-1-DOSING",
+    ),
+    Field(
+        "timepoint_hours",
+        "number",
+        "Nominal hours since the period's dose (TPT); -0.5 is pre-dose",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "rr_ms",
+        "number",
+        "RR interval from the raw rhythm strip; complete for all 5,232 records",
+        unit="ms",
+        nullable=False,
+    ),
+    Field(
+        "pr_ms",
+        "number",
+        "PR interval on the median beat; NA for the 9 records with no median beat. Two "
+        "records shipped as -4294966951 and -4294966972 (a 32-bit wrap when the P onset "
+        "fell before the median-beat window) are repaired by adding 2^32 to 345 and 324 ms; "
+        "see pr_ms_repaired.",
+        unit="ms",
+    ),
+    Field(
+        "qrs_ms",
+        "number",
+        "QRS duration on the median beat; NA for the 9 records with no published median "
+        "beat",
+        unit="ms",
+    ),
+    Field(
+        "qt_ms",
+        "number",
+        "QT interval on the median beat; NA for 13 records: the 9 with no median beat plus "
+        "4 quinidine records of subject 1004 whose flattened T wave has no end mark",
+        unit="ms",
+    ),
+    Field(
+        "jtpeak_ms",
+        "number",
+        "J point (QRS offset) to T peak on the median beat; NA for the 9 records with no "
+        "published median beat",
+        unit="ms",
+    ),
+    Field(
+        "tpeak_tend_ms",
+        "number",
+        "T peak to T end on the median beat; NA for 13 records: the 9 with no median beat "
+        "plus 4 quinidine records of subject 1004 whose flattened T wave has no end mark",
+        unit="ms",
+    ),
+    Field(
+        "tpeak_tpeakp_ms",
+        "number",
+        "Tpeak to secondary T peak (TPEAKTPEAKP); populated for 42 records (40 quinidine, 2 "
+        "dofetilide) each marked by a second 't' in the .atr - unlike ECGDMMLD, where the "
+        "same column is empty",
+        unit="ms",
+    ),
+    Field(
+        "erd_30_ms",
+        "number",
+        "Early repolarisation duration at 30% (ERD_30)",
+        unit="ms",
+    ),
+    Field(
+        "lrd_30_ms",
+        "number",
+        "Late repolarisation duration at 30% (LRD_30)",
+        unit="ms",
+    ),
+    Field(
+        "twave_amplitude_uv",
+        "number",
+        "T-wave amplitude on the median beat's vector-magnitude lead, in microvolts while "
+        "the waveforms are millivolts",
+        unit="uV",
+    ),
+    Field(
+        "twave_asymmetry",
+        "number",
+        "T-wave asymmetry index on the vector-magnitude lead (dimensionless)",
+    ),
+    Field(
+        "twave_flatness",
+        "number",
+        "T-wave flatness index on the vector-magnitude lead (dimensionless)",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex (SEX)",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "age_years",
+        "integer",
+        "Subject age (AGE)",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Height (HGHT)",
+        unit="cm",
+        nullable=False,
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Weight (WGHT)",
+        unit="kg",
+        nullable=False,
+    ),
+    Field(
+        "systolic_bp_mmhg",
+        "number",
+        "Systolic blood pressure (SYSBP)",
+        unit="mmHg",
+        nullable=False,
+    ),
+    Field(
+        "diastolic_bp_mmhg",
+        "number",
+        "Diastolic blood pressure (DIABP)",
+        unit="mmHg",
+        nullable=False,
+    ),
+    Field(
+        "race",
+        "string",
+        "Subject race (RACE)",
+        nullable=False,
+    ),
+    Field(
+        "ethnicity",
+        "string",
+        "Subject ethnicity (ETHNIC)",
+        nullable=False,
+    ),
+    Field(
+        "treatment",
+        "string",
+        "Treatment of the period (EXTRT). Each period administered a single agent, so this "
+        "names both the randomisation arm and the drug on board - usable, unlike "
+        "ECGDMMLD's. The 327 pre-dose records (is_baseline) carry it while containing no "
+        "drug. Stratification label.",
+        vocabulary=("Ranolazine", "Dofetilide", "Verapamil HCL", "Quinidine Sulph", "Placebo"),
+        nullable=False,
+    ),
+    Field(
+        "dose",
+        "number",
+        "Dose administered (EXDOSE): 500 for dofetilide, 400-1500 for the others - in "
+        "different units, see dose_unit; never compare without it",
+        nullable=False,
+    ),
+    Field(
+        "dose_unit",
+        "string",
+        "Unit of dose (EXDOSU): 'ug' for dofetilide, 'mg' otherwise",
+        vocabulary=("ug", "mg"),
+        nullable=False,
+    ),
+    Field(
+        "plasma_analyte",
+        "string",
+        "Analyte measured at this timepoint (PCTEST); one per record because each period "
+        "dosed one agent. NA when nothing was dosed or drawn.",
+        vocabulary=("Dofetilide", "Quinidine", "Ranolazine", "Verapamil"),
+    ),
+    Field(
+        "plasma_concentration",
+        "number",
+        "Plasma concentration as shipped (PCSTRESN), in the unit of "
+        "plasma_concentration_unit - pg/mL for dofetilide, ng/mL for the rest, so pooling "
+        "across treatments is a 1000x error. NA means not dosed, not drawn or below "
+        "quantification; nothing is 0.",
+    ),
+    Field(
+        "plasma_concentration_unit",
+        "string",
+        "Unit of plasma_concentration (PCSTRESU)",
+        vocabulary=("pg/mL", "ng/mL"),
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB path of the raw 10 s 12-lead record, raw/<subject>/<uuid>; always raw/, never "
+        "the median beat",
+        nullable=False,
+    ),
+    Field(
+        "median_beat_path",
+        "string",
+        "WFDB path of the derived 16-channel median beat, medians/<subject>/<uuid> (12 "
+        "leads plus VCGMAG, vx, vy, vz at 1 kHz). It gets no fold of its own.",
+        nullable=False,
+    ),
+    Field(
+        "period",
+        "integer",
+        "Crossover period 1-5, parsed from period_label",
+        nullable=False,
+    ),
+    Field(
+        "hr_bpm",
+        "number",
+        "Derived: 60000 / rr_ms; the release ships no heart rate (observed 43-115 bpm)",
+        unit="bpm",
+        nullable=False,
+    ),
+    Field(
+        "qtcf_ms",
+        "number",
+        "Derived Fridericia correction, qt_ms / cbrt(rr_ms / 1000); the release ships no "
+        "corrected QT (observed 338.6-563.2 ms against an uncorrected 325-579). No "
+        "rate-corrected J-Tpeak is provided - the study's fitted exponent is in the paper.",
+        unit="ms",
+    ),
+    Field(
+        "pr_ms_repaired",
+        "boolean",
+        "True for the 2 records (subject 1007, verapamil, 1.0 h) whose shipped PR had "
+        "wrapped past -1e6 and was repaired by adding 2^32",
+        nullable=False,
+    ),
+    Field(
+        "plasma_concentration_ng_ml",
+        "number",
+        "Derived: plasma_concentration with the pg/mL dofetilide rows divided by 1000, so "
+        "all four analytes share one scale",
+        unit="ng/mL",
+    ),
+    Field(
+        "median_beat_available",
+        "boolean",
+        "False for the 9 records whose median beat was never published although their "
+        "intervals were measured from it (MEDIAN_BEAT_MISSING); their raw/ records are "
+        "intact",
+        nullable=False,
+    ),
+)

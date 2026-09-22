@@ -78,6 +78,7 @@ import numpy as np
 import pandas as pd
 
 from ecgbench.config import DatasetConfig
+from ecgbench.labels._fields import Field
 
 logger = logging.getLogger(__name__)
 
@@ -1084,3 +1085,242 @@ _STRING_COLUMNS = {
     "unit_applied": str,
     "signal_path": str,
 }
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "experiment",
+        "string",
+        "Curated experiment slug, one per authoritative archive (EXPERIMENTS); 26 "
+        "electrocardiographic-imaging experiments from ten institutions",
+        vocabulary=(
+            "charles_pat1",
+            "charles_pat2",
+            "charles_pat3",
+            "kit20_clinical",
+            "dalhousie_2006",
+            "valencia_pat1",
+            "valencia_pat2",
+            "nijmegen_2004",
+            "epsol_24",
+            "epsol_26",
+            "epsol_27",
+            "epsol_33",
+            "epsol_36",
+            "utah_2002_cage",
+            "utah_2010_sock",
+            "utah_2018_tank",
+            "bordeaux_2016",
+            "maastricht_2015",
+            "auckland_2012",
+            "valencia_sim",
+            "kit20_sim_ep_endoepi",
+            "kit20_sim_ep_peri",
+            "kit20_sim_tmv_endoepi",
+            "kit20_sim_tmv_fem",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "experiment_title",
+        "string",
+        "The portal post's title",
+        nullable=False,
+    ),
+    Field(
+        "portal_post",
+        "string",
+        "EDGAR portal post slug the archive was downloaded from - not necessarily the post "
+        "the data belongs to, because the portal cross-posts whole archives",
+        nullable=False,
+    ),
+    Field(
+        "subject_id",
+        "string",
+        "Subject (patient, animal or simulated heart) the experiment recorded; the config's "
+        "patient_id_column. KIT subject 20 is shared by its clinical and four simulation "
+        "experiments.",
+        vocabulary=(
+            "auckland_pig_2012_06_05",
+            "bordeaux_pig_exp16",
+            "charles_pstov_pat1",
+            "charles_pstov_pat2",
+            "charles_pstov_pat3",
+            "dalhousie_6105",
+            "ep_solutions_pt_24",
+            "ep_solutions_pt_26",
+            "ep_solutions_pt_27",
+            "ep_solutions_pt_33",
+            "ep_solutions_pt_36",
+            "kit_subject20",
+            "maastricht_dog2",
+            "nijmegen_ppd2",
+            "utah_canine_2018_08_09",
+            "utah_dog_2002_05_15",
+            "utah_dog_2010_03_02",
+            "valencia_pat1",
+            "valencia_pat2",
+            "valencia_sim_08_01_2014",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "species",
+        "string",
+        "Species of the subject, or 'simulated'",
+        vocabulary=("dog", "human", "pig", "simulated"),
+        nullable=False,
+    ),
+    Field(
+        "setting",
+        "string",
+        "Experimental setting",
+        vocabulary=("human_clinical", "insitu_animal", "simulation", "torso_tank"),
+        nullable=False,
+    ),
+    Field(
+        "recording_surface",
+        "string",
+        "Surface the electrode array sat on, resolved from the member path by the "
+        "experiment's surface rules; the config's label column",
+        vocabulary=("torso", "epicardium", "endocardium", "intramural", "transmembrane"),
+        nullable=False,
+    ),
+    Field(
+        "electrode_array",
+        "string",
+        "The electrode array or mesh the potentials are defined on, from the surface rules",
+        nullable=False,
+        example="120-lead Horacek BSPM array",
+    ),
+    Field(
+        "intervention",
+        "string",
+        "Second component of the member path, the intervention folder; empty when the file "
+        "sits at the signal-directory root",
+        nullable=False,
+    ),
+    Field(
+        "pacing_chamber",
+        "string",
+        "Chamber named by a pacing intervention folder; empty when not a pacing record",
+        vocabulary=("LV", "RV", ""),
+        nullable=False,
+    ),
+    Field(
+        "pacing_site",
+        "integer",
+        "Pacing site index named by the intervention folder, an index into the CARTO table; "
+        "missing when not a pacing record. Numeric on purpose.",
+    ),
+    Field(
+        "pacing_site_x",
+        "number",
+        "CARTO x coordinate of the pacing site, the ground truth the four pacing "
+        "experiments are trained on; missing without a CARTO match",
+        unit="mm",
+    ),
+    Field(
+        "pacing_site_y",
+        "number",
+        "CARTO y coordinate of the pacing site",
+        unit="mm",
+    ),
+    Field(
+        "pacing_site_z",
+        "number",
+        "CARTO z coordinate of the pacing site",
+        unit="mm",
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Leads in the potential matrix, orientation-aware (Dalhousie stores samples by "
+        "leads, everyone else leads by samples)",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Frames in the potential matrix; at least MIN_FRAMES (20), which excludes the "
+        "activation, recovery and integral maps stored in the same field",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate_hz",
+        "number",
+        "Sampling rate from the MATLAB struct where declared, else the experiment's "
+        "documented rate; missing when neither states it",
+        unit="Hz",
+    ),
+    Field(
+        "duration_s",
+        "number",
+        "n_samples over sampling_rate_hz; missing without a rate",
+        unit="s",
+    ),
+    Field(
+        "unit_applied",
+        "string",
+        "Physical unit the samples are read in, from the curated experiment record; "
+        "Valencia pat1 and pat2 declare mV on samples reaching 5350 and are read as uV per "
+        "their own README",
+        vocabulary=("mV", "uV"),
+        nullable=False,
+    ),
+    Field(
+        "declared_unit",
+        "string",
+        "Unit the MATLAB struct itself declares (unit/units field); missing when it has "
+        "none",
+        example="mV",
+    ),
+    Field(
+        "unit_source",
+        "string",
+        "Evidence unit_applied rests on: the struct's declaration, the experiment README, "
+        "or the amplitude when nothing declares it",
+        nullable=False,
+        example="declared ts.unit",
+    ),
+    Field(
+        "orientation",
+        "string",
+        "Storage orientation of potvals: 'ls' leads by samples (25 experiments), 'sl' "
+        "samples by leads (Dalhousie). Not recoverable from the shape.",
+        vocabulary=("ls", "sl"),
+        nullable=False,
+    ),
+    Field(
+        "matlab_variable",
+        "string",
+        "Name of the MATLAB variable holding potvals; 22 names across the contributors",
+        nullable=False,
+        example="ts",
+    ),
+    Field(
+        "n_bad_leads",
+        "integer",
+        "Leads the struct marks bad (leadinfo, badLeads or bad_leads); missing when the "
+        "struct carries no such field",
+    ),
+    Field(
+        "source_label",
+        "string",
+        "The struct's own label or text field, NUL-trimmed; missing when absent",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Four-part reference the mat reader needs, "
+        "<file>.mat:<variable>:<orientation>:<unit>, relative to the data path under "
+        "ecgbench_extracted/<experiment>/, because a MATLAB container declares none of the "
+        "three reliably",
+        nullable=False,
+        example="ecgbench_extracted/dalhousie_2006/Interventions/x/Torso_rec.mat:ts:sl:mV",
+    ),
+)
