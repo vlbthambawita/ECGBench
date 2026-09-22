@@ -223,6 +223,7 @@ practical (the Hub tree is identifiers) and partly licensing: redistributing
 labels is fine for CC-BY sources and *not* for credentialed ones such as
 MIMIC-IV. So `labels=True` requires a local copy of the source dataset, and the
 missing-file error must name the file and say where to get it.
+- [ ] **Declare the label fields.** For a module in `ecgbench/labels/`, add a module-level `FIELDS = (Field(...), ...)` naming every column `load_labels()` returns, with a Frictionless type (`string`, `integer`, `number`, `boolean`, `datetime`, `array[string]`, …), a description that spells out sentinels and encodings, `unit=` for measurements and `vocabulary=` for closed sets. It must be a **literal** tuple with constant arguments — the metadata build reads it with `ast`, without importing pandas, and rejects comprehensions and name references. For a declarative dataset, add a `labels.fields:` block to the YAML instead. Then register a synthetic builder in `tests/test_fields.py::BUILDERS` (and remove the slug from `PENDING`): the consistency test asserts the declared names equal the loader's columns, and a declaration without a builder fails `test_every_declaration_has_a_consistency_builder`. Run `ecgbench metadata build` afterwards — the fields go into `metadata.json` and the search index.
 
 ## Phase 3 — Splitter strategy
 

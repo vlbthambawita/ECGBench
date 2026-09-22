@@ -1,4 +1,4 @@
-"""``ecgbench list``, ``ecgbench search``, ``ecgbench info`` and ``ecgbench related``.
+"""``ecgbench list``, ``search``, ``info``, ``fields`` and ``related``.
 
 Read-only views over the metadata store. Each command has a public ``run_*``
 function returning typed objects — the Python API — and a private ``_cli_*``
@@ -15,7 +15,7 @@ import sys
 from collections.abc import Sequence
 
 from ecgbench.metadata.identity import UnknownDatasetError
-from ecgbench.metadata.model import IMPLEMENTATION_STATES, DatasetMeta, RelationMeta
+from ecgbench.metadata.model import IMPLEMENTATION_STATES, DatasetMeta, FieldMeta, RelationMeta
 from ecgbench.metadata.store import MetadataQueryError, SearchHit, open_store
 
 _FORMATS = ("table", "json", "csv")
@@ -79,6 +79,15 @@ def run_info(key: str) -> DatasetMeta:
 def run_related(key: str) -> list[RelationMeta]:
     """Edges from ``key``'s dataset to others, declared and derived alike."""
     return open_store().related(key)
+
+
+def run_fields(key: str) -> tuple[FieldMeta, ...]:
+    """The declared label columns of ``key``'s dataset (empty when undeclared).
+
+    Raises:
+        UnknownDatasetError: nothing answers to ``key``.
+    """
+    return open_store().get(key).fields
 
 
 # --------------------------------------------------------------------------- formatting
@@ -280,6 +289,42 @@ def format_info(meta: DatasetMeta, fmt: str = "table", verbose: bool = False) ->
     return "\n".join(lines)
 
 
+def format_fields(meta: DatasetMeta, fmt: str = "table") -> str:
+    """Render a dataset's declared fields as a table, JSON, or a Frictionless Table Schema."""
+    if fmt == "json":
+        return json.dumps([f.__dict__ for f in meta.fields], indent=2, ensure_ascii=False)
+    if fmt == "frictionless":
+        from ecgbench.labels._fields import Field, to_frictionless
+
+        fields = tuple(Field(**f.__dict__) for f in meta.fields)
+        key = meta.split.record_id_column if meta.split is not None else None
+        schema = to_frictionless(fields, primary_key=key)
+        schema["title"] = f"{meta.name} — label table"
+        return json.dumps(schema, indent=2, ensure_ascii=False)
+    if not meta.fields:
+        if not meta.has_labels:
+            return f"{meta.dataset_id}: no labels ({meta.implementation_state})"
+        return f"{meta.dataset_id}: labels available but fields not yet declared"
+    headers = ["name", "type", "unit", "nullable", "vocabulary", "description"]
+    rows = [
+        [f.name, f.type, f.unit, f.nullable, _first_line(", ".join(f.vocabulary or ()), 40),
+         _first_line(f.description, 96)]
+        for f in meta.fields
+    ]
+    if fmt == "csv":
+        import io
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerow(headers)
+        writer.writerows(
+            [[f.name, f.type, f.unit or "", _cell(f.nullable), " ".join(f.vocabulary or ()),
+              f.description] for f in meta.fields]
+        )
+        return buffer.getvalue().rstrip("\n")
+    return _table(headers, rows)
+
+
 def format_related(key: str, edges: list[RelationMeta], fmt: str = "table") -> str:
     """Render ``run_related`` output."""
     if fmt == "json":
@@ -359,6 +404,15 @@ def _cli_info(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cli_fields(args: argparse.Namespace) -> int:
+    try:
+        meta = run_info(args.dataset)
+    except UnknownDatasetError as exc:
+        return _fail_unknown(exc)
+    print(format_fields(meta, args.format))
+    return 0
+
+
 def _cli_related(args: argparse.Namespace) -> int:
     try:
         meta = run_info(args.dataset)
@@ -369,7 +423,7 @@ def _cli_related(args: argparse.Namespace) -> int:
 
 
 def add_subparser(subparsers) -> argparse.ArgumentParser:
-    """Register ``list``, ``search``, ``info`` and ``related``; returns the ``list`` parser."""
+    """Register ``list``, ``search``, ``info``, ``fields`` and ``related``; returns ``list``."""
     p_list = subparsers.add_parser(
         "list",
         help="List every dataset in the catalogue with its implementation state",
@@ -443,6 +497,21 @@ def add_subparser(subparsers) -> argparse.ArgumentParser:
     p_info.add_argument("--verbose", action="store_true", help="Print every fact with provenance")
     p_info.add_argument("--format", choices=("table", "json"), default="table")
     p_info.set_defaults(func=_cli_info)
+
+    p_fields = subparsers.add_parser(
+        "fields",
+        help="List a dataset's label columns: name, type, unit, vocabulary, description",
+        description=(
+            "The columns load_labels() returns for this dataset, as declared in its label "
+            "module's FIELDS or the config's labels.fields block. --format frictionless emits "
+            "a Frictionless Table Schema."
+        ),
+    )
+    p_fields.add_argument("dataset", help="Dataset id or any alias")
+    p_fields.add_argument(
+        "--format", choices=("table", "json", "csv", "frictionless"), default="table"
+    )
+    p_fields.set_defaults(func=_cli_fields)
 
     p_related = subparsers.add_parser(
         "related",

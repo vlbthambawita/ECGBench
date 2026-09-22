@@ -150,6 +150,19 @@ labels:
   separator: ","
   join_column: ""       # Column in source_csv matching record_id_column above.
   columns: null         # List of columns to expose; null -> all except join_column.
+  # Optional: type and meaning per column, so `ecgbench fields <slug>` and the
+  # metadata search know what the labels are. Types are Frictionless Table Schema
+  # types (string, integer, number, boolean, date, datetime, array[string], ...).
+  # Columns listed here but not under `columns` are appended to it.
+  # fields:
+  #   diagnosis:
+  #     type: string
+  #     description: "Rhythm diagnosis as the source spells it"
+  #     vocabulary: ["AFIB", "NORM", "SB"]
+  #     nullable: false
+  #   age:
+  #     type: integer
+  #     unit: year
 
 # If the dataset genuinely ships no labels, say so instead — ECGDataset(labels=True)
 # then raises LabelsUnavailableError quoting the reason, rather than returning

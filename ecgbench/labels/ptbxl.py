@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -180,3 +182,122 @@ def multi_hot(label_lists, classes=None):
             if position is not None:
                 out[row, position] = 1.0
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "scp_codes",
+        "object",
+        "SCP-ECG statement -> likelihood (0-100), parsed from the dict-string in "
+        "ptbxl_database.csv; likelihood 0.0 means present but not graded, not absent",
+        nullable=False,
+    ),
+    Field(
+        "diagnostic_codes",
+        "array[string]",
+        "Statements flagged diagnostic in scp_statements.csv, sorted",
+        nullable=False,
+    ),
+    Field(
+        "form_codes",
+        "array[string]",
+        "Statements flagged form, sorted",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_codes",
+        "array[string]",
+        "Statements flagged rhythm, sorted",
+        nullable=False,
+    ),
+    Field(
+        "superclasses",
+        "array[string]",
+        "Diagnostic superclasses (diagnostic_class) of the record's statements, sorted. "
+        "Multi-label: 5,144 of 21,799 records carry more than one and 411 carry none. The "
+        "training target",
+        vocabulary=("NORM", "MI", "STTC", "CD", "HYP"),
+        nullable=False,
+    ),
+    Field(
+        "subclasses",
+        "array[string]",
+        "Diagnostic subclasses (diagnostic_subclass) of the record's statements, sorted",
+        nullable=False,
+    ),
+    Field(
+        "primary_superclass",
+        "string",
+        "Single highest-likelihood superclass, ties (10.8% of records) broken on the fixed "
+        "NORM/MI/STTC/CD/HYP order; OTHER when no diagnostic statement. Stratification "
+        "label only - do not train on it",
+        vocabulary=("NORM", "MI", "STTC", "CD", "HYP", "OTHER"),
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "integer",
+        "Patient identifier: 18,869 patients over 21,799 records, and the fold grouping key",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age in years as shipped; 300 encodes over 89",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "integer",
+        "0 = male, 1 = female, as PTB-XL encodes it",
+        vocabulary=("0", "1"),
+    ),
+    Field(
+        "height",
+        "number",
+        "Height as shipped; sparsely populated",
+        unit="cm",
+    ),
+    Field(
+        "weight",
+        "number",
+        "Weight as shipped; sparsely populated",
+        unit="kg",
+    ),
+    Field(
+        "report",
+        "string",
+        "Free-text cardiologist report, mostly in German",
+    ),
+    Field(
+        "heart_axis",
+        "string",
+        "Heart axis category as shipped (e.g. MID, LAD, RAD)",
+    ),
+    Field(
+        "recording_date",
+        "datetime",
+        "Recording timestamp as shipped",
+    ),
+    Field(
+        "device",
+        "string",
+        "Recording device as shipped",
+    ),
+    Field(
+        "validated_by_human",
+        "boolean",
+        "Whether the statements were validated by a human cardiologist",
+    ),
+    Field(
+        "strat_fold",
+        "integer",
+        "PTB-XL's own stratified fold, 1-10, which ECGBench adopts as the predefined split "
+        "(1-8 train, 9 val, 10 test)",
+        nullable=False,
+    ),
+)

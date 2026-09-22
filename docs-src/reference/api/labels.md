@@ -11,6 +11,17 @@ exists.
         - LabelsUnavailableError
         - LabelSourceMissingError
 
+## Field declarations
+
+Each label module declares the columns its loader returns as a module-level
+`FIELDS` tuple of `Field(...)` calls — a literal one, so the metadata build can
+read it with `ast` and never import pandas. Declarative datasets get the same
+from `labels.columns` plus an optional `labels.fields:` block in their YAML.
+`ecgbench fields <id>` prints them; `tests/test_fields.py` pins each declaration
+to the loader's actual output.
+
+::: ecgbench.labels._fields
+
 ## Derived datasets
 
 A release whose records belong to another dataset — a feature, annotation or

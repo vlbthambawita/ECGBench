@@ -1476,7 +1476,7 @@ ecgbench croissant --dataset ptbxl --splits-dir output/ptbxl/original/ --version
 ## CLI
 <!-- --8<-- [start:cli] -->
 
-Installing `ecgbench` adds a single `ecgbench` console command with eight subcommands:
+Installing `ecgbench` adds a single `ecgbench` console command with nine subcommands:
 
 ```bash
 ecgbench --help               # top-level help
@@ -1492,10 +1492,11 @@ ecgbench --version            # package version
 | `list` | List every dataset with its implementation state, merged from the catalogue and the configs |
 | `search` | Ranked full-text search (FTS5 syntax) over every dataset, with structured filters |
 | `info` | Show one dataset's merged metadata; accepts either slug or the display name |
+| `fields` | List a dataset's label columns with type, unit, vocabulary and description |
 | `related` | Show a dataset's relationships to others, with the `shares_records` leakage flag |
 | `metadata` | Rebuild or verify (`build --check`) the derived metadata files |
 
-Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_search`, `run_info`, `run_related`, `run_metadata_build`, `run_metadata_check`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
+Every subcommand has an equivalent Python function (`run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_search`, `run_info`, `run_fields`, `run_related`, `run_metadata_build`, `run_metadata_check`) with the same arguments, so the same workflow can be driven from a notebook or downstream code.
 
 ### `ecgbench splits`
 
@@ -1685,6 +1686,23 @@ ecgbench info echonext --format json
 | `--verbose` | flag | off | Append every fact with its source and path |
 | `--format` | `table`&vert;`json` | `table` | Output format |
 
+### `ecgbench fields`
+
+The columns `load_labels()` returns for a dataset, as declared data: name, Frictionless Table Schema type (`string`, `integer`, `number`, `boolean`, `datetime`, `array[string]`, …), unit, closed vocabulary where one exists, whether the value can be missing, and a description that spells out sentinels and encodings (PTB-XL's `age` of 300 meaning over 89, MIMIC's `p_onset` becoming NaN where the source held `29999`). Declarations live in each label module's `FIELDS` tuple, or in the config's `labels.fields:` block for declarative datasets, and a test pins them to the loader's actual output. Field names and descriptions are indexed for `ecgbench search`, so `ecgbench search recorder` finds MIT-BIH.
+
+```bash
+ecgbench fields ptbxl                          # superclasses  array[string]  NORM, MI, STTC, CD, HYP ...
+ecgbench fields mitdb --format json
+ecgbench fields afdb --format frictionless     # Frictionless Table Schema, primaryKey = record_name
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `dataset` | str | *required* | Dataset id or any alias |
+| `--format` | `table`&vert;`json`&vert;`csv`&vert;`frictionless` | `table` | Output format |
+
+The inventory is being declared in batches; a dataset whose labels exist but are not yet declared says so, and `--format json` returns `[]` for it.
+
 ### `ecgbench related`
 
 The relationships declared in the catalogue, both directions, with the `shares_records` flag that matters for leakage: `yes` means the two datasets contain the same recordings, so training on one and evaluating on the other contaminates the test set.
@@ -1709,6 +1727,7 @@ ecgbench.related_metadata("ptbxl")                             # list[RelationMe
 ecgbench.run_list(state="published")
 ecgbench.run_search("atrial fib*", leads=2, limit=5)
 ecgbench.run_info("ptb-xl")
+ecgbench.run_fields("ptbxl")     # tuple[FieldMeta, ...]
 ecgbench.run_related("ptbxl")
 ```
 

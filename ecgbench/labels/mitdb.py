@@ -68,6 +68,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -415,3 +417,419 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Subject age in years from the header's first comment line; NaN for records 103 and "
+        "219, which the release writes as -1 (unknown)",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Subject sex from the header",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "tape<N>: the analog tape the record came from, and therefore the subject. 47 "
+        "subjects over 48 records; 201 and 202 share tape1960. The fold grouping key",
+        nullable=False,
+    ),
+    Field(
+        "recorder",
+        "string",
+        "Del Mar Avionics recorder number from the header (654 = recorder E, 1629 = G, 694 "
+        "= F, 167 = A, 2851 = H, 3655 = I, 653 = D, 171 = B, 356 = C); N/A for record 208. "
+        "A confounder: recorder-specific artefact is real",
+        nullable=False,
+    ),
+    Field(
+        "digitised_at_double_speed",
+        "boolean",
+        "True for the 18 records played back at twice real time when digitised (x2 in the "
+        "header)",
+        nullable=False,
+    ),
+    Field(
+        "medications",
+        "string",
+        "Subject's medications from the header's second comment line; empty where the "
+        "release says None",
+    ),
+    Field(
+        "description",
+        "string",
+        "Free-text clinical description of this record, wrapped lines rejoined; empty for "
+        "the 9 records without one",
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "The two leads this record stores, pipe-separated in file order; MLII|V1 for 40 "
+        "records, and V5|MLII for the reversed record 114",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference annotations of beat type N (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_L",
+        "integer",
+        "Reference annotations of beat type L (left bundle branch block beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Reference annotations of beat type R (right bundle branch block beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference annotations of beat type V (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_/",
+        "integer",
+        "Reference annotations of beat type / (paced beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Reference annotations of beat type A (atrial premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_f",
+        "integer",
+        "Reference annotations of beat type f (fusion of paced and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference annotations of beat type F (fusion of ventricular and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Reference annotations of beat type j (nodal (junctional) escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Reference annotations of beat type a (aberrated atrial premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_E",
+        "integer",
+        "Reference annotations of beat type E (ventricular escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Reference annotations of beat type J (nodal (junctional) premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference annotations of beat type Q (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_e",
+        "integer",
+        "Reference annotations of beat type e (atrial escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference annotations of beat type S (supraventricular premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Rhythm-change markers (+), each opening an episode; a non-beat marker, excluded "
+        "from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_signal_quality_changes",
+        "integer",
+        "Signal-quality-change markers (~); a non-beat marker, excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_ventricular_flutter_waves",
+        "integer",
+        "Ventricular flutter wave markers (!); a non-beat marker, excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_comment_annotations",
+        "integer",
+        "Comment annotations (\"), which carry the note_* values; a non-beat marker, "
+        "excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_nonconducted_p_waves",
+        "integer",
+        "Non-conducted P-wave markers (x); a non-beat marker, excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "Isolated artefact markers (|); a non-beat marker, excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_vfl_episode_starts",
+        "integer",
+        "Ventricular flutter/fibrillation episode start markers ([); a non-beat marker, "
+        "excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "n_vfl_episode_ends",
+        "integer",
+        "Ventricular flutter/fibrillation episode end markers (]); a non-beat marker, "
+        "excluded from n_beats",
+        nullable=False,
+    ),
+    Field(
+        "note_MISSB",
+        "integer",
+        "Comment annotations reading MISSB (missed beat)",
+        nullable=False,
+    ),
+    Field(
+        "note_PSE",
+        "integer",
+        "Comment annotations reading PSE (pause)",
+        nullable=False,
+    ),
+    Field(
+        "note_TS",
+        "integer",
+        "Comment annotations reading TS (tape slippage)",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_N",
+        "number",
+        "Seconds annotated as N (normal sinus rhythm); an episode runs from its + marker to "
+        "the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFIB",
+        "number",
+        "Seconds annotated as AFIB (atrial fibrillation); an episode runs from its + marker "
+        "to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFL",
+        "number",
+        "Seconds annotated as AFL (atrial flutter); an episode runs from its + marker to "
+        "the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_B",
+        "number",
+        "Seconds annotated as B (ventricular bigeminy); an episode runs from its + marker "
+        "to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_T",
+        "number",
+        "Seconds annotated as T (ventricular trigeminy); an episode runs from its + marker "
+        "to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_VT",
+        "number",
+        "Seconds annotated as VT (ventricular tachycardia); an episode runs from its + "
+        "marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SVTA",
+        "number",
+        "Seconds annotated as SVTA (supraventricular tachyarrhythmia); an episode runs from "
+        "its + marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_P",
+        "number",
+        "Seconds annotated as P (paced rhythm); an episode runs from its + marker to the "
+        "next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_NOD",
+        "number",
+        "Seconds annotated as NOD (nodal (AV junctional) rhythm); an episode runs from its "
+        "+ marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_IVR",
+        "number",
+        "Seconds annotated as IVR (idioventricular rhythm); an episode runs from its + "
+        "marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_VFL",
+        "number",
+        "Seconds annotated as VFL (ventricular flutter); an episode runs from its + marker "
+        "to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_BII",
+        "number",
+        "Seconds annotated as BII (second degree heart block); an episode runs from its + "
+        "marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AB",
+        "number",
+        "Seconds annotated as AB (atrial bigeminy); an episode runs from its + marker to "
+        "the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_PREX",
+        "number",
+        "Seconds annotated as PREX (pre-excitation (WPW)); an episode runs from its + "
+        "marker to the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SBR",
+        "number",
+        "Seconds annotated as SBR (sinus bradycardia); an episode runs from its + marker to "
+        "the next",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Reference beat annotations, the sum of the beat_* columns; 109,494 over the "
+        "release, excluding the 3,153 non-beat markers",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .atr, beats and markers alike (112,647 over the release)",
+        nullable=False,
+    ),
+    Field(
+        "rhythms",
+        "string",
+        "Rhythm codes present, pipe-separated, most time first",
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm",
+        "string",
+        "Rhythm code holding the most seconds of the record",
+        vocabulary=(
+            "N",
+            "AFIB",
+            "AFL",
+            "B",
+            "T",
+            "VT",
+            "SVTA",
+            "P",
+            "NOD",
+            "IVR",
+            "VFL",
+            "BII",
+            "AB",
+            "PREX",
+            "SBR",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm_fraction",
+        "number",
+        "Fraction of annotated time in dominant_rhythm",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+        nullable=False,
+    ),
+    Field(
+        "pvc_fraction",
+        "number",
+        "beat_V / n_beats",
+    ),
+    Field(
+        "record_group",
+        "string",
+        "The database's two halves: records 100-124 chosen at random, 200-234 selected for "
+        "rare phenomena",
+        vocabulary=("random_sample", "selected"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Equal to record_group; the fold stratification label, not a clinical one",
+        vocabulary=("random_sample", "selected"),
+        nullable=False,
+    ),
+)

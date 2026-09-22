@@ -71,6 +71,7 @@ import pandas as pd
 
 from ecgbench.labels._challenge_headers import RECORDS_DIR, parse_header
 from ecgbench.labels._challenge_headers import scan_headers as _scan_headers
+from ecgbench.labels._fields import Field
 
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
@@ -257,3 +258,110 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         len({c for dx in df["dx"] for c in str(dx).split(",") if c}),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "dx",
+        "string",
+        "Comma-separated SNOMED-CT codes from the header's #Dx line. Deduplicated: 631 "
+        "shipped records repeat a code inside their own list. The ground truth: multi-label "
+        "(111 distinct codes), and every record carries at least one",
+        nullable=False,
+    ),
+    Field(
+        "n_dx",
+        "integer",
+        "Number of distinct codes in dx",
+        nullable=False,
+    ),
+    Field(
+        "dx_abbreviations",
+        "string",
+        "dx through the packaged challenge table, comma-separated; UNMAPPED for a code "
+        "absent from it",
+        nullable=False,
+    ),
+    Field(
+        "dx_names",
+        "string",
+        "Full names of the codes, pipe-separated because the names contain commas",
+        nullable=False,
+    ),
+    Field(
+        "scored_dx",
+        "string",
+        "Abbreviations of the codes among the 27 classes the 2020 challenge metric scored, "
+        "comma-separated; empty when the record carries none",
+    ),
+    Field(
+        "n_scored_dx",
+        "integer",
+        "Number of scored codes in dx",
+        nullable=False,
+    ),
+    Field(
+        "stratify_dx",
+        "string",
+        "Single-label reduction: the globally rarest code the record carries, ties broken "
+        "on the lowest numeric code. Stratification only - #Dx order carries no clinical "
+        "meaning in this release, so there is no primary diagnosis",
+        nullable=False,
+    ),
+    Field(
+        "stratify_dx_abbreviation",
+        "string",
+        "Abbreviation of stratify_dx (UNMAPPED if unknown)",
+        nullable=False,
+    ),
+    Field(
+        "source",
+        "string",
+        "Source cohort: the directory under training/ the record came from (six cohorts, "
+        "not interchangeable - durations run 5 s to 1800 s and several overlap datasets "
+        "catalogued separately)",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "string",
+        "Age as shipped, as text: blank for 181 records, and the sentinels -1 (6 CPSC "
+        "records) and 300 (PTB-XL's marker for over 89, 204 records) are kept - see "
+        "AGE_SENTINELS",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex normalised to Male/Female (the 74 INCART records spell M/F); blank for one "
+        "record",
+        vocabulary=("Male", "Female"),
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Per-record sampling rate: 500 Hz for 42,511 records, 1000 Hz for the 516 ptb "
+        "records, 257 Hz for the 74 INCART records",
+        unit="Hz",
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per lead, from the header",
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Signals declared in the header (12 throughout)",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Path of the record's .mat file relative to the dataset root",
+        nullable=False,
+    ),
+)

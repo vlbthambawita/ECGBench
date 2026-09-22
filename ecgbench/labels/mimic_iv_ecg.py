@@ -63,6 +63,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -243,3 +245,206 @@ def attach_stratify_class(df: pd.DataFrame) -> pd.DataFrame:
 
     out["stratify_class"] = labels
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "report_text",
+        "string",
+        "The machine report: populated report_* lines joined with ' | '. The ground truth - "
+        "free text, not a code; one record of 800,035 has none",
+        nullable=False,
+    ),
+    Field(
+        "primary_report",
+        "string",
+        "report_0 normalised (lower-cased, whitespace collapsed, trailing punctuation "
+        "dropped). Usually the rhythm, but sometimes a data-quality warning or an input "
+        "note, so not a rhythm label",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "primary_report with values under 1,000 records pooled into OTHER and empty ones as "
+        "UNKNOWN. For fold construction only",
+        nullable=False,
+    ),
+    Field(
+        "report_0",
+        "string",
+        "Machine report line 1, verbatim",
+    ),
+    Field(
+        "report_1",
+        "string",
+        "Machine report line 2, verbatim",
+    ),
+    Field(
+        "report_2",
+        "string",
+        "Machine report line 3, verbatim",
+    ),
+    Field(
+        "report_3",
+        "string",
+        "Machine report line 4, verbatim",
+    ),
+    Field(
+        "report_4",
+        "string",
+        "Machine report line 5, verbatim",
+    ),
+    Field(
+        "report_5",
+        "string",
+        "Machine report line 6, verbatim",
+    ),
+    Field(
+        "report_6",
+        "string",
+        "Machine report line 7, verbatim",
+    ),
+    Field(
+        "report_7",
+        "string",
+        "Machine report line 8, verbatim",
+    ),
+    Field(
+        "report_8",
+        "string",
+        "Machine report line 9, verbatim",
+    ),
+    Field(
+        "report_9",
+        "string",
+        "Machine report line 10, verbatim",
+    ),
+    Field(
+        "report_10",
+        "string",
+        "Machine report line 11, verbatim",
+    ),
+    Field(
+        "report_11",
+        "string",
+        "Machine report line 12, verbatim",
+    ),
+    Field(
+        "report_12",
+        "string",
+        "Machine report line 13, verbatim",
+    ),
+    Field(
+        "report_13",
+        "string",
+        "Machine report line 14, verbatim",
+    ),
+    Field(
+        "report_14",
+        "string",
+        "Machine report line 15, verbatim",
+    ),
+    Field(
+        "report_15",
+        "string",
+        "Machine report line 16, verbatim",
+    ),
+    Field(
+        "report_16",
+        "string",
+        "Machine report line 17, verbatim",
+    ),
+    Field(
+        "report_17",
+        "string",
+        "Machine report line 18, verbatim",
+    ),
+    Field(
+        "rr_interval",
+        "number",
+        "RR interval; the 65535 'not measurable' sentinel is NaN here",
+        unit="ms",
+    ),
+    Field(
+        "p_onset",
+        "number",
+        "P-wave onset; NaN where the source held the 29999 sentinel (123,434 records, 90.7% "
+        "of atrial-fibrillation records)",
+        unit="ms",
+    ),
+    Field(
+        "p_end",
+        "number",
+        "P-wave end; NaN where the source held the 29999 sentinel (230,323 records, 100% of "
+        "atrial-fibrillation records)",
+        unit="ms",
+    ),
+    Field(
+        "qrs_onset",
+        "number",
+        "QRS onset; sentinels and implausible values are NaN",
+        unit="ms",
+    ),
+    Field(
+        "qrs_end",
+        "number",
+        "QRS end; sentinels and implausible values are NaN",
+        unit="ms",
+    ),
+    Field(
+        "t_end",
+        "number",
+        "T-wave end; sentinels and implausible values are NaN",
+        unit="ms",
+    ),
+    Field(
+        "p_axis",
+        "number",
+        "P-wave axis; the 32767/-32768 sentinels (7,199 records) and values outside +/-180 "
+        "are NaN",
+        unit="degree",
+    ),
+    Field(
+        "qrs_axis",
+        "number",
+        "QRS axis; sentinels and values outside +/-180 are NaN",
+        unit="degree",
+    ),
+    Field(
+        "t_axis",
+        "number",
+        "T-wave axis; the sentinels (1,440 records) and values outside +/-180 are NaN",
+        unit="degree",
+    ),
+    Field(
+        "qrs_duration",
+        "number",
+        "qrs_end - qrs_onset, NaN where either side is; median 94 ms",
+        unit="ms",
+    ),
+    Field(
+        "ecg_time",
+        "datetime",
+        "Acquisition timestamp (date-shifted, as MIMIC ships it)",
+    ),
+    Field(
+        "cart_id",
+        "integer",
+        "Identifier of the ECG cart that acquired the study",
+    ),
+    Field(
+        "bandwidth",
+        "string",
+        "Cart bandwidth setting, as shipped",
+    ),
+    Field(
+        "filtering",
+        "string",
+        "Cart filter setting, as shipped",
+    ),
+)

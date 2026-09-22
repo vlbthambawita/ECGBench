@@ -143,6 +143,38 @@ class SplitMeta:
 
 
 @dataclass(frozen=True)
+class FieldMeta:
+    """One declared column of the dataset's label table.
+
+    The metadata-layer twin of ``ecgbench.labels._fields.Field`` (same shape),
+    read from the label module's ``FIELDS`` or the config's ``labels.fields``.
+
+    Attributes:
+        name: Column name exactly as ``load_labels()`` returns it.
+        type: Frictionless Table Schema type, or ``array[<item type>]``.
+        description: What the value means, including sentinels and encodings.
+        unit: Physical unit for measurements, else ``None``.
+        vocabulary: Closed set of values as strings, else ``None``.
+        nullable: Whether a record may lack a value.
+        example: One representative value, as text.
+        source: ``labels`` (loader module) or ``config`` (declarative block).
+    """
+
+    name: str
+    type: str
+    description: str = ""
+    unit: str | None = None
+    vocabulary: tuple[str, ...] | None = None
+    nullable: bool = True
+    example: str | None = None
+    source: str = "labels"
+
+    def __post_init__(self) -> None:
+        if self.vocabulary is not None:
+            object.__setattr__(self, "vocabulary", tuple(str(v) for v in self.vocabulary))
+
+
+@dataclass(frozen=True)
 class RelationMeta:
     """An edge to another dataset, mirrored from the catalogue's ``related`` block.
 
@@ -199,6 +231,7 @@ class DatasetMeta:
         access: Access facet, always present.
         split: Split facet, ``None`` for catalogue-only datasets.
         relations: Edges to other datasets, both directions materialised.
+        fields: Declared columns of the label table, empty until declared.
         facts: Every sourced value with provenance, duplicates included.
         prose: Concatenated page text and config prose, for free-text search only.
     """
@@ -225,6 +258,7 @@ class DatasetMeta:
     access: AccessMeta
     split: SplitMeta | None
     relations: tuple[RelationMeta, ...] = ()
+    fields: tuple[FieldMeta, ...] = ()
     facts: tuple[Fact, ...] = ()
     prose: str = field(default="", repr=False)
 
@@ -299,6 +333,7 @@ class DatasetMeta:
             access=AccessMeta(**access),
             split=SplitMeta(**split) if split else None,
             relations=tuple(RelationMeta(**r) for r in data.get("relations", ())),
+            fields=tuple(FieldMeta(**f) for f in data.get("fields", ())),
             facts=tuple(
                 Fact(key=f["key"], value=f["value"], provenance=Provenance(**f["provenance"]))
                 for f in data.get("facts", ())

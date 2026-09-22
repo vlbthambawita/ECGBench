@@ -110,6 +110,24 @@ labels:
     - brugada        # 0 healthy / 1 confirmed / 2 other-atypical
     - basal_pattern  # 1 = pathological baseline ECG, independent of the diagnosis
     - sudden_death   # 1 = subject experienced sudden death
+  fields:
+    brugada:
+      type: integer
+      description: >
+        Diagnosis code: 0 = healthy, 1 = confirmed Brugada syndrome, 2 = other/atypical
+        (see BRUGADA_CLASSES). The stratification label.
+      vocabulary: [0, 1, 2]
+      nullable: false
+    basal_pattern:
+      type: integer
+      description: "1 = pathological baseline (basal) ECG pattern, independent of the diagnosis; 0 otherwise"
+      vocabulary: [0, 1]
+      nullable: false
+    sudden_death:
+      type: integer
+      description: "1 = the subject experienced sudden cardiac death; 0 otherwise"
+      vocabulary: [0, 1]
+      nullable: false
 
 # --- Croissant Metadata ---
 croissant:

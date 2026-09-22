@@ -98,6 +98,35 @@ labels:
     - primary_dx_acronym  # what stratification uses
     - age
     - sex
+  fields:
+    dx:
+      type: string
+      description: >
+        Comma-separated SNOMED-CT codes from the header's #Dx line, in the order the
+        source lists them. Multi-label ground truth; the first code is the rhythm.
+      nullable: false
+    dx_acronyms:
+      type: string
+      description: >
+        The same codes as acronyms through ConditionNames_SNOMED-CT.csv, comma-separated;
+        a code absent from that table keeps its number.
+      nullable: false
+    primary_dx:
+      type: string
+      description: "First listed SNOMED-CT code — the rhythm diagnosis in this release"
+      nullable: false
+    primary_dx_acronym:
+      type: string
+      description: "Acronym of primary_dx; the stratification label"
+      nullable: false
+    age:
+      type: integer
+      description: "Age in years from the header; blank where the source has none"
+      unit: year
+    sex:
+      type: string
+      description: "Sex as the header spells it"
+      vocabulary: ["Male", "Female"]
 
 # --- Croissant Metadata ---
 croissant:

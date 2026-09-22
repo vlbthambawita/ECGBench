@@ -72,6 +72,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -443,3 +445,215 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_leads",
+        "integer",
+        "Signals declared in the header; 0 for 00735 and 03665, whose ECG was never "
+        "released",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per lead declared in the header: 9,205,760 for 22 records, 8,325,000 for "
+        "06453, 0 for the two signal-less records",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Sampling rate from the header (250 Hz throughout)",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Start time of day from the header; empty for the six records that declare none",
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Channel descriptions from the header, pipe-separated (ECG1|ECG2; no anatomical "
+        "lead is named); empty for the signal-less records",
+    ),
+    Field(
+        "has_signals",
+        "boolean",
+        "False for 00735 and 03665: their labels are real, their waveforms do not exist, "
+        "and the clean split excludes them",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_span_samples",
+        "integer",
+        "Span used to close the last rhythm episode: n_samples, or the nominal 9,205,760 "
+        "for the signal-less records",
+        nullable=False,
+    ),
+    Field(
+        "record_seconds",
+        "number",
+        "rhythm_span_samples / sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_N",
+        "number",
+        "Seconds annotated as N (sinus rhythm or any other non-AF rhythm) in the manually "
+        "reviewed .atr episodes",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFIB",
+        "number",
+        "Seconds annotated as AFIB (atrial fibrillation) in the manually reviewed .atr "
+        "episodes",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFL",
+        "number",
+        "Seconds annotated as AFL (atrial flutter) in the manually reviewed .atr episodes",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_J",
+        "number",
+        "Seconds annotated as J (AV junctional rhythm) in the manually reviewed .atr "
+        "episodes",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_N",
+        "integer",
+        "Number of N episodes (sinus rhythm or any other non-AF rhythm); an episode count, "
+        "not a duration",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_AFIB",
+        "integer",
+        "Number of AFIB episodes (atrial fibrillation); an episode count, not a duration",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_AFL",
+        "integer",
+        "Number of AFL episodes (atrial flutter); an episode count, not a duration",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_J",
+        "integer",
+        "Number of J episodes (AV junctional rhythm); an episode count, not a duration",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_annotations",
+        "integer",
+        "Annotations in the .atr rhythm file (623 over the release)",
+        nullable=False,
+    ),
+    Field(
+        "rhythms",
+        "string",
+        "Rhythm codes present, pipe-separated, most time first",
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm",
+        "string",
+        "Rhythm code holding the most annotated seconds",
+        vocabulary=("N", "AFIB", "AFL", "J"),
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm_fraction",
+        "number",
+        "Fraction of annotated time in dominant_rhythm",
+    ),
+    Field(
+        "af_burden",
+        "number",
+        "Fraction of annotated time in AFIB or AFL (J is excluded). The headline label; "
+        "0.002 to 1.0 across the 25 records",
+    ),
+    Field(
+        "longest_af_episode_secs",
+        "number",
+        "Longest single AFIB or AFL episode",
+        unit="s",
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Beat annotations from the unaudited .qrs detector, every symbol N: a detection "
+        "count, not a normal-beat count",
+        nullable=False,
+    ),
+    Field(
+        "n_beats_corrected",
+        "number",
+        "Beat annotations from the manually corrected .qrsc, present for 05091 and 07859 "
+        "only; NaN elsewhere, never substituted",
+    ),
+    Field(
+        "has_corrected_beats",
+        "boolean",
+        "Whether a .qrsc file exists for the record",
+        nullable=False,
+    ),
+    Field(
+        "last_beat_sample",
+        "integer",
+        "Sample of the last .qrs beat annotation",
+        nullable=False,
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Record past the last .qrs beat: about 823 s in 21 of the 23 records with signals, "
+        "because annotation stopped at the nominal 10 h",
+        unit="s",
+    ),
+    Field(
+        "mean_heart_rate_bpm",
+        "number",
+        "60 / mean RR interval from the .qrs beats, RR outside 0.2-2.5 s dropped",
+        unit="bpm",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+        nullable=False,
+    ),
+    Field(
+        "af_class",
+        "string",
+        "af_burden binned: minimal (< 5%), paroxysmal (5-95%), sustained (>= 95%)",
+        vocabulary=("minimal", "paroxysmal", "sustained"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Binary fold label at 20% AF burden; coarser than af_class because 25 records allow "
+        "no finer stratified split. Do not train on it",
+        vocabulary=("af_low", "af_high"),
+        nullable=False,
+    ),
+)

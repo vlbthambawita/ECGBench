@@ -639,7 +639,9 @@ class TestSqliteIndex:
                 "dataset_fts"} <= tables
         assert conn.execute("SELECT count(*) FROM dataset").fetchone()[0] == 64
         assert conn.execute("SELECT count(*) FROM dataset_fts").fetchone()[0] == 64
-        assert conn.execute("SELECT count(*) FROM field").fetchone()[0] == 0  # Phase 3
+        n_fields = sum(len(m.fields) for m in model)
+        assert n_fields > 0  # Phase 3 declarations
+        assert conn.execute("SELECT count(*) FROM field").fetchone()[0] == n_fields
         assert conn.execute("SELECT count(*) FROM artefact").fetchone()[0] == 0  # Phase 4
         n_facts = sum(len(m.facts) for m in model)
         assert conn.execute("SELECT count(*) FROM fact").fetchone()[0] == n_facts

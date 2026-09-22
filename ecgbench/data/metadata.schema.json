@@ -106,6 +106,24 @@
         "record_id_column": {"$ref": "#/$defs/nullableString"}
       }
     },
+    "field": {
+      "type": "object",
+      "required": ["name", "type", "description", "unit", "vocabulary", "nullable", "example", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {
+          "type": "string",
+          "pattern": "^(string|integer|number|boolean|array|object|date|datetime|time|duration|any|array\\[(string|integer|number|boolean|object|date|datetime|time|duration|any)\\])$"
+        },
+        "description": {"type": "string"},
+        "unit": {"$ref": "#/$defs/nullableString"},
+        "vocabulary": {"type": ["array", "null"], "items": {"type": "string"}},
+        "nullable": {"type": "boolean"},
+        "example": {"$ref": "#/$defs/nullableString"},
+        "source": {"type": "string", "enum": ["labels", "config"]}
+      }
+    },
     "relation": {
       "type": "object",
       "required": ["target", "relation", "shares_records", "verified", "note", "derived"],
@@ -131,7 +149,7 @@
         "dataset_id", "aliases", "name", "category", "status", "implementation_state", "version",
         "description", "paper_title", "paper_doi", "citation", "origin_institution",
         "origin_country", "search_keywords", "records", "patients", "records_display",
-        "patients_display", "signal", "access", "split", "relations", "facts", "prose"
+        "patients_display", "signal", "access", "split", "relations", "fields", "facts", "prose"
       ],
       "additionalProperties": false,
       "properties": {
@@ -166,6 +184,7 @@
         "access": {"$ref": "#/$defs/access"},
         "split": {"oneOf": [{"$ref": "#/$defs/split"}, {"type": "null"}]},
         "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+        "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
         "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
         "prose": {"type": "string"}
       }

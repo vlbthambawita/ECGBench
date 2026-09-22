@@ -30,9 +30,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-import pandas as pd
-
 if TYPE_CHECKING:
+    import pandas as pd
+
     from ecgbench.config import DatasetConfig
 
 __all__ = [
@@ -72,6 +72,8 @@ def _load_declarative(data_path: Path, config: DatasetConfig) -> pd.DataFrame:
     # read as strings — the fold CSVs it joins against are read the same way, and
     # "00735" must not become 735 on one side only. Empty for every other dataset;
     # see DatasetConfig.zero_padded_identifiers.
+    import pandas as pd
+
     dtypes = dict(config.identifier_dtypes())
     if dtypes:
         dtypes[spec.join_column] = "str"

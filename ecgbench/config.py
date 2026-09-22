@@ -48,6 +48,25 @@ class PredefinedSplitConfig:
 
 
 @dataclass
+class LabelFieldConfig:
+    """Type and meaning of one declarative label column (``labels.fields.<name>``).
+
+    The YAML counterpart of ``ecgbench.labels._fields.Field`` for datasets whose
+    labels are a plain column select: ``type`` is a Frictionless Table Schema
+    type (``string``, ``integer``, ``number``, ``boolean``, ``array[string]`` …),
+    ``vocabulary`` the closed set of values as strings, ``nullable`` whether a
+    record may lack a value.
+    """
+
+    type: str = "string"
+    description: str = ""
+    unit: str | None = None
+    vocabulary: list[str] | None = None
+    nullable: bool = True
+    example: str | None = None
+
+
+@dataclass
 class LabelConfig:
     """Where a dataset's per-record labels and metadata come from.
 
@@ -64,6 +83,10 @@ class LabelConfig:
     separator: str = ","
     join_column: str | None = None  # column in source_csv holding record ids
     columns: list[str] | None = None  # None -> every column except join_column
+    #: Optional per-column type and description for the declarative path, keyed
+    #: by column name. Columns listed here but not in ``columns`` are appended,
+    #: which lets a block with ``columns: null`` still enumerate its fields.
+    fields: dict[str, LabelFieldConfig] | None = None
     unavailable_reason: str = ""  # required when available is False
 
 
@@ -292,7 +315,26 @@ def _parse_labels(raw: dict | None) -> LabelConfig | None:
         separator=raw.get("separator", ","),
         join_column=raw.get("join_column"),
         columns=raw.get("columns"),
+        fields=_parse_label_fields(raw.get("fields")),
     )
+
+
+def _parse_label_fields(raw: dict | None) -> dict[str, LabelFieldConfig] | None:
+    if not raw:
+        return None
+    out: dict[str, LabelFieldConfig] = {}
+    for name, spec in raw.items():
+        spec = spec or {}
+        vocabulary = spec.get("vocabulary")
+        out[str(name)] = LabelFieldConfig(
+            type=str(spec.get("type", "string")),
+            description=str(spec.get("description", "")).strip(),
+            unit=spec.get("unit"),
+            vocabulary=[str(v) for v in vocabulary] if vocabulary else None,
+            nullable=bool(spec.get("nullable", True)),
+            example=None if spec.get("example") is None else str(spec["example"]),
+        )
+    return out
 
 
 def _parse_croissant(raw: dict | None) -> CroissantConfig:

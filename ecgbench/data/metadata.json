@@ -1,6 +1,6 @@
 {
- "built_at": "2026-09-20T09:26:43+00:00",
- "content_digest": "sha256:63182fcee6aa485fb73fa1f8f939002eb05bcfcc05716efc76b46c231254b581",
+ "built_at": "2026-09-22T06:40:24+00:00",
+ "content_digest": "sha256:9ebca0064776ef51f2b5262d0435eab46e57b2209c50c0212a0c4d757d32b2b8",
  "datasets": [
   {
    "access": {
@@ -329,6 +329,330 @@
       "source_path": "ecgbench/data/configs/afdb.yaml"
      },
      "value": true
+    }
+   ],
+   "fields": [
+    {
+     "description": "Signals declared in the header; 0 for 00735 and 03665, whose ECG was never released",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples per lead declared in the header: 9,205,760 for 22 records, 8,325,000 for 06453, 0 for the two signal-less records",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sampling rate from the header (250 Hz throughout)",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Start time of day from the header; empty for the six records that declare none",
+     "example": null,
+     "name": "start_time",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Channel descriptions from the header, pipe-separated (ECG1|ECG2; no anatomical lead is named); empty for the signal-less records",
+     "example": null,
+     "name": "lead_names",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "False for 00735 and 03665: their labels are real, their waveforms do not exist, and the clean split excludes them",
+     "example": null,
+     "name": "has_signals",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Span used to close the last rhythm episode: n_samples, or the nominal 9,205,760 for the signal-less records",
+     "example": null,
+     "name": "rhythm_span_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "rhythm_span_samples / sampling_rate",
+     "example": null,
+     "name": "record_seconds",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as N (sinus rhythm or any other non-AF rhythm) in the manually reviewed .atr episodes",
+     "example": null,
+     "name": "rhythm_secs_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as AFIB (atrial fibrillation) in the manually reviewed .atr episodes",
+     "example": null,
+     "name": "rhythm_secs_AFIB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as AFL (atrial flutter) in the manually reviewed .atr episodes",
+     "example": null,
+     "name": "rhythm_secs_AFL",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as J (AV junctional rhythm) in the manually reviewed .atr episodes",
+     "example": null,
+     "name": "rhythm_secs_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Number of N episodes (sinus rhythm or any other non-AF rhythm); an episode count, not a duration",
+     "example": null,
+     "name": "n_episodes_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of AFIB episodes (atrial fibrillation); an episode count, not a duration",
+     "example": null,
+     "name": "n_episodes_AFIB",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of AFL episodes (atrial flutter); an episode count, not a duration",
+     "example": null,
+     "name": "n_episodes_AFL",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of J episodes (AV junctional rhythm); an episode count, not a duration",
+     "example": null,
+     "name": "n_episodes_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Annotations in the .atr rhythm file (623 over the release)",
+     "example": null,
+     "name": "n_rhythm_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm codes present, pipe-separated, most time first",
+     "example": null,
+     "name": "rhythms",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm code holding the most annotated seconds",
+     "example": null,
+     "name": "dominant_rhythm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "N",
+      "AFIB",
+      "AFL",
+      "J"
+     ]
+    },
+    {
+     "description": "Fraction of annotated time in dominant_rhythm",
+     "example": null,
+     "name": "dominant_rhythm_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Fraction of annotated time in AFIB or AFL (J is excluded). The headline label; 0.002 to 1.0 across the 25 records",
+     "example": null,
+     "name": "af_burden",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Longest single AFIB or AFL episode",
+     "example": null,
+     "name": "longest_af_episode_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Beat annotations from the unaudited .qrs detector, every symbol N: a detection count, not a normal-beat count",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beat annotations from the manually corrected .qrsc, present for 05091 and 07859 only; NaN elsewhere, never substituted",
+     "example": null,
+     "name": "n_beats_corrected",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Whether a .qrsc file exists for the record",
+     "example": null,
+     "name": "has_corrected_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sample of the last .qrs beat annotation",
+     "example": null,
+     "name": "last_beat_sample",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Record past the last .qrs beat: about 823 s in 21 of the 23 records with signals, because annotation stopped at the nominal 10 h",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "60 / mean RR interval from the .qrs beats, RR outside 0.2-2.5 s dropped",
+     "example": null,
+     "name": "mean_heart_rate_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "af_burden binned: minimal (< 5%), paroxysmal (5-95%), sustained (>= 95%)",
+     "example": null,
+     "name": "af_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "minimal",
+      "paroxysmal",
+      "sustained"
+     ]
+    },
+    {
+     "description": "Binary fold label at 20% AF burden; coarser than af_class because 25 records allow no finer stratified split. Do not train on it",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "af_low",
+      "af_high"
+     ]
     }
    ],
    "implementation_state": "published",
@@ -709,6 +1033,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Apnea-ECG Database",
    "origin_country": "Germany",
@@ -1074,6 +1399,48 @@
       "source_path": "ecgbench/data/configs/brugada_huca.yaml"
      },
      "value": true
+    }
+   ],
+   "fields": [
+    {
+     "description": "Diagnosis code: 0 = healthy, 1 = confirmed Brugada syndrome, 2 = other/atypical (see BRUGADA_CLASSES). The stratification label.",
+     "example": null,
+     "name": "brugada",
+     "nullable": false,
+     "source": "config",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1",
+      "2"
+     ]
+    },
+    {
+     "description": "1 = pathological baseline (basal) ECG pattern, independent of the diagnosis; 0 otherwise",
+     "example": null,
+     "name": "basal_pattern",
+     "nullable": false,
+     "source": "config",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "1 = the subject experienced sudden cardiac death; 0 otherwise",
+     "example": null,
+     "name": "sudden_death",
+     "nullable": false,
+     "source": "config",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
     }
    ],
    "implementation_state": "published",
@@ -1464,6 +1831,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Brno University of Technology ECG Quality Database (BUT QDB)",
    "origin_country": "Czech Republic",
@@ -1832,6 +2200,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "PhysioNet/CinC Challenge 2017 (AF Classification)",
    "origin_country": "USA",
@@ -2200,6 +2569,161 @@
       "source_path": "ecgbench/data/configs/challenge2020.yaml"
      },
      "value": true
+    }
+   ],
+   "fields": [
+    {
+     "description": "Comma-separated SNOMED-CT codes from the header's #Dx line. Deduplicated: 631 shipped records repeat a code inside their own list. The ground truth: multi-label (111 distinct codes), and every record carries at least one",
+     "example": null,
+     "name": "dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of distinct codes in dx",
+     "example": null,
+     "name": "n_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "dx through the packaged challenge table, comma-separated; UNMAPPED for a code absent from it",
+     "example": null,
+     "name": "dx_abbreviations",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Full names of the codes, pipe-separated because the names contain commas",
+     "example": null,
+     "name": "dx_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Abbreviations of the codes among the 27 classes the 2020 challenge metric scored, comma-separated; empty when the record carries none",
+     "example": null,
+     "name": "scored_dx",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of scored codes in dx",
+     "example": null,
+     "name": "n_scored_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Single-label reduction: the globally rarest code the record carries, ties broken on the lowest numeric code. Stratification only - #Dx order carries no clinical meaning in this release, so there is no primary diagnosis",
+     "example": null,
+     "name": "stratify_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Abbreviation of stratify_dx (UNMAPPED if unknown)",
+     "example": null,
+     "name": "stratify_dx_abbreviation",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Source cohort: the directory under training/ the record came from (six cohorts, not interchangeable - durations run 5 s to 1800 s and several overlap datasets catalogued separately)",
+     "example": null,
+     "name": "source",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age as shipped, as text: blank for 181 records, and the sentinels -1 (6 CPSC records) and 300 (PTB-XL's marker for over 89, 204 records) are kept - see AGE_SENTINELS",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex normalised to Male/Female (the 74 INCART records spell M/F); blank for one record",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Male",
+      "Female"
+     ]
+    },
+    {
+     "description": "Per-record sampling rate: 500 Hz for 42,511 records, 1000 Hz for the 516 ptb records, 257 Hz for the 74 INCART records",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Samples per lead, from the header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Signals declared in the header (12 throughout)",
+     "example": null,
+     "name": "n_leads",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Path of the record's .mat file relative to the dataset root",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
     }
    ],
    "implementation_state": "published",
@@ -2624,6 +3148,162 @@
       "source_path": "ecgbench/data/configs/challenge2021.yaml"
      },
      "value": true
+    }
+   ],
+   "fields": [
+    {
+     "description": "Comma-separated SNOMED-CT codes from the header's #Dx line. The ground truth: multi-label (133 distinct codes), and every record carries at least one",
+     "example": null,
+     "name": "dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of distinct codes in dx",
+     "example": null,
+     "name": "n_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "dx through the packaged challenge table, comma-separated; UNMAPPED for a code absent from it",
+     "example": null,
+     "name": "dx_abbreviations",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Full names of the codes, pipe-separated because the names contain commas",
+     "example": null,
+     "name": "dx_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Abbreviations of the codes among the 30 classes the 2021 challenge metric scored, comma-separated; empty when the record carries none",
+     "example": null,
+     "name": "scored_dx",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Number of scored codes in dx",
+     "example": null,
+     "name": "n_scored_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Single-label reduction: the globally rarest code the record carries, ties broken on the lowest numeric code. Stratification only - #Dx order carries no clinical meaning in this release, so there is no primary diagnosis",
+     "example": null,
+     "name": "stratify_dx",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Abbreviation of stratify_dx (UNMAPPED if unknown)",
+     "example": null,
+     "name": "stratify_dx_abbreviation",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Source cohort: the directory under training/ the record came from (eight cohorts, not interchangeable - durations run 5 s to 1800 s and several overlap datasets catalogued separately)",
+     "example": null,
+     "name": "source",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age in years from the header, as text; blank (NaN) for 236 records",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex from the header; Unknown for 22 records and blank for one",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Male",
+      "Female",
+      "Unknown"
+     ]
+    },
+    {
+     "description": "Per-record sampling rate: 500 Hz for 87,663 records, 1000 Hz for the 516 ptb records, 257 Hz for the 74 INCART records",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Samples per lead, from the header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Signals declared in the header (12 throughout)",
+     "example": null,
+     "name": "n_leads",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Path of the record's .mat file relative to the dataset root",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
     }
    ],
    "implementation_state": "published",
@@ -3057,6 +3737,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Chapman-Shaoxing ECG Database (10,646 patients)",
    "origin_country": "China / USA",
@@ -3445,6 +4126,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "BIDMC Congestive Heart Failure Database",
    "origin_country": "USA — Boston, MA",
@@ -3649,6 +4331,7 @@
      "value": "code full dataset scilifelab figshare brazil tnmg 2 million hdf5 dua"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "CODE (Full Dataset, ~2.3M records)",
    "origin_country": "Brazil",
@@ -4022,6 +4705,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "CODE-15% (Telehealth Network of Minas Gerais, 15% subset)",
    "origin_country": "Brazil",
@@ -4426,6 +5110,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "CODE-test (827-record hold-out test set)",
    "origin_country": "Brazil",
@@ -4822,6 +5507,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "CPSC 2018 (China Physiological Signal Challenge 2018)",
    "origin_country": "China",
@@ -5217,6 +5903,71 @@
       "source_path": "ecgbench/data/configs/ecg_arrhythmia.yaml"
      },
      "value": true
+    }
+   ],
+   "fields": [
+    {
+     "description": "Comma-separated SNOMED-CT codes from the header's #Dx line, in the order the source lists them. Multi-label ground truth; the first code is the rhythm.",
+     "example": null,
+     "name": "dx",
+     "nullable": false,
+     "source": "config",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The same codes as acronyms through ConditionNames_SNOMED-CT.csv, comma-separated; a code absent from that table keeps its number.",
+     "example": null,
+     "name": "dx_acronyms",
+     "nullable": false,
+     "source": "config",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "First listed SNOMED-CT code — the rhythm diagnosis in this release",
+     "example": null,
+     "name": "primary_dx",
+     "nullable": false,
+     "source": "config",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Acronym of primary_dx; the stratification label",
+     "example": null,
+     "name": "primary_dx_acronym",
+     "nullable": false,
+     "source": "config",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age in years from the header; blank where the source has none",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "config",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex as the header spells it",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "config",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Male",
+      "Female"
+     ]
     }
    ],
    "implementation_state": "published",
@@ -5636,6 +6387,7 @@
      "value": false
     }
    ],
+   "fields": [],
    "implementation_state": "config_labels",
    "name": "ECG-Capable Smartwatches Dataset",
    "origin_country": "Spain — Madrid",
@@ -6031,6 +6783,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "CiPA ECG Validation Study",
    "origin_country": "USA",
@@ -6436,6 +7189,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)",
    "origin_country": "USA",
@@ -6841,6 +7595,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "ECG-ID Database",
    "origin_country": "Russia — St. Petersburg",
@@ -7219,6 +7974,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "ECG Effects of Ranolazine, Dofetilide, Verapamil, Quinidine (ECGRDVQ)",
    "origin_country": "USA",
@@ -7622,6 +8378,7 @@
      "value": false
     }
    ],
+   "fields": [],
    "implementation_state": "config_labels",
    "name": "EchoNext",
    "origin_country": "USA — New York, NY",
@@ -8011,6 +8768,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "European ST-T Database (EDB)",
    "origin_country": "Italy",
@@ -8473,6 +9231,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "EDGAR (Experimental Data & Geometric Analysis Repository)",
    "origin_country": "Multi-national (USA / Czechia / Germany / Spain / Canada / Netherlands / New Zealand / France / Slovakia / Switzerland)",
@@ -8679,6 +9438,7 @@
      "value": "eye tracking gaze aoi ecg interpretation qatar hamad bin khalifa expertise reader study images no waveforms"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Eye Tracking Dataset for 12-Lead ECG Interpretation",
    "origin_country": "Qatar",
@@ -8861,6 +9621,7 @@
      "value": "gu ecg gazi university turkey ptca ischaemia mendeley high frequency bilkent coronary artery"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "GU-ECG (Gazi University, PTCA-induced Ischaemia)",
    "origin_country": "Turkey",
@@ -9043,6 +9804,7 @@
      "value": "harvard emory ecg heedb bdsp aws wfdb massachusetts general hospital mgh emory atlanta usa largest"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Harvard-Emory ECG Database (HEEDB)",
    "origin_country": "USA — Boston & Atlanta",
@@ -9225,6 +9987,7 @@
      "value": "icentia11k canada montreal arrhythmia cardiostat wearable continuous"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Icentia11k Single Lead Continuous ECG",
    "origin_country": "Canada",
@@ -9581,6 +10344,7 @@
      "value": false
     }
    ],
+   "fields": [],
    "implementation_state": "config_labels",
    "name": "IKEM Dataset (Institute for Clinical and Experimental Medicine, Prague)",
    "origin_country": "Czech Republic — Prague",
@@ -9965,6 +10729,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "St Petersburg INCART 12-Lead Arrhythmia Database",
    "origin_country": "Russia",
@@ -10195,6 +10960,7 @@
      "value": "kurias ecg south korea seoul anam snomed omop unavailable withdrawn downloads disabled"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "KURIAS-ECG",
    "origin_country": "South Korea — Seoul",
@@ -10542,6 +11308,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Leipzig Heart Center ECG Database",
    "origin_country": "Germany",
@@ -10922,6 +11689,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Long-Term AF Database (LTAFDB)",
    "origin_country": "USA / Poland",
@@ -11301,6 +12069,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Long-Term ST Database (LTSTDB)",
    "origin_country": "Multi-national (Slovenia, Italy, USA)",
@@ -11732,6 +12501,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Lobachevsky University ECG Database (LUDB)",
    "origin_country": "Russia",
@@ -12120,6 +12890,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "MedalCare-XL (Synthetic 12-Lead ECGs from Simulations)",
    "origin_country": "Austria / Germany / UK",
@@ -12509,6 +13280,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "MHD Effect on 12-Lead ECGs in MRI Scanners",
    "origin_country": "Germany",
@@ -12723,6 +13495,7 @@
      "value": "mimic iii waveform icu monitoring 3-lead usa boston beth israel bidmc continuous lead ii v avr mcl"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "MIMIC-III Waveform Database Matched Subset",
    "origin_country": "USA — Boston, MA",
@@ -12904,6 +13677,7 @@
      "value": "mimic iv ecg ext icd icd-10-cm discharge diagnoses oldenburg charite germany derived labels emergency department"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "MIMIC-IV-ECG-Ext-ICD",
    "origin_country": "Germany",
@@ -13266,6 +14040,358 @@
       "source_path": "ecgbench/data/configs/mimic_iv_ecg.yaml"
      },
      "value": false
+    }
+   ],
+   "fields": [
+    {
+     "description": "The machine report: populated report_* lines joined with ' | '. The ground truth - free text, not a code; one record of 800,035 has none",
+     "example": null,
+     "name": "report_text",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "report_0 normalised (lower-cased, whitespace collapsed, trailing punctuation dropped). Usually the rhythm, but sometimes a data-quality warning or an input note, so not a rhythm label",
+     "example": null,
+     "name": "primary_report",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "primary_report with values under 1,000 records pooled into OTHER and empty ones as UNKNOWN. For fold construction only",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 1, verbatim",
+     "example": null,
+     "name": "report_0",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 2, verbatim",
+     "example": null,
+     "name": "report_1",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 3, verbatim",
+     "example": null,
+     "name": "report_2",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 4, verbatim",
+     "example": null,
+     "name": "report_3",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 5, verbatim",
+     "example": null,
+     "name": "report_4",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 6, verbatim",
+     "example": null,
+     "name": "report_5",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 7, verbatim",
+     "example": null,
+     "name": "report_6",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 8, verbatim",
+     "example": null,
+     "name": "report_7",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 9, verbatim",
+     "example": null,
+     "name": "report_8",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 10, verbatim",
+     "example": null,
+     "name": "report_9",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 11, verbatim",
+     "example": null,
+     "name": "report_10",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 12, verbatim",
+     "example": null,
+     "name": "report_11",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 13, verbatim",
+     "example": null,
+     "name": "report_12",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 14, verbatim",
+     "example": null,
+     "name": "report_13",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 15, verbatim",
+     "example": null,
+     "name": "report_14",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 16, verbatim",
+     "example": null,
+     "name": "report_15",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 17, verbatim",
+     "example": null,
+     "name": "report_16",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Machine report line 18, verbatim",
+     "example": null,
+     "name": "report_17",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "RR interval; the 65535 'not measurable' sentinel is NaN here",
+     "example": null,
+     "name": "rr_interval",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "P-wave onset; NaN where the source held the 29999 sentinel (123,434 records, 90.7% of atrial-fibrillation records)",
+     "example": null,
+     "name": "p_onset",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "P-wave end; NaN where the source held the 29999 sentinel (230,323 records, 100% of atrial-fibrillation records)",
+     "example": null,
+     "name": "p_end",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS onset; sentinels and implausible values are NaN",
+     "example": null,
+     "name": "qrs_onset",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS end; sentinels and implausible values are NaN",
+     "example": null,
+     "name": "qrs_end",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave end; sentinels and implausible values are NaN",
+     "example": null,
+     "name": "t_end",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "P-wave axis; the 32767/-32768 sentinels (7,199 records) and values outside +/-180 are NaN",
+     "example": null,
+     "name": "p_axis",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "degree",
+     "vocabulary": null
+    },
+    {
+     "description": "QRS axis; sentinels and values outside +/-180 are NaN",
+     "example": null,
+     "name": "qrs_axis",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "degree",
+     "vocabulary": null
+    },
+    {
+     "description": "T-wave axis; the sentinels (1,440 records) and values outside +/-180 are NaN",
+     "example": null,
+     "name": "t_axis",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "degree",
+     "vocabulary": null
+    },
+    {
+     "description": "qrs_end - qrs_onset, NaN where either side is; median 94 ms",
+     "example": null,
+     "name": "qrs_duration",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Acquisition timestamp (date-shifted, as MIMIC ships it)",
+     "example": null,
+     "name": "ecg_time",
+     "nullable": true,
+     "source": "labels",
+     "type": "datetime",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Identifier of the ECG cart that acquired the study",
+     "example": null,
+     "name": "cart_id",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Cart bandwidth setting, as shipped",
+     "example": null,
+     "name": "bandwidth",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Cart filter setting, as shipped",
+     "example": null,
+     "name": "filtering",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
     }
    ],
    "implementation_state": "config_labels",
@@ -13681,6 +14807,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "config",
    "name": "MIMIC-IV-ECG Demo",
    "origin_country": "USA — Boston, MA",
@@ -14086,6 +15213,613 @@
      "value": true
     }
    ],
+   "fields": [
+    {
+     "description": "Subject age in years from the header's first comment line; NaN for records 103 and 219, which the release writes as -1 (unknown)",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Subject sex from the header",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "tape<N>: the analog tape the record came from, and therefore the subject. 47 subjects over 48 records; 201 and 202 share tape1960. The fold grouping key",
+     "example": null,
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Del Mar Avionics recorder number from the header (654 = recorder E, 1629 = G, 694 = F, 167 = A, 2851 = H, 3655 = I, 653 = D, 171 = B, 356 = C); N/A for record 208. A confounder: recorder-specific artefact is real",
+     "example": null,
+     "name": "recorder",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "True for the 18 records played back at twice real time when digitised (x2 in the header)",
+     "example": null,
+     "name": "digitised_at_double_speed",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Subject's medications from the header's second comment line; empty where the release says None",
+     "example": null,
+     "name": "medications",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Free-text clinical description of this record, wrapped lines rejoined; empty for the 9 records without one",
+     "example": null,
+     "name": "description",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The two leads this record stores, pipe-separated in file order; MLII|V1 for 40 records, and V5|MLII for the reversed record 114",
+     "example": null,
+     "name": "lead_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type N (normal beat)",
+     "example": null,
+     "name": "beat_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type L (left bundle branch block beat)",
+     "example": null,
+     "name": "beat_L",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type R (right bundle branch block beat)",
+     "example": null,
+     "name": "beat_R",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type V (premature ventricular contraction)",
+     "example": null,
+     "name": "beat_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type / (paced beat)",
+     "example": null,
+     "name": "beat_/",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type A (atrial premature beat)",
+     "example": null,
+     "name": "beat_A",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type f (fusion of paced and normal beat)",
+     "example": null,
+     "name": "beat_f",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type F (fusion of ventricular and normal beat)",
+     "example": null,
+     "name": "beat_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type j (nodal (junctional) escape beat)",
+     "example": null,
+     "name": "beat_j",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type a (aberrated atrial premature beat)",
+     "example": null,
+     "name": "beat_a",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type E (ventricular escape beat)",
+     "example": null,
+     "name": "beat_E",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type J (nodal (junctional) premature beat)",
+     "example": null,
+     "name": "beat_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type Q (unclassifiable beat)",
+     "example": null,
+     "name": "beat_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type e (atrial escape beat)",
+     "example": null,
+     "name": "beat_e",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference annotations of beat type S (supraventricular premature beat)",
+     "example": null,
+     "name": "beat_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm-change markers (+), each opening an episode; a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_rhythm_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Signal-quality-change markers (~); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_signal_quality_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ventricular flutter wave markers (!); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_ventricular_flutter_waves",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations (\"), which carry the note_* values; a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_comment_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Non-conducted P-wave markers (x); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_nonconducted_p_waves",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Isolated artefact markers (|); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_isolated_artifacts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ventricular flutter/fibrillation episode start markers ([); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_vfl_episode_starts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ventricular flutter/fibrillation episode end markers (]); a non-beat marker, excluded from n_beats",
+     "example": null,
+     "name": "n_vfl_episode_ends",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations reading MISSB (missed beat)",
+     "example": null,
+     "name": "note_MISSB",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations reading PSE (pause)",
+     "example": null,
+     "name": "note_PSE",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Comment annotations reading TS (tape slippage)",
+     "example": null,
+     "name": "note_TS",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as N (normal sinus rhythm); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as AFIB (atrial fibrillation); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_AFIB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as AFL (atrial flutter); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_AFL",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as B (ventricular bigeminy); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_B",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as T (ventricular trigeminy); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_T",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as VT (ventricular tachycardia); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_VT",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as SVTA (supraventricular tachyarrhythmia); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_SVTA",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as P (paced rhythm); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_P",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as NOD (nodal (AV junctional) rhythm); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_NOD",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as IVR (idioventricular rhythm); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_IVR",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as VFL (ventricular flutter); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_VFL",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as BII (second degree heart block); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_BII",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as AB (atrial bigeminy); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_AB",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as PREX (pre-excitation (WPW)); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_PREX",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated as SBR (sinus bradycardia); an episode runs from its + marker to the next",
+     "example": null,
+     "name": "rhythm_secs_SBR",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beat annotations, the sum of the beat_* columns; 109,494 over the release, excluding the 3,153 non-beat markers",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Every annotation in the .atr, beats and markers alike (112,647 over the release)",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm codes present, pipe-separated, most time first",
+     "example": null,
+     "name": "rhythms",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm code holding the most seconds of the record",
+     "example": null,
+     "name": "dominant_rhythm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "N",
+      "AFIB",
+      "AFL",
+      "B",
+      "T",
+      "VT",
+      "SVTA",
+      "P",
+      "NOD",
+      "IVR",
+      "VFL",
+      "BII",
+      "AB",
+      "PREX",
+      "SBR"
+     ]
+    },
+    {
+     "description": "Fraction of annotated time in dominant_rhythm",
+     "example": null,
+     "name": "dominant_rhythm_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Record stem for wfdb, relative to the dataset root (the tree is flat)",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "beat_V / n_beats",
+     "example": null,
+     "name": "pvc_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The database's two halves: records 100-124 chosen at random, 200-234 selected for rare phenomena",
+     "example": null,
+     "name": "record_group",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "random_sample",
+      "selected"
+     ]
+    },
+    {
+     "description": "Equal to record_group; the fold stratification label, not a clinical one",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "random_sample",
+      "selected"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "MIT-BIH Arrhythmia Database",
    "origin_country": "USA",
@@ -14324,6 +16058,7 @@
      "value": "nightingale bwh brigham women hospital emergency department ecg boston usa numpy cardiac risk"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Nightingale BWH Emergency Dept ECG Dataset",
    "origin_country": "USA — Boston, MA",
@@ -14506,6 +16241,7 @@
      "value": "nightingale ntuh national taiwan university hospital cardiac arrest emergency xml taiwan"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Nightingale NTUH Cardiac Arrest ECG Dataset",
    "origin_country": "Taiwan",
@@ -14854,6 +16590,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Ningbo First Hospital ECG Database (Idiopathic Ventricular Arrhythmia)",
    "origin_country": "China / USA",
@@ -15242,6 +16979,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Norwegian Endurance Athlete ECG Database",
    "origin_country": "Norway",
@@ -15621,6 +17359,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "MIT-BIH Normal Sinus Rhythm Database",
    "origin_country": "USA",
@@ -16010,6 +17749,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Preterm Infant Cardio-Respiratory Signals Database (PICSDB)",
    "origin_country": "USA — Worcester, MA",
@@ -16224,6 +17964,7 @@
      "value": "ptb-xl+ karlsruhe germany features snomed 12sl unig ecgdeli median beats fiducial points derived"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "PTB-XL+",
    "origin_country": "Germany",
@@ -16589,6 +18330,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "PTB Diagnostic ECG Database",
    "origin_country": "Germany — Berlin",
@@ -17014,6 +18756,204 @@
      "value": true
     }
    ],
+   "fields": [
+    {
+     "description": "SCP-ECG statement -> likelihood (0-100), parsed from the dict-string in ptbxl_database.csv; likelihood 0.0 means present but not graded, not absent",
+     "example": null,
+     "name": "scp_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "object",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Statements flagged diagnostic in scp_statements.csv, sorted",
+     "example": null,
+     "name": "diagnostic_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Statements flagged form, sorted",
+     "example": null,
+     "name": "form_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Statements flagged rhythm, sorted",
+     "example": null,
+     "name": "rhythm_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Diagnostic superclasses (diagnostic_class) of the record's statements, sorted. Multi-label: 5,144 of 21,799 records carry more than one and 411 carry none. The training target",
+     "example": null,
+     "name": "superclasses",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": [
+      "NORM",
+      "MI",
+      "STTC",
+      "CD",
+      "HYP"
+     ]
+    },
+    {
+     "description": "Diagnostic subclasses (diagnostic_subclass) of the record's statements, sorted",
+     "example": null,
+     "name": "subclasses",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Single highest-likelihood superclass, ties (10.8% of records) broken on the fixed NORM/MI/STTC/CD/HYP order; OTHER when no diagnostic statement. Stratification label only - do not train on it",
+     "example": null,
+     "name": "primary_superclass",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "NORM",
+      "MI",
+      "STTC",
+      "CD",
+      "HYP",
+      "OTHER"
+     ]
+    },
+    {
+     "description": "Patient identifier: 18,869 patients over 21,799 records, and the fold grouping key",
+     "example": null,
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age in years as shipped; 300 encodes over 89",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "0 = male, 1 = female, as PTB-XL encodes it",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "description": "Height as shipped; sparsely populated",
+     "example": null,
+     "name": "height",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight as shipped; sparsely populated",
+     "example": null,
+     "name": "weight",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Free-text cardiologist report, mostly in German",
+     "example": null,
+     "name": "report",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Heart axis category as shipped (e.g. MID, LAD, RAD)",
+     "example": null,
+     "name": "heart_axis",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Recording timestamp as shipped",
+     "example": null,
+     "name": "recording_date",
+     "nullable": true,
+     "source": "labels",
+     "type": "datetime",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Recording device as shipped",
+     "example": null,
+     "name": "device",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Whether the statements were validated by a human cardiologist",
+     "example": null,
+     "name": "validated_by_human",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "PTB-XL's own stratified fold, 1-10, which ECGBench adopts as the predefined split (1-8 train, 9 val, 10 test)",
+     "example": null,
+     "name": "strat_fold",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "PTB-XL",
    "origin_country": "Germany",
@@ -17437,6 +19377,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "QT Database (QTDB)",
    "origin_country": "Spain / USA",
@@ -17936,6 +19877,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "SaMi-Trop (Chagas Cardiomyopathy Cohort)",
    "origin_country": "Brazil / Sweden / Switzerland",
@@ -18324,6 +20266,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Sudden Cardiac Death Holter Database",
    "origin_country": "USA — Boston, MA",
@@ -18712,6 +20655,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "SHDB-AF (Saitama Holter Database — Atrial Fibrillation)",
    "origin_country": "Japan",
@@ -19091,6 +21035,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Shandong Provincial Hospital ECG Database (SPHDB)",
    "origin_country": "China",
@@ -19479,6 +21424,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "STAFF III Database",
    "origin_country": "USA / Sweden",
@@ -19855,6 +21801,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "MIT-BIH ST Change Database",
    "origin_country": "USA",
@@ -20237,6 +22184,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "MIT-BIH Supraventricular Arrhythmia Database",
    "origin_country": "USA",
@@ -20449,6 +22397,7 @@
      "value": "symile mimic multimodal ecg cxr chest x-ray blood labs retrieval nyu neurips derived cohort credentialed"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "Symile-MIMIC",
    "origin_country": "USA",
@@ -20822,6 +22771,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Post-Ictal Heart Rate Oscillations in Partial Epilepsy",
    "origin_country": "USA — Boston, MA",
@@ -21200,6 +23150,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "tOLIet (Thigh-based ECG, toilet seat)",
    "origin_country": "Portugal — Lisbon",
@@ -21578,6 +23529,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "St. Vincent's / UCD Sleep Apnea Database (UCDDB)",
    "origin_country": "Ireland — Dublin",
@@ -21783,6 +23735,7 @@
      "value": "vitaldb arrhythmia south korea seoul intraoperative lead ii surgical anesthesia annotations beat rhythm no waveforms afib ventricular tachycardia"
     }
    ],
+   "fields": [],
    "implementation_state": "catalogue_only",
    "name": "VitalDB Arrhythmia Database",
    "origin_country": "South Korea",
@@ -22139,6 +24092,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "Wilson Central Terminal ECG Database",
    "origin_country": "Australia",
@@ -22552,6 +24506,7 @@
      "value": true
     }
    ],
+   "fields": [],
    "implementation_state": "published",
    "name": "ZZU pECG (Zhengzhou University Pediatric ECG Database)",
    "origin_country": "China",

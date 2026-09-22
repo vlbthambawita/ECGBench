@@ -50,6 +50,7 @@ from ecgbench.metadata.model import (
     AccessMeta,
     DatasetMeta,
     Fact,
+    FieldMeta,
     Provenance,
     RelationMeta,
     SignalMeta,
@@ -164,6 +165,19 @@ def _labels_available(config: DatasetConfig) -> bool:
     # column; ``columns: null`` there means "every other column", not "none".
     spec = config.labels
     return bool(spec is not None and spec.source_csv and spec.join_column)
+
+
+def _field_metas(config: DatasetConfig) -> tuple[FieldMeta, ...]:
+    """Declared label fields, read statically so the build never imports pandas.
+
+    ``FIELDS`` in ``ecgbench/labels/<slug>.py`` is parsed with ``ast``; a
+    declarative dataset answers from its ``labels:`` block. A module without a
+    declaration yields no fields — the field inventory is being filled in
+    per-dataset batches, and a missing declaration is not an error here.
+    """
+    from ecgbench.labels._fields import fields_for
+
+    return tuple(FieldMeta(**f.to_dict()) for f in fields_for(config, static=True))
 
 
 def _implementation_state(config: DatasetConfig | None) -> str:
@@ -439,6 +453,7 @@ def build_model() -> tuple[DatasetMeta, ...]:
                 access=_access_meta(entry, config),
                 split=_split_meta(config) if config else None,
                 relations=relations,
+                fields=_field_metas(config) if config else (),
                 facts=tuple(facts),
                 prose=_prose(entry, config),
             )
@@ -605,16 +620,18 @@ CREATE TABLE fact (
     observed_at TEXT
 );
 CREATE INDEX fact_dataset_key ON fact(dataset_id, key);
-CREATE TABLE field (                -- populated from Phase 3 (field inventory)
+CREATE TABLE field (                -- declared label columns (FIELDS / labels.fields)
     dataset_id  TEXT NOT NULL REFERENCES dataset(dataset_id),
+    position    INTEGER NOT NULL, -- order load_labels() returns the columns in
     name        TEXT NOT NULL,
-    type        TEXT NOT NULL,
+    type        TEXT NOT NULL,    -- Frictionless type, or array[<item type>]
     description TEXT,
     unit        TEXT,
     vocabulary  TEXT,             -- JSON array or NULL
-    nullable    INTEGER,
+    nullable    INTEGER NOT NULL,
     example     TEXT,
-    source      TEXT
+    source      TEXT NOT NULL,    -- labels | config
+    PRIMARY KEY (dataset_id, name)
 );
 CREATE TABLE relation (
     src            TEXT NOT NULL REFERENCES dataset(dataset_id),
@@ -658,6 +675,21 @@ def fts5_available() -> bool:
         conn.close()
 
 
+def _field_text(meta: DatasetMeta) -> str:
+    """Field names, descriptions and vocabularies, for the ``field_text`` FTS column."""
+    parts: list[str] = []
+    for f in meta.fields:
+        parts.append(f.name)
+        parts.append(f.name.replace("_", " "))
+        if f.description:
+            parts.append(f.description)
+        if f.vocabulary:
+            parts.extend(f.vocabulary)
+        if f.unit:
+            parts.append(f.unit)
+    return "\n".join(parts)
+
+
 def _fts_row(meta: DatasetMeta) -> tuple[str, ...]:
     keywords = " ".join((meta.search_keywords, *meta.aliases, meta.dataset_id))
     institution = " ".join(p for p in (meta.origin_institution, meta.origin_country or "") if p)
@@ -668,7 +700,7 @@ def _fts_row(meta: DatasetMeta) -> tuple[str, ...]:
         meta.description,
         institution,
         meta.prose,
-        "",  # field_text — Phase 3
+        _field_text(meta),
     )
 
 
@@ -768,6 +800,25 @@ def write_sqlite(
                 )
                 for m in ordered
                 for f in m.facts
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO field VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    m.dataset_id,
+                    position,
+                    f.name,
+                    f.type,
+                    f.description or None,
+                    f.unit,
+                    json.dumps(list(f.vocabulary)) if f.vocabulary is not None else None,
+                    int(f.nullable),
+                    f.example,
+                    f.source,
+                )
+                for m in ordered
+                for position, f in enumerate(m.fields)
             ],
         )
         conn.executemany(
