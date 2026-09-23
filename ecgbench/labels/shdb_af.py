@@ -146,6 +146,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -762,3 +764,599 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = attach_stratify_class(df)
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_leads",
+        "integer",
+        "Signals in the header: 2",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record from the header",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 200 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header channel names pipe-joined, 'ECG1|ECG2'",
+        nullable=False,
+    ),
+    Field(
+        "adc_gains",
+        "string",
+        "Per-channel ADC gains pipe-joined",
+        nullable=False,
+    ),
+    Field(
+        "adc_baselines",
+        "string",
+        "Per-channel ADC baselines pipe-joined",
+        nullable=False,
+    ),
+    Field(
+        "record_seconds",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "record_hours",
+        "number",
+        "record_seconds over 3600",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "has_rhythm_annotation",
+        "boolean",
+        "A .atr exists: 98 of the 128 recordings carry rhythm marks",
+        nullable=False,
+    ),
+    Field(
+        "n_detections",
+        "integer",
+        "Beats in the .qrs (epltd Pan-Tompkins output, unaudited); identical to the .atr "
+        "beat positions sample for sample",
+        nullable=False,
+    ),
+    Field(
+        "detector_last_sample",
+        "integer",
+        "Sample of the last .qrs detection; -1 if none",
+        nullable=False,
+    ),
+    Field(
+        "detector_unannotated_tail_secs",
+        "number",
+        "Seconds after the last detection",
+        unit="s",
+    ),
+    Field(
+        "detector_mean_heart_rate_bpm",
+        "number",
+        "Mean heart rate over the .qrs detections",
+        unit="bpm",
+    ),
+    Field(
+        "beats_N",
+        "integer",
+        "Beats inside (N) intervals, not annotated (sinus rhythm and any other rhythm "
+        "outside the protocol). '(N' means NOT ANNOTATED - sinus rhythm, ventricular "
+        "ectopy, pauses, noise and everything outside the supraventricular protocol - not "
+        "sinus rhythm. Missing for unannotated records.",
+    ),
+    Field(
+        "beats_AFIB",
+        "integer",
+        "Beats inside (AFIB) intervals, atrial fibrillation. Missing for unannotated "
+        "records.",
+    ),
+    Field(
+        "beats_AFL",
+        "integer",
+        "Beats inside (AFL) intervals, atrial flutter. Missing for unannotated records.",
+    ),
+    Field(
+        "beats_AT",
+        "integer",
+        "Beats inside (AT) intervals, atrial tachycardia. Missing for unannotated records.",
+    ),
+    Field(
+        "beats_PAT",
+        "integer",
+        "Beats inside (PAT) intervals, other supraventricular tachycardia, e.g. "
+        "Wolff-Parkinson-White. Missing for unannotated records.",
+    ),
+    Field(
+        "beats_NOD",
+        "integer",
+        "Beats inside (NOD) intervals, intranodal (AV-nodal) tachycardia. Missing for "
+        "unannotated records.",
+    ),
+    Field(
+        "beats_AB",
+        "integer",
+        "Beats inside (AB) intervals, atrial bigeminy (present in the files, absent from "
+        "the release's docs). Present in 3 intervals of 2 records but absent from the "
+        "release's own documentation. Missing for unannotated records.",
+    ),
+    Field(
+        "rhythm_secs_N",
+        "number",
+        "Seconds in (N) intervals, not annotated (sinus rhythm and any other rhythm outside "
+        "the protocol); missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_AFIB",
+        "number",
+        "Seconds in (AFIB) intervals, atrial fibrillation; missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_AFL",
+        "number",
+        "Seconds in (AFL) intervals, atrial flutter; missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_AT",
+        "number",
+        "Seconds in (AT) intervals, atrial tachycardia; missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_PAT",
+        "number",
+        "Seconds in (PAT) intervals, other supraventricular tachycardia, e.g. "
+        "Wolff-Parkinson-White; missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_NOD",
+        "number",
+        "Seconds in (NOD) intervals, intranodal (AV-nodal) tachycardia; missing for "
+        "unannotated records",
+        unit="s",
+    ),
+    Field(
+        "rhythm_secs_AB",
+        "number",
+        "Seconds in (AB) intervals, atrial bigeminy (present in the files, absent from the "
+        "release's docs); missing for unannotated records",
+        unit="s",
+    ),
+    Field(
+        "n_episodes_N",
+        "integer",
+        "(N) intervals, not annotated (sinus rhythm and any other rhythm outside the "
+        "protocol); missing for unannotated records",
+    ),
+    Field(
+        "n_episodes_AFIB",
+        "integer",
+        "(AFIB) intervals, atrial fibrillation; missing for unannotated records",
+    ),
+    Field(
+        "n_episodes_AFL",
+        "integer",
+        "(AFL) intervals, atrial flutter; missing for unannotated records",
+    ),
+    Field(
+        "n_episodes_AT",
+        "integer",
+        "(AT) intervals, atrial tachycardia; missing for unannotated records",
+    ),
+    Field(
+        "n_episodes_PAT",
+        "integer",
+        "(PAT) intervals, other supraventricular tachycardia, e.g. Wolff-Parkinson-White; "
+        "missing for unannotated records",
+    ),
+    Field(
+        "n_episodes_NOD",
+        "integer",
+        "(NOD) intervals, intranodal (AV-nodal) tachycardia; missing for unannotated "
+        "records",
+    ),
+    Field(
+        "n_episodes_AB",
+        "integer",
+        "(AB) intervals, atrial bigeminy (present in the files, absent from the release's "
+        "docs); missing for unannotated records",
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Beats: every .atr annotation is a '\"' comment on a beat (10.3 million across the "
+        "98 files, no typed beat symbols at all); falls back to n_detections when no .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_marks",
+        "integer",
+        "'\"' annotations carrying a rhythm code in their aux_note, i.e. interval starts",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_annotated_secs",
+        "number",
+        "Seconds covered by rhythm intervals",
+        unit="s",
+    ),
+    Field(
+        "rhythms",
+        "string",
+        "Rhythm codes present, pipe-joined by descending seconds; empty when unannotated",
+        nullable=False,
+        example="AFIB|N",
+    ),
+    Field(
+        "dominant_rhythm",
+        "string",
+        "Longest rhythm code; empty when unannotated",
+        vocabulary=("N", "AFIB", "AFL", "AT", "PAT", "NOD", "AB", ""),
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm_fraction",
+        "number",
+        "Share of rhythm_annotated_secs in it",
+    ),
+    Field(
+        "af_burden",
+        "number",
+        "AFIB seconds over rhythm_annotated_secs",
+    ),
+    Field(
+        "af_beat_fraction",
+        "number",
+        "Beats inside AFIB intervals over n_beats",
+    ),
+    Field(
+        "afl_burden",
+        "number",
+        "AFL seconds over rhythm_annotated_secs",
+    ),
+    Field(
+        "svt_burden",
+        "number",
+        "Seconds in any supraventricular code (AFIB, AFL, AT, PAT, NOD, AB) over "
+        "rhythm_annotated_secs",
+    ),
+    Field(
+        "longest_af_episode_secs",
+        "number",
+        "Longest single AFIB interval",
+        unit="s",
+    ),
+    Field(
+        "first_mark_sample",
+        "integer",
+        "Sample of the first rhythm mark; -1 if none",
+        nullable=False,
+    ),
+    Field(
+        "last_beat_sample",
+        "integer",
+        "Sample of the last beat; -1 if none",
+        nullable=False,
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from the first rhythm mark to the last beat",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat",
+        unit="s",
+    ),
+    Field(
+        "mean_heart_rate_bpm",
+        "number",
+        "Mean heart rate over the .atr beats",
+        unit="bpm",
+    ),
+    Field(
+        "duplicate_of",
+        "string",
+        "Partner of the one pair sharing a recording: 005 and 020 have byte-identical .dat "
+        "and .qrs files and differ only in .atr, so the release holds 127 distinct "
+        "recordings; empty otherwise",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="001",
+    ),
+    Field(
+        "Subject_ID",
+        "string",
+        "AdditionalData.csv: Subject identifier; 122 subjects over 128 recordings, the "
+        "config's patient_id_column",
+        nullable=False,
+    ),
+    Field(
+        "Annotated",
+        "boolean",
+        "AdditionalData.csv: The release's flag that a .atr exists",
+        nullable=False,
+    ),
+    Field(
+        "Height",
+        "number",
+        "AdditionalData.csv: Height in metres",
+        unit="m",
+    ),
+    Field(
+        "Weight",
+        "number",
+        "AdditionalData.csv: Weight",
+        unit="kg",
+    ),
+    Field(
+        "BMI",
+        "number",
+        "AdditionalData.csv: Body-mass index",
+        unit="kg/m^2",
+    ),
+    Field(
+        "Date_Holter",
+        "string",
+        "AdditionalData.csv: Holter date, shifted per subject by at least a year for "
+        "de-identification - cross-row date arithmetic is not safe",
+    ),
+    Field(
+        "Indication_Holter",
+        "string",
+        "AdditionalData.csv: Indication for the Holter",
+    ),
+    Field(
+        "Age_at_Holter",
+        "integer",
+        "AdditionalData.csv: Age at the Holter; per-recording mean 65.8, not the landing "
+        "page's 68.0",
+        unit="year",
+    ),
+    Field(
+        "Sex",
+        "string",
+        "AdditionalData.csv: Sex",
+        vocabulary=("M", "F"),
+    ),
+    Field(
+        "AF_Type",
+        "string",
+        "AdditionalData.csv: AF phenotype; the config's label column",
+        vocabulary=("PAF", "PerAF", "non-AF"),
+    ),
+    Field(
+        "Previously_Documented_AFL",
+        "boolean",
+        "AdditionalData.csv: Atrial flutter previously documented (shipped as the strings "
+        "True/False)",
+    ),
+    Field(
+        "Previous_AF_Ablation",
+        "boolean",
+        "AdditionalData.csv: Prior AF ablation (shipped as the strings True/False)",
+    ),
+    Field(
+        "PPM_on_Holter",
+        "boolean",
+        "AdditionalData.csv: Permanent pacemaker present during the Holter (shipped as the "
+        "strings True/False)",
+    ),
+    Field(
+        "PPM_after_Holter",
+        "boolean",
+        "AdditionalData.csv: Pacemaker implanted after the Holter (shipped as the strings "
+        "True/False)",
+    ),
+    Field(
+        "PPM_Indication",
+        "string",
+        "AdditionalData.csv: Pacemaker indication",
+    ),
+    Field(
+        "PPM_Date",
+        "string",
+        "AdditionalData.csv: Pacemaker implantation date (shifted)",
+    ),
+    Field(
+        "Date_of_First_Diagnosis_of_AF_AFL",
+        "string",
+        "AdditionalData.csv: First AF/AFL diagnosis date (shifted)",
+    ),
+    Field(
+        "AF_Duration_Months",
+        "number",
+        "AdditionalData.csv: Months since AF diagnosis, the release's own pre-shift "
+        "interval - use this for time since diagnosis",
+        unit="month",
+    ),
+    Field(
+        "Antiarrhythmic_Drug_nonBB",
+        "string",
+        "AdditionalData.csv: Non-beta-blocker antiarrhythmic drug",
+    ),
+    Field(
+        "Antiarrhythmic_Drug_BB",
+        "string",
+        "AdditionalData.csv: Beta-blocker antiarrhythmic drug",
+    ),
+    Field(
+        "Anticoagulation",
+        "string",
+        "AdditionalData.csv: Anticoagulant",
+    ),
+    Field(
+        "Date_1st_AF_Ablation",
+        "string",
+        "AdditionalData.csv: First ablation date (shifted)",
+    ),
+    Field(
+        "Ablation1_PVI",
+        "boolean",
+        "AdditionalData.csv: Pulmonary vein isolation at the first ablation (shipped as "
+        "1.0/0.0/blank, converted to a nullable boolean)",
+    ),
+    Field(
+        "Ablation1_CTI",
+        "boolean",
+        "AdditionalData.csv: Cavotricuspid isthmus ablation at the first ablation (shipped "
+        "as 1.0/0.0/blank, converted to a nullable boolean)",
+    ),
+    Field(
+        "Ablation1_Others",
+        "string",
+        "AdditionalData.csv: Other lesions at the first ablation",
+    ),
+    Field(
+        "Date_Redo_AF_Ablation",
+        "string",
+        "AdditionalData.csv: Redo ablation date (shifted)",
+    ),
+    Field(
+        "Redo_Detail",
+        "string",
+        "AdditionalData.csv: Redo ablation detail",
+    ),
+    Field(
+        "Echo_Date",
+        "string",
+        "AdditionalData.csv: Echocardiogram date (shifted)",
+    ),
+    Field(
+        "Echo_LAD",
+        "number",
+        "AdditionalData.csv: Left atrial diameter on echo",
+        unit="mm",
+    ),
+    Field(
+        "Echo_LVEF",
+        "number",
+        "AdditionalData.csv: Left-ventricular ejection fraction on echo",
+        unit="%",
+    ),
+    Field(
+        "Echo_LV_Asynergy",
+        "string",
+        "AdditionalData.csv: LV asynergy on echo",
+    ),
+    Field(
+        "Moderate_or_Severe_MR",
+        "boolean",
+        "AdditionalData.csv: Moderate or severe mitral regurgitation (shipped as "
+        "1.0/0.0/blank, converted to a nullable boolean)",
+    ),
+    Field(
+        "Moderate_or_Severe_TR",
+        "boolean",
+        "AdditionalData.csv: Moderate or severe tricuspid regurgitation (shipped as "
+        "1.0/0.0/blank, converted to a nullable boolean)",
+    ),
+    Field(
+        "Moderate_or_Severe_AS",
+        "boolean",
+        "AdditionalData.csv: Moderate or severe aortic stenosis (shipped as 1.0/0.0/blank, "
+        "converted to a nullable boolean)",
+    ),
+    Field(
+        "Moderate_or_Severe_AR",
+        "boolean",
+        "AdditionalData.csv: Moderate or severe aortic regurgitation (shipped as "
+        "1.0/0.0/blank, converted to a nullable boolean)",
+    ),
+    Field(
+        "CHF",
+        "boolean",
+        "AdditionalData.csv: Congestive heart failure (shipped as 1.0/0.0/blank, converted "
+        "to a nullable boolean)",
+    ),
+    Field(
+        "HTN",
+        "boolean",
+        "AdditionalData.csv: Hypertension (shipped as the strings True/False)",
+    ),
+    Field(
+        "Age_75_or_Older",
+        "boolean",
+        "AdditionalData.csv: Aged 75 or older (shipped as the strings True/False)",
+    ),
+    Field(
+        "DM",
+        "boolean",
+        "AdditionalData.csv: Diabetes mellitus (shipped as the strings True/False)",
+    ),
+    Field(
+        "Stroke",
+        "boolean",
+        "AdditionalData.csv: Prior stroke; 19 of 128 recordings, 14.8%, not the landing "
+        "page's 11.7% (shipped as the strings True/False)",
+    ),
+    Field(
+        "Vascular_Diseases",
+        "boolean",
+        "AdditionalData.csv: Vascular disease (shipped as the strings True/False)",
+    ),
+    Field(
+        "Comments",
+        "string",
+        "AdditionalData.csv: Free-text comments",
+    ),
+    Field(
+        "Holter_start_time",
+        "string",
+        "AdditionalData.csv: Holter start time of day",
+    ),
+    Field(
+        "Holter_recording_length",
+        "string",
+        "AdditionalData.csv: Holter recording length, H:MM:SS",
+    ),
+    Field(
+        "af_class",
+        "string",
+        "af_burden banded: below 0.05 minimal, above 0.95 sustained, else paroxysmal; "
+        "unannotated when no .atr",
+        vocabulary=("unannotated", "minimal", "paroxysmal", "sustained"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "AF_Type crossed with whether the record is annotated (PerAF left bare), for fold "
+        "construction",
+        vocabulary=(
+            "PAF+annotated",
+            "PAF+unannotated",
+            "PerAF",
+            "non-AF+annotated",
+            "non-AF+unannotated",
+        ),
+        nullable=False,
+    ),
+)

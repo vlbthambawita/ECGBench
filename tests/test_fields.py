@@ -26,6 +26,7 @@ import pandas as pd
 import pytest
 
 from ecgbench.cli import main
+from ecgbench.cli.catalog import format_fields
 from ecgbench.config import LabelConfig, LabelFieldConfig, list_available_configs, load_config
 from ecgbench.labels import _custom_loaders, load_labels
 from ecgbench.labels._fields import (
@@ -39,7 +40,7 @@ from ecgbench.labels._fields import (
     validate_type,
 )
 from ecgbench.metadata import FieldMeta, open_store
-from tests.conftest import _write_hea
+from tests.conftest import _write_hea, write_edf
 
 # --------------------------------------------------------------------------- builders
 
@@ -1178,6 +1179,337 @@ def _build_sddb(tmp_path: Path) -> Path:
     return tmp_path
 
 
+#: The 45 columns of SHDB-AF's AdditionalData.csv, from the v1.0.1 release header.
+_SHDB_AF_CLINICAL_COLUMNS = (
+    "Data_ID", "Subject_ID", "Annotated", "Height", "Weight", "BMI", "Date_Holter",
+    "Indication_Holter", "Age_at_Holter", "Sex", "AF_Type", "Previously_Documented_AFL",
+    "Previous_AF_Ablation", "PPM_on_Holter", "PPM_after_Holter", "PPM_Indication", "PPM_Date",
+    "Date_of_First_Diagnosis_of_AF_AFL", "AF_Duration_Months", "Antiarrhythmic_Drug_nonBB",
+    "Antiarrhythmic_Drug_BB", "Anticoagulation", "Date_1st_AF_Ablation", "Ablation1_PVI",
+    "Ablation1_CTI", "Ablation1_Others", "Date_Redo_AF_Ablation", "Redo_Detail", "Echo_Date",
+    "Echo_LAD", "Echo_LVEF", "Echo_LV_Asynergy", "Moderate_or_Severe_MR",
+    "Moderate_or_Severe_TR", "Moderate_or_Severe_AS", "Moderate_or_Severe_AR", "CHF", "HTN",
+    "Age_75_or_Older", "DM", "Stroke", "Vascular_Diseases", "Comments", "Holter_start_time",
+    "Holter_recording_length",
+)
+
+
+def _build_shdb_af(tmp_path: Path) -> Path:
+    """Two records, one with the comment-only rhythm annotations, plus the 45-column table."""
+    wfdb = pytest.importorskip("wfdb")
+    rows = [
+        ["001", "2043771", "True", 1.73, 63.5, 21.2, "2021-03-13",
+         "AF monitoring after ablation", 65, "M", "PAF", "False", "True", "False", "False",
+         None, None, None, None, "frecainide", None, "warfarin", "2012-09-15", 1.0, 1.0, None,
+         "2021-07-30", "SVCI, re-PVI", "2021-03-13", 40.0, 39.0, "anteroseptal", 0.0, 0.0, 0.0,
+         0.0, 0.0, "False", "False", "False", "False", "False", None, "10:10 AM", "23:54:59"],
+        ["002", "4980615", "False", 1.66, 55.9, 20.3, "2021-03-15",
+         "AF monitoring after ablation", 62, "F", "non-AF", "True", "True", "False", "False",
+         None, None, "2025-06-02", 33.0, None, None, "edoxaban", "2020-06-16", 1.0, 1.0, None,
+         None, None, "2020-04-16", 40.0, 56.0, None, 0.0, 0.0, 0.0, 0.0, 1.0, "True", "False",
+         "False", "True", "False", "noisy tail", "10:55 AM", "23:59:59"],
+    ]
+    pd.DataFrame(rows, columns=_SHDB_AF_CLINICAL_COLUMNS).to_csv(
+        tmp_path / "AdditionalData.csv", index=False
+    )
+    beats = np.array([200 * (i + 1) for i in range(12)])
+    for rec in ("001", "002"):
+        (tmp_path / f"{rec}.hea").write_text(
+            f"{rec} 2 200 20000\n"
+            f"{rec}.dat 16 8105.233566939608(-9270)/mV 16 0 -9267 62791 0 ECG1\n"
+            f"{rec}.dat 16 11470.645879660451(543)/mV 16 0 408 55919 0 ECG2\n",
+            encoding="utf-8",
+        )
+        wfdb.wrann(rec, "qrs", sample=beats, symbol=["N"] * 12, fs=200, write_dir=str(tmp_path))
+    wfdb.wrann(
+        "001", "atr", sample=beats, symbol=['"'] * 12,
+        aux_note=["(AFIB", "", "", "", "(N", "", "", "(AB", "", "", "(AFIB", ""],
+        fs=200, write_dir=str(tmp_path),
+    )
+    (tmp_path / "RECORDS.txt").write_text("001\n002\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_sph(tmp_path: Path) -> Path:
+    (tmp_path / "code.csv").write_text(
+        "Category,Code,Description\n"
+        "A,1,Normal ECG\n"
+        "C,22,Sinus bradycardia\n"
+        "F,60,Ventricular premature complex(es)\n"
+        'D,31,"Atrial premature complexes, nonconducted"\n'
+        "Modifier,310,Frequent\n",
+        encoding="utf-8",
+    )
+    rows = [("A00001", "60+310;22", "S1", 44, "M", 5000), ("A00002", "1", "S2", 61, "F", 5000),
+            ("A00003", "1;1", "S2", 61, "F", 28000)]
+    lines = ["ECG_ID,AHA_Code,Patient_ID,Age,Sex,N,Date"]
+    lines += [
+        f"{rid},{code},{pid},{age},{sex},{n},2020-01-01" for rid, code, pid, age, sex, n in rows
+    ]
+    (tmp_path / "metadata.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_staffiii(tmp_path: Path) -> Path:
+    """One patient's baseline and inflation records, with the sheet's 10-row preamble."""
+    wfdb = pytest.importorskip("wfdb")
+    pytest.importorskip("openpyxl")
+    n_columns = 29
+    row = [None] * n_columns
+    row[0], row[1], row[2], row[28] = 1, 52, "f", "no"
+    row[3], row[6], row[7] = "1a", "1c", "dist circ"
+    frame = pd.DataFrame([[None] * n_columns for _ in range(10)] + [row])
+    frame.to_excel(tmp_path / "STAFF-III-Database-Annotations.xlsx", header=False, index=False)
+    data = tmp_path / "data"
+    data.mkdir()
+    for record in ("001a", "001c"):
+        (data / f"{record}.hea").write_text(
+            f"{record} 9 1000 300000 20:26:00 27/09/1995\n"
+            f"{record}.dat 16+512 1600 12 0 0 0 0  V1\n"
+            f"{record}.dat 16+512 1600 12 0 0 0 0  V2\n"
+            "# Age: 52\n# Sex: F\n",
+            encoding="utf-8",
+        )
+    wfdb.wrann(
+        "001c", "event", sample=np.array([1000, 60000, 240000]),
+        symbol=['"'] * 3,
+        aux_note=["contrast injection", "balloon inflation", "balloon deflation"],
+        fs=1000, write_dir=str(data),
+    )
+    return tmp_path
+
+
+def _build_stdb(tmp_path: Path) -> Path:
+    """A two-channel exercise record and a one-channel long-term excerpt."""
+    wfdb = pytest.importorskip("wfdb")
+    (tmp_path / "300.hea").write_text(
+        "300 2 360 3600\n300.dat 212 296 12 0 40 0 0 ECG\n300.dat 212 300 12 0 -5 0 0 ECG\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "323.hea").write_text(
+        "323 1 360 3600\n323.dat 212 295 12 0 -74 0 0 ECG\n", encoding="utf-8"
+    )
+    for rec in ("300", "323"):
+        wfdb.wrann(
+            rec, "atr",
+            sample=np.array([100, 460, 820, 1180, 1540, 1900, 2260]),
+            symbol=["N", "S", "N", "V", "N", "~", "|"],
+            subtype=np.array([0, 0, 0, 0, 0, 1, 0]),
+            fs=360, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("300\n323\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_svdb(tmp_path: Path) -> Path:
+    wfdb = pytest.importorskip("wfdb")
+    (tmp_path / "800.hea").write_text(
+        "800 2 128 230400\n800.dat 212 200 10 0 -101 -25183 0 ECG1\n"
+        "800.dat 212 200 10 0 123 10510 0 ECG2\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "820.hea").write_text(
+        "820 2 128 230400\n820.dat 212 0 10 0 -14 -6899 0 ECG1\n"
+        "820.dat 212 0 10 0 -7 -19211 0 ECG2\n",
+        encoding="utf-8",
+    )
+    for rec in ("800", "820"):
+        wfdb.wrann(
+            rec, "atr",
+            sample=np.array([100, 228, 356, 484, 612, 740, 868, 996]),
+            symbol=["|", "N", "S", "N", "V", "~", "a", "+"],
+            subtype=np.array([0, 0, 0, 0, 0, 1, 0, 0]),
+            aux_note=["", "", "", "", "", "", "", "(N"],
+            fs=128, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("800\n820\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_szdb(tmp_path: Path) -> Path:
+    """Two records of one reconstructed subject: 50 learning marks, beats, ST and AF."""
+    wfdb = pytest.importorskip("wfdb")
+    for rec in ("sz02", "sz03"):
+        (tmp_path / f"{rec}.hea").write_text(
+            f"{rec} 1 200 200000\n{rec}.dat 16 25 12 0 26 -30691 0 ECG\n", encoding="utf-8"
+        )
+        samples = list(np.arange(50) * 100 + 100) + list(np.arange(100) * 200 + 10_000)
+        symbols = ["?"] * 50 + ["N"] * 100
+        notes = [""] * 150
+        for sample, symbol, note in (
+            (20_000, "s", "(ST0-"), (24_000, "s", "ST0-)"), (25_000, "V", ""),
+            (26_000, "r", ""), (27_000, "S", ""), (28_000, "+", "(AFIB"),
+            (29_000, "+", "(N"), (30_000, "Q", ""),
+        ):
+            samples.append(sample)
+            symbols.append(symbol)
+            notes.append(note)
+        order = np.argsort(np.asarray(samples), kind="stable")
+        wfdb.wrann(
+            rec, "ari", sample=np.asarray(samples)[order], symbol=[symbols[i] for i in order],
+            subtype=np.zeros(len(samples), dtype=int), aux_note=[notes[i] for i in order],
+            fs=200, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("sz02\nsz03\n", encoding="utf-8")
+    (tmp_path / "times.seize").write_text(
+        "sz02 00:14:36 00:16:12\nsz02 00:10:00 00:10:25\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _build_tollet(tmp_path: Path) -> Path:
+    """Two subjects' sittings in OpenSignals text, with dead and live electrode channels."""
+    header = (
+        "# OpenSignals Text File Format. Version 1\n"
+        '# {"": {"sampling rate": 1000, '
+        '"resolution": [4, 1, 1, 1, 1, 10, 10, 10, 10, 6, 6], '
+        '"label": ["A1", "A2", "A3", "A4", "A5", "A6"], '
+        '"column": ["nSeq", "I1", "I2", "O1", "O2", "A1", "A2", "A3", "A4", '
+        '"A5", "A6"]}}\n'
+        "# EndOfHeader\n"
+    )
+    root = tmp_path / "tollet"
+    (root / "ECG_EXP").mkdir(parents=True)
+    (root / "ECG_REF").mkdir()
+    sittings = [
+        ("1", [(300, 700), (350, 650), 0, (1020, 1021)], 40, "Male", ""),
+        ("1_1", [(200, 800), 0, 0, 0], 40, "Male", "Paroxysmal AF"),
+        ("2", [0, 0, 0, 0], 27, "Female", ""),
+    ]
+    lines = ["﻿ID;Age;Weight ;Height;Gender;Observations field;;;"]
+    n = 200
+    for name, codes, age, sex, note in sittings:
+        rows = []
+        for i in range(n):
+            values = [i, 0, 0, 0, 0]
+            for code in codes:
+                if isinstance(code, tuple):
+                    values.append(code[0] + (i * (code[1] - code[0])) // (n - 1))
+                else:
+                    values.append(code)
+            values += [0, 0]
+            rows.append("\t".join(str(v) for v in values) + "\t\r")
+        (root / "ECG_EXP" / f"{name}.txt").write_text(
+            header + "\n".join(rows) + "\n", encoding="utf-8"
+        )
+        lines.append(f"{name};{age};70;170;{sex};{note};;;")
+    (root / "DataSet.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (root / "ECG_REF" / "2.XML").write_text("<x/>", encoding="utf-8")
+    return root
+
+
+def _build_ucddb(tmp_path: Path) -> Path:
+    """Two nights, one of them the record whose Holter is another subject's copy."""
+    columns = [
+        "S/No", "Study Number", "Height (cm)", "Weight (kg)", "Gender", "PSG Start Time",
+        "PSG AHI", "BMI", "Age", "Epworth Sleepiness Score", "Study Duration (hr)",
+        "Sleep Efficiency (%)", "No of data blocks in EDF",
+    ]
+    rows = []
+    for index, (rec, ahi, n_events) in enumerate((("ucddb002", 4.0, 2), ("ucddb028", 46.0, 12))):
+        write_edf(
+            tmp_path / f"{rec}_lifecard.edf",
+            [(lead * 1000 + np.arange(1280)).astype(np.int16) for lead in range(3)],
+            ["chan 1", "chan 2", "chan 3"], [128] * 3,
+            physical_range=(0.0, 10.0), digital_range=(0.0, 4095.0),
+        )
+        write_edf(
+            tmp_path / f"{rec}.rec",
+            [np.arange(1280, dtype=np.int16), np.arange(80, dtype=np.int16)],
+            ["ECG", "SpO2"], [128, 8], starttime="23.00.00",
+        )
+        (tmp_path / f"{rec}_stage.txt").write_text(
+            "\n".join(["0"] * 20 + ["3"] * 100 + ["1"] * 20) + "\n", encoding="utf-8"
+        )
+        lines = [
+            "                              Respiratory Event List",
+            "        Respiratory Event           Desaturation   Snore Arousal     B/T",
+            " Time       Type   PB/CS  Duration  Low    %Drop                 Rate  Change",
+        ]
+        for i in range(n_events):
+            lines.append(
+                f"23:{30 + i:02d}:00  HYP-O             16"
+                "       89.9    4.1     +     -      64.7   -5.7 "
+            )
+        lines.append("02:00:00  PB EVENT  PB      14                       -     -              ")
+        (tmp_path / f"{rec}_respevt.txt").write_text(
+            "\r\n".join(lines) + "\r\n\x1a", encoding="utf-8"
+        )
+        rows.append(dict(zip(columns, [
+            index + 1, rec.upper(), 175, 90.0, "M", "23:00:00", ahi, 29.4, 50, 10, 1.0, 83, 10,
+        ])))
+    pd.DataFrame(rows).to_csv(tmp_path / "SubjectDetails.csv", index=False)
+    return tmp_path
+
+
+def _build_wctecgdb(tmp_path: Path) -> Path:
+    """Two segments of one patient plus one of another, headers in cp1252 as shipped."""
+    nstemi = "Non ST\xa0segment\xa0elevation myocardial infarction (NSTEMI)"
+    headers = {
+        "patient001/seg01": ("46", "M", nstemi, "V2, V2-raw"),
+        "patient001/seg02": ("46", "M", nstemi, None),
+        "patient002/seg01": ("71", "F", "not reported", None),
+    }
+    (tmp_path / "RECORDS").write_text("\n".join(headers) + "\n", encoding="utf-8")
+    for name, (age, sex, diagnosis, reconstruct) in headers.items():
+        stem = name.partition("/")[2]
+        text = (
+            f"{stem} 37 800 8001\n"
+            f"{stem}.dat 16 36213.4604(-6137)/mV 0 0 500 -11346 0 I-Raw\n"
+            f"{stem}.dat 16 145039.7107(2528)/mV 0 0 -3436 -23891 0 WCT\n\n"
+            f"#Age: {age}\n#Sex: {sex}\n#Diagnosis report: {diagnosis}\n"
+        )
+        if reconstruct:
+            text += f"#Reconstruct Precordials: {reconstruct}\n"
+        path = tmp_path / f"{name}.hea"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="cp1252")
+    return tmp_path
+
+
+def _build_zzu_pecg(tmp_path: Path) -> Path:
+    (tmp_path / "ECGCode.csv").write_text(
+        "Description,AHA(Category&Code),CHN(Category&Code)\n"
+        "Sinus tachycardia,C21,C13\n"
+        '"Atrial premature complexes, nonconducted",D31,D22\n'
+        "Left ventricular high voltage,N/A,J106\n"
+        "Atrial reciprocal beats,N/A,D23\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "DiseaseCode.csv").write_text(
+        "Disease Type,Disease Category,ICD-10 Code,ICD-10 Description\n"
+        "Myocarditis,Acute myocarditis,I40.9,Acute myocarditis\n"
+        '"Congenital \nheart disease",Ventricular septal defect,Q21.0,VSD\n'
+        "Kawasaki disease,Kawasaki disease,M30.3,Kawasaki\n"
+        "Other diseases(OD),Other,See attribute dictionary file,Other\n",
+        encoding="utf-8",
+    )
+    columns = (
+        "Filename,ECG_ID,Patient_ID,Age,Gender,Acquisition_date,Sampling_point,"
+        "Lead,AHA_code,CHN_code,ICD-10 code,pSQI,basSQI,bSQI"
+    )
+    base = {
+        "Filename": "P00/P00001/P00001_E01", "ECG_ID": "P00001_E01", "Patient_ID": "P00001",
+        "Age": "572d", "Gender": "'Female'", "Acquisition_date": "2017-11-22 10:46:08",
+        "Sampling_point": 15000, "Lead": 12, "AHA_code": "'C21'", "CHN_code": "'C13'",
+        "ICD-10 code": "'Q21.0'", "pSQI": "'I':0.288;'II':0.323",
+        "basSQI": "'I':0.98;'II':0.99", "bSQI": "'I':1.000;'II':1.000",
+    }
+    rows = [
+        {},
+        {"Filename": "P00/P00002/P00002_E01", "ECG_ID": "P00002_E01", "Patient_ID": "P00002",
+         "Age": "4015d", "Gender": "'Male'", "Lead": 9, "Sampling_point": 5000,
+         "AHA_code": "'D31';'Left ventricular high voltage'", "CHN_code": "'D22';'J106'",
+         "ICD-10 code": "", "pSQI": "'I':0.5;'V2':Null"},
+    ]
+    lines = [columns]
+    for row in rows:
+        r = {**base, **row}
+        lines.append(",".join(f'"{r[c]}"' for c in columns.split(",")))
+    (tmp_path / "AttributesDictionary.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path
+
+
 #: Dataset -> builder writing a minimal synthetic source tree into tmp_path.
 BUILDERS = {
     "ptbxl": _build_ptbxl,
@@ -1224,13 +1556,23 @@ BUILDERS = {
     "qtdb": _build_qtdb,
     "sami_trop": _build_sami_trop,
     "sddb": _build_sddb,
+    # batch 6
+    "shdb_af": _build_shdb_af,
+    "sph": _build_sph,
+    "staffiii": _build_staffiii,
+    "stdb": _build_stdb,
+    "svdb": _build_svdb,
+    "szdb": _build_szdb,
+    "tollet": _build_tollet,
+    "ucddb": _build_ucddb,
+    "wctecgdb": _build_wctecgdb,
+    "zzu_pecg": _build_zzu_pecg,
 }
 
-#: Label-bearing datasets whose fields are not declared yet (later Phase 3 batches).
-PENDING = {
-    "shdb_af", "sph", "staffiii", "stdb", "svdb", "szdb", "tollet", "ucddb", "wctecgdb",
-    "zzu_pecg",
-}
+#: Label-bearing datasets whose fields are not declared yet. Empty since Phase 3
+#: batch 6: every label-bearing dataset is in BUILDERS. A new dataset lands here
+#: until its FIELDS and builder exist (test_every_label_bearing_dataset_is_declared_or_pending).
+PENDING: set[str] = set()
 
 
 # --------------------------------------------------------------------------- coverage
@@ -1263,6 +1605,12 @@ class TestCoverage:
     def test_pending_datasets_declare_nothing_yet(self):
         for slug in sorted(PENDING):
             assert fields_for(load_config(slug), static=True) == (), slug
+
+    def test_phase_3_is_complete(self):
+        """Every label-bearing dataset declares at least one field."""
+        assert PENDING == set()
+        for slug in sorted(_label_bearing()):
+            assert fields_for(load_config(slug), static=True), slug
 
     def test_label_module_files_match_the_registry(self):
         registered = set(_custom_loaders())
@@ -1464,7 +1812,6 @@ class TestFieldsInTheMetadataLayer:
         meta = open_store().get("ptbxl")
         assert isinstance(meta.fields[0], FieldMeta)
         assert {f.name for f in meta.fields} == {f.name for f in fields_for(load_config("ptbxl"))}
-        assert open_store().get("zzu_pecg").fields == ()  # pending
         assert open_store().get("ptb-xl-plus").fields == ()  # catalogue-only
 
     def test_field_text_is_searchable(self):
@@ -1516,12 +1863,15 @@ class TestFieldsCli:
         assert codes["constraints"]["enum"] == ["NORM", "MI", "STTC", "CD", "HYP"]
 
     def test_undeclared_and_unlabelled_datasets_say_so(self, capsys):
-        assert main(["fields", "zzu_pecg"]) == 0
-        assert "not yet declared" in capsys.readouterr().out
         assert main(["fields", "mimic_iv_ecg_demo"]) == 0
         assert "no labels" in capsys.readouterr().out
-        assert main(["fields", "zzu_pecg", "--format", "json"]) == 0
+        assert main(["fields", "mimic_iv_ecg_demo", "--format", "json"]) == 0
         assert json.loads(capsys.readouterr().out) == []
+        # No shipped dataset is undeclared any more, so the branch is exercised on
+        # a real record with its fields removed.
+        undeclared = replace(open_store().get("ptbxl"), fields=())
+        assert "not yet declared" in format_fields(undeclared)
+        assert json.loads(format_fields(undeclared, "json")) == []
 
     def test_unknown_dataset_exits_nonzero(self, capsys):
         assert main(["fields", "nope"]) == 1

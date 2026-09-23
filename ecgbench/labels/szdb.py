@@ -90,6 +90,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
 from ecgbench.labels.svdb import AAMI_ORDER
 
 if TYPE_CHECKING:
@@ -810,3 +811,420 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     """
     df = attach_stratify_class(scan_records(data_path))
     return df.set_index("record_name")
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "subject_id",
+        "string",
+        "RECONSTRUCTED by ECGBench, not shipped: the release has 7 records and no subject "
+        "identifier, the paper describes five women, and SUBJECT_IDS maps sz02-sz04 to one "
+        "subject so she cannot leak across folds (verify_subject_grouping recomputes the "
+        "evidence). The config's patient_id_column.",
+        vocabulary=("szdb_subj_1", "szdb_subj_2", "szdb_subj_3", "szdb_subj_4", "szdb_subj_5"),
+        nullable=False,
+    ),
+    Field(
+        "subject_id_is_reconstructed",
+        "boolean",
+        "Constant True",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 200 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "number",
+        "Header gain of the single channel",
+        unit="adu/mV",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header channel name, 'ECG'",
+        nullable=False,
+    ),
+    Field(
+        "n_seizures",
+        "integer",
+        "Seizure intervals in times.seize for this record; 10 across the release where the "
+        "paper describes 11 - one 15 s seizure has no released interval",
+        nullable=False,
+    ),
+    Field(
+        "seizure_starts_secs",
+        "string",
+        "Seizure onsets in seconds, pipe-joined, read from simultaneous EEG that was never "
+        "released; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "seizure_ends_secs",
+        "string",
+        "Seizure offsets in seconds, pipe-joined",
+        nullable=False,
+    ),
+    Field(
+        "seizure_durations_secs",
+        "string",
+        "Seizure durations, pipe-joined (25-110 s)",
+        nullable=False,
+    ),
+    Field(
+        "seizure_secs",
+        "number",
+        "Summed seizure duration",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "first_seizure_start_secs",
+        "number",
+        "Onset of the first seizure",
+        unit="s",
+    ),
+    Field(
+        "longest_seizure_secs",
+        "number",
+        "Longest seizure",
+        unit="s",
+    ),
+    Field(
+        "shortest_seizure_secs",
+        "number",
+        "Shortest seizure",
+        unit="s",
+    ),
+    Field(
+        "post_ictal_tail_secs",
+        "number",
+        "Recording remaining after the last seizure ends",
+        unit="s",
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Unaudited ARISTOTLE detections annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Unaudited ARISTOTLE detections annotated 'Q' (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Unaudited ARISTOTLE detections annotated 'S' (supraventricular premature or "
+        "ectopic beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Unaudited ARISTOTLE detections annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_r",
+        "integer",
+        "Unaudited ARISTOTLE detections annotated 'r' (R-on-T premature ventricular "
+        "contraction)",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "Detections in AAMI EC57 class N (normal)",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "Detections in AAMI EC57 class S (supraventricular ectopic)",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "Detections in AAMI EC57 class V (ventricular ectopic)",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "Detections in AAMI EC57 class F (fusion)",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "Detections in AAMI EC57 class Q (unclassifiable/paced); the 50 learning marks fold "
+        "into Q",
+        nullable=False,
+    ),
+    Field(
+        "n_st_markers",
+        "integer",
+        "'s' ST-change markers (74 across the release)",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "'+' rhythm markers: two, both in sz02",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "'~' quality changes: none in the release",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "'|' artefact markers: none in the release",
+        nullable=False,
+    ),
+    Field(
+        "n_learning_beats",
+        "integer",
+        "'?' learning-phase detections: exactly 50 open every record",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "All beat-class detections including the learning marks",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .ari",
+        nullable=False,
+    ),
+    Field(
+        "n_veb",
+        "integer",
+        "Ventricular ectopic detections (AAMI V)",
+        nullable=False,
+    ),
+    Field(
+        "veb_fraction",
+        "number",
+        "n_veb over n_beats",
+    ),
+    Field(
+        "veb_per_hour",
+        "number",
+        "n_veb per recorded hour",
+    ),
+    Field(
+        "n_sveb",
+        "integer",
+        "Supraventricular ectopic detections (AAMI S)",
+        nullable=False,
+    ),
+    Field(
+        "sveb_fraction",
+        "number",
+        "n_sveb over n_beats",
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "Detections outside AAMI class N",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_fraction",
+        "number",
+        "n_ectopic_beats over n_beats",
+    ),
+    Field(
+        "n_st_episodes",
+        "integer",
+        "ST episodes delimited by '(ST0+'/'ST0+)' or '(ST0-'/'ST0-)' aux strings; 37 across "
+        "the release, 24 in sz02 and none in sz04",
+        nullable=False,
+    ),
+    Field(
+        "n_st_elevation_episodes",
+        "integer",
+        "ST elevation episodes",
+        nullable=False,
+    ),
+    Field(
+        "n_st_depression_episodes",
+        "integer",
+        "ST depression episodes",
+        nullable=False,
+    ),
+    Field(
+        "st_secs",
+        "number",
+        "Summed ST episode duration",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "st_elevation_secs",
+        "number",
+        "Summed ST elevation duration",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "st_depression_secs",
+        "number",
+        "Summed ST depression duration",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "longest_st_episode_secs",
+        "number",
+        "Longest ST episode (826 s in sz06)",
+        unit="s",
+    ),
+    Field(
+        "n_st_unclosed",
+        "integer",
+        "ST episodes opened but never closed",
+        nullable=False,
+    ),
+    Field(
+        "af_secs",
+        "number",
+        "Seconds annotated (AFIB: 17.4 s in sz02, 25 s before its second seizure, and 0 "
+        "elsewhere - meaning never assessed, not no AF (see has_rhythm_annotation)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "af_fraction",
+        "number",
+        "af_secs over the record",
+    ),
+    Field(
+        "n_af_episodes",
+        "integer",
+        "(AFIB episodes",
+        nullable=False,
+    ),
+    Field(
+        "has_rhythm_annotation",
+        "boolean",
+        "Any '+' marker present (sz02 only)",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_asserted_secs",
+        "number",
+        "Seconds covered by a rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_head_unasserted_secs",
+        "number",
+        "Seconds before the first rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from first to last beat",
+        unit="s",
+    ),
+    Field(
+        "unannotated_head_secs",
+        "number",
+        "Seconds before the first beat (0.1-0.9 s)",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat (under 0.6 s)",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "Beat coverage of the record",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s, spanning pre-ictal, ictal and "
+        "post-ictal time in one number - segment on the seizure times instead",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s",
+        nullable=False,
+    ),
+    Field(
+        "cohort_label",
+        "string",
+        "Constant: every subject has partial epilepsy; the config's label column",
+        vocabulary=("partial_epilepsy",),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="sz01",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Copy of cohort_label",
+        vocabulary=("partial_epilepsy",),
+        nullable=False,
+    ),
+)

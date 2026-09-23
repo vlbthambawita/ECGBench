@@ -72,6 +72,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -306,3 +308,148 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int((~df["is_normal"]).sum()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "Patient identifier; 24,666 patients over 25,770 records, the grouping column",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age, 18-95, complete",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex (14,265 M, 11,505 F)",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "date",
+        "string",
+        "Recording date as shipped",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Record length from metadata.csv column N, 5,000 to 28,000 in 39 distinct values; "
+        "agrees with the HDF5 array for every record",
+        nullable=False,
+    ),
+    Field(
+        "aha_code",
+        "string",
+        "The raw AHA_Code string: ';'-separated statements, each a primary code with "
+        "'+'-joined modifiers, e.g. '60+310;22'",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples over 500 Hz; 73% of records are 10 s",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 500 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "records/<ECG_ID>.h5",
+        nullable=False,
+    ),
+    Field(
+        "aha_statements",
+        "string",
+        "Statements normalised as primary+modifier..., ';'-joined; keeps the attachment the "
+        "flat columns discard",
+        nullable=False,
+    ),
+    Field(
+        "n_statements",
+        "integer",
+        "Statements in the record (1 to 6)",
+        nullable=False,
+    ),
+    Field(
+        "aha_primary_codes",
+        "string",
+        "Deduplicated primary codes ';'-joined; multi-label with no ranking - the config's "
+        "label column and what to train on",
+        nullable=False,
+        example="60;22",
+    ),
+    Field(
+        "aha_primary_descriptions",
+        "string",
+        "code.csv descriptions of the primaries, ';'-joined (four contain commas)",
+        nullable=False,
+    ),
+    Field(
+        "aha_primary_categories",
+        "string",
+        "code.csv categories, deduplicated, ';'-joined",
+        nullable=False,
+    ),
+    Field(
+        "aha_modifier_codes",
+        "string",
+        "Deduplicated modifier codes ';'-joined; qualifiers, not diagnoses",
+        nullable=False,
+    ),
+    Field(
+        "aha_modifier_descriptions",
+        "string",
+        "code.csv descriptions of the modifiers",
+        nullable=False,
+    ),
+    Field(
+        "n_primary_codes",
+        "integer",
+        "Distinct primary codes",
+        nullable=False,
+    ),
+    Field(
+        "is_normal",
+        "boolean",
+        "The deduplicated primary list is exactly ['1'] (Normal ECG): 13,905 records, "
+        "53.96%, matching the paper where a string comparison misses two",
+        nullable=False,
+    ),
+    Field(
+        "stratify_code",
+        "string",
+        "Single-label reduction for fold construction: the record's globally rarest primary "
+        "code. NOT ground truth.",
+        nullable=False,
+    ),
+    Field(
+        "stratify_description",
+        "string",
+        "code.csv description of stratify_code",
+        nullable=False,
+    ),
+    Field(
+        "stratify_category",
+        "string",
+        "code.csv category of stratify_code",
+        nullable=False,
+    ),
+)

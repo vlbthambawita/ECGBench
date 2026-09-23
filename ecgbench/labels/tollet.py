@@ -100,6 +100,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -386,3 +388,172 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_id")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "source_record",
+        "string",
+        "The OpenSignals file (sitting) this channel came from, DataSet.csv ID such as "
+        "'15_1'; the four channels of one sitting are simultaneous measurements of the same "
+        "beats, so collapse on this before counting observations",
+        nullable=False,
+    ),
+    Field(
+        "channel",
+        "string",
+        "OpenSignals channel of the electrode pair",
+        vocabulary=("A1", "A2", "A3", "A4"),
+        nullable=False,
+    ),
+    Field(
+        "electrode_texture",
+        "string",
+        "Surface texture of the electrode pair; pyramidal (A3) is live in only 7 of 145 "
+        "sittings",
+        vocabulary=("flat", "sinusoidal", "pyramidal", "trapezoidal"),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "ECG_EXP/<sitting>.txt:<channel>",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the sitting, 14,400 to 197,250",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 1000 Hz (14.4 to 197.2 s, not 'up to 5 minutes')",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 1000 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_active",
+        "boolean",
+        "The channel recorded something: ECGBench's own check_flat_line verdict, so the "
+        "clean version is exactly these 342 of 580 channels. A floor, not a guarantee - a "
+        "channel oscillating between the rails passes it.",
+        nullable=False,
+    ),
+    Field(
+        "variance_mv2",
+        "number",
+        "Variance of the channel",
+        unit="mV^2",
+        nullable=False,
+    ),
+    Field(
+        "clipped_fraction",
+        "number",
+        "Fraction of samples at either +/-1.5 mV converter rail - the main quality axis; "
+        "filter on it for anything morphological",
+        nullable=False,
+    ),
+    Field(
+        "min_mv",
+        "number",
+        "Minimum sample",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "max_mv",
+        "number",
+        "Maximum sample",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "number",
+        "Age from DataSet.csv",
+        unit="year",
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Weight from DataSet.csv",
+        unit="kg",
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Height from DataSet.csv",
+        unit="cm",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Gender from DataSet.csv, lowercased",
+        vocabulary=("male", "female"),
+        nullable=False,
+    ),
+    Field(
+        "observations",
+        "string",
+        "The 'Observations field' free text; empty when blank. The config's label column.",
+        nullable=False,
+    ),
+    Field(
+        "bmi",
+        "number",
+        "Derived from weight and height",
+        unit="kg/m^2",
+    ),
+    Field(
+        "subject_id",
+        "string",
+        "The sitting id before '_'; 86 subjects, the config's patient_id_column",
+        nullable=False,
+        example="15",
+    ),
+    Field(
+        "session_index",
+        "integer",
+        "The sitting id after '_', 0 for a bare id",
+        nullable=False,
+    ),
+    Field(
+        "n_sittings_for_subject",
+        "integer",
+        "Distinct sittings of the subject",
+        nullable=False,
+    ),
+    Field(
+        "has_reference_ecg",
+        "boolean",
+        "ECG_REF/<sitting>.XML exists: a clinical 12-lead reference for 23 sittings, not "
+        "loaded by ECGBench",
+        nullable=False,
+    ),
+    Field(
+        "reference_path",
+        "string",
+        "ECG_REF/<sitting>.XML or empty",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Sex initial crossed with signal_active",
+        vocabulary=("F_active", "M_active", "F_flat", "M_flat"),
+        nullable=False,
+    ),
+)

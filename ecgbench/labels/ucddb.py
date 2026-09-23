@@ -99,6 +99,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -912,3 +914,379 @@ def _third_offsets(a: np.ndarray, b: np.ndarray, lag: int, span: int = 60) -> li
                 best = (delta, r)
         out.append(best[0])
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "signal_path",
+        "string",
+        "<record>_lifecard.edf, the 3-channel Holter ECGBench splits and validates",
+        nullable=False,
+    ),
+    Field(
+        "psg_path",
+        "string",
+        "<record>.rec, the 14-channel polysomnogram (not loadable through ECGBench's EDF "
+        "reader)",
+        nullable=False,
+    ),
+    Field(
+        "stage_path",
+        "string",
+        "<record>_stage.txt",
+        nullable=False,
+    ),
+    Field(
+        "respevt_path",
+        "string",
+        "<record>_respevt.txt",
+        nullable=False,
+    ),
+    Field(
+        "recording_group",
+        "string",
+        "The record, except that ucddb014 and ucddb028 share 'ucddb014+ucddb028' because "
+        "their Holter payloads are bit-identical; the config's patient_id_column",
+        nullable=False,
+    ),
+    Field(
+        "subject_number",
+        "string",
+        "SubjectDetails 'Study Number' as shipped",
+        nullable=False,
+        example="UCDDB002",
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Gender",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "height_cm",
+        "number",
+        "Height",
+        unit="cm",
+        nullable=False,
+    ),
+    Field(
+        "weight_kg",
+        "number",
+        "Weight",
+        unit="kg",
+        nullable=False,
+    ),
+    Field(
+        "bmi",
+        "number",
+        "Body-mass index",
+        unit="kg/m^2",
+        nullable=False,
+    ),
+    Field(
+        "epworth_score",
+        "integer",
+        "Epworth Sleepiness Score",
+        nullable=False,
+    ),
+    Field(
+        "psg_ahi",
+        "number",
+        "The shipped apnoea-hypopnoea index ('PSG AHI')",
+        unit="events/h",
+        nullable=False,
+    ),
+    Field(
+        "ahi_severity",
+        "string",
+        "psg_ahi banded at 5, 15 and 30; the config's label column",
+        vocabulary=("normal", "mild", "moderate", "severe", "unknown"),
+        nullable=False,
+    ),
+    Field(
+        "osa_moderate_severe",
+        "boolean",
+        "psg_ahi at or above 15",
+        nullable=False,
+    ),
+    Field(
+        "psg_study_duration_h",
+        "number",
+        "Shipped 'Study Duration (hr)'",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "psg_sleep_efficiency_pct",
+        "number",
+        "Shipped 'Sleep Efficiency (%)'",
+        unit="%",
+        nullable=False,
+    ),
+    Field(
+        "sleep_time_h",
+        "number",
+        "Hours in sleep stages 1-5 from the 30 s epochs",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "sleep_efficiency_recomputed_pct",
+        "number",
+        "Recomputed from the epochs; within 0.5 points of the shipped value for all 25",
+        unit="%",
+    ),
+    Field(
+        "ahi_recomputed",
+        "number",
+        "Apnoeas plus hypopnoeas over sleep_time_h; within 1.0 of psg_ahi for 23 of 25 "
+        "records (94.8 vs 91 for ucddb025, 48.2 vs 46 for ucddb028)",
+        unit="events/h",
+    ),
+    Field(
+        "n_epochs",
+        "integer",
+        "30 s epochs in the stage file",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_wake",
+        "integer",
+        "Epochs scored wake (stage code 0)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_rem",
+        "integer",
+        "Epochs scored rem (stage code 1)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_s1",
+        "integer",
+        "Epochs scored s1 (stage code 2)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_s2",
+        "integer",
+        "Epochs scored s2 (stage code 3)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_s3",
+        "integer",
+        "Epochs scored s3 (stage code 4)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_s4",
+        "integer",
+        "Epochs scored s4 (stage code 5)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_artifact",
+        "integer",
+        "Epochs scored artifact (stage code 6)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_indeterminate",
+        "integer",
+        "Epochs scored indeterminate (stage code 7)",
+        nullable=False,
+    ),
+    Field(
+        "n_epochs_undocumented",
+        "integer",
+        "Epochs scored undocumented (stage code 8)",
+        nullable=False,
+    ),
+    Field(
+        "n_resp_events",
+        "integer",
+        "Lines in the respiratory event list, including periodic breathing and possible "
+        "events",
+        nullable=False,
+    ),
+    Field(
+        "n_apnea_hypopnea",
+        "integer",
+        "Apnoeas plus hypopnoeas, the AHI numerator",
+        nullable=False,
+    ),
+    Field(
+        "n_apnea_obstructive",
+        "integer",
+        "Events of type APNEA-O",
+        nullable=False,
+    ),
+    Field(
+        "n_apnea_central",
+        "integer",
+        "Events of type APNEA-C",
+        nullable=False,
+    ),
+    Field(
+        "n_apnea_mixed",
+        "integer",
+        "Events of type APNEA-M",
+        nullable=False,
+    ),
+    Field(
+        "n_hypopnea_obstructive",
+        "integer",
+        "Events of type HYP-O",
+        nullable=False,
+    ),
+    Field(
+        "n_hypopnea_central",
+        "integer",
+        "Events of type HYP-C",
+        nullable=False,
+    ),
+    Field(
+        "n_hypopnea_mixed",
+        "integer",
+        "Events of type HYP-M",
+        nullable=False,
+    ),
+    Field(
+        "n_periodic_breathing",
+        "integer",
+        "Events of type PB",
+        nullable=False,
+    ),
+    Field(
+        "n_possible",
+        "integer",
+        "Events of type POSSIBLE",
+        nullable=False,
+    ),
+    Field(
+        "psg_offset_secs",
+        "number",
+        "Seconds the Holter started BEFORE the polysomnogram, recovered by "
+        "cross-correlating heart rate because the Holter clock is an archive placeholder; "
+        "annotations are in PSG time. Missing for ucddb028, whose Holter is another "
+        "subject's.",
+        unit="s",
+    ),
+    Field(
+        "psg_offset_r",
+        "number",
+        "Correlation of the recovered alignment",
+    ),
+    Field(
+        "psg_offset_spread_secs",
+        "number",
+        "Disagreement between the three Holter channels on the lag",
+        unit="s",
+    ),
+    Field(
+        "psg_offset_reliable",
+        "boolean",
+        "r at least 0.70 and spread at most 30 s; False for ucddb013, ucddb023 and ucddb028",
+        nullable=False,
+    ),
+    Field(
+        "holter_duplicate_of",
+        "string",
+        "'ucddb014' for ucddb028, whose Holter payload is a byte-identical copy; empty "
+        "otherwise",
+        nullable=False,
+    ),
+    Field(
+        "waveform_matches_subject",
+        "boolean",
+        "False for ucddb028: its ECG belongs to ucddb014's subject, so drop it from "
+        "record-level supervised work",
+        nullable=False,
+    ),
+    Field(
+        "n_distinct_leads",
+        "integer",
+        "Distinct Holter channels: 2 for ucddb002, whose channels 2 and 3 are identical",
+        nullable=False,
+    ),
+    Field(
+        "calibration_samples",
+        "integer",
+        "Length of the 2 Hz calibration square wave every record opens with (8,576 to "
+        "15,232 samples); window=(0, n) returns the same non-ECG waveform for every record",
+        nullable=False,
+    ),
+    Field(
+        "calibration_secs",
+        "number",
+        "calibration_samples over 128 Hz (67-119 s)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Holter samples from the EDF header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 128 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 128 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Holter EDF channels (3)",
+        nullable=False,
+    ),
+    Field(
+        "psg_n_samples",
+        "integer",
+        "Polysomnogram ECG samples (data records x 128)",
+        nullable=False,
+    ),
+    Field(
+        "psg_duration_secs",
+        "integer",
+        "Polysomnogram data records, one second each",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "psg_start_time_secs",
+        "integer",
+        "Polysomnogram start time of day in seconds, the annotations' time reference",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "osa_moderate_severe as a class",
+        vocabulary=("osa_moderate_severe", "osa_none_mild"),
+        nullable=False,
+    ),
+)

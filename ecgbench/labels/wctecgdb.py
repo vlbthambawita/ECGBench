@@ -64,6 +64,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -345,3 +347,133 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int((~out["diagnosis_reported"]).sum()),
     )
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "'patientNNN' from the record path; 92 patients over 540 segments, 1-31 each",
+        nullable=False,
+        example="patient001",
+    ),
+    Field(
+        "segment",
+        "string",
+        "'segMM' from the record path",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "'#Age:' header comment",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "'#Sex:' header comment",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "diagnosis",
+        "string",
+        "'#Diagnosis report:' normalised: cp1252 non-breaking spaces folded, whitespace "
+        "collapsed, SPELLING_FIXES applied. Per patient, not per segment - an admission "
+        "diagnosis repeated on every segment. 40 distinct strings.",
+        vocabulary=(
+            "Non ST segment elevation myocardial infarction (NSTEMI)",
+            "ST segment elevation myocardial infarction (STEMI)",
+            "Inferior STEMI (ST segment elevation myocardial infarction)",
+            "Type 2 myocardial infarction",
+            "Non ST segment elevation myocardial infarction (NSTEMI)- rapid Atrial fibrillation",
+            "Stable angina",
+            "Coronary artery disease",
+            "Angina",
+            "Unstable angina",
+            "Stable angina underwent PCI (percutaneous coronary intervention)",
+            "Atrial fibrillation",
+            "Atrial fibrillation with rapid ventricular response",
+            "Atrial flutter",
+            "Slow AF",
+            "Atrial fibrillation with tachy-brady syndrome-pericarditis",
+            "Atrial fibrillation-cardiomyopathy",
+            "Atrial fibrillation-heart failure",
+            "Pulmonary embolism-Atrial fibrillation",
+            "Rapid Atrial fibrillation - pericarditis",
+            "Rapid atrial fibrillation with new cardiomyopathy",
+            "Ventricular tachycardia (VT)",
+            "Supraventricular tachycardia (SVT)",
+            "Supraventricular tachycardia (SVT): Atrioventricular nodal reentry tachycardia "
+            "(AVNRT)",
+            "Hypertrophic obstructive cardiomyopathy",
+            "Cardiomyopathy",
+            "Congestive cardiac failure (CCF)",
+            "Congestive cardiac failure (CHF) exacerbation",
+            "Syncope-cardiomyopathy",
+            "Sinus bradycardia",
+            "Complete Heart block",
+            "Atypical chest pain",
+            "Chest pain",
+            "Epigastric pain",
+            "Gastritis (non cardiac chest pain)",
+            "Fall secondary to alcohol intoxication",
+            "Urosepsis",
+            "Pulmonary embolism",
+            "Severe Mitral Stenosis",
+            "Syncope - undetermined cause",
+            "not reported",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "diagnosis_raw",
+        "string",
+        "The header string verbatim, byte 0xA0 included",
+        nullable=False,
+    ),
+    Field(
+        "diagnosis_reported",
+        "boolean",
+        "False for the 10 patients (38 segments) whose diagnosis is 'not reported'",
+        nullable=False,
+    ),
+    Field(
+        "diagnosis_group",
+        "string",
+        "Single-label reduction of the free text to 8 groups plus 'Not reported' - a "
+        "judgement call where a string names two conditions. Stratification only; the "
+        "config's label column.",
+        vocabulary=(
+            "Myocardial infarction",
+            "Angina or coronary artery disease",
+            "Atrial fibrillation or flutter",
+            "Other tachyarrhythmia",
+            "Cardiomyopathy or heart failure",
+            "Bradyarrhythmia or conduction block",
+            "Other or non-cardiac",
+            "Not reported",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "reconstructed_precordials",
+        "array[string]",
+        "Channels synthesised as V = UV - WCT rather than recorded, from the '#Reconstruct "
+        "Precordials:' comment (8 segments of 5 patients); empty otherwise. Exclude them "
+        "from any evaluation of precordial reconstruction.",
+        nullable=False,
+    ),
+    Field(
+        "has_reconstructed_precordials",
+        "boolean",
+        "reconstructed_precordials is non-empty",
+        nullable=False,
+    ),
+)

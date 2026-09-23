@@ -70,6 +70,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -569,3 +571,189 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "'patientNNN' from the record name; 104 patients",
+        nullable=False,
+        example="patient001",
+    ),
+    Field(
+        "patient_number",
+        "integer",
+        "The record name's leading three digits",
+        nullable=False,
+    ),
+    Field(
+        "recording_type",
+        "string",
+        "Where in the PTCA protocol the recording sits, from the annotation spreadsheet; "
+        "the ground truth for ischaemia detection against the patient's own baseline, and "
+        "the config's label column. UNKNOWN when the record is not in the sheet.",
+        vocabulary=("BR", "BC", "BI", "PC", "PR", "UNKNOWN"),
+        nullable=False,
+    ),
+    Field(
+        "recording_type_label",
+        "string",
+        "Long name of recording_type; empty for UNKNOWN",
+        vocabulary=(
+            "baseline room",
+            "baseline cathlab",
+            "balloon inflation",
+            "postinflation cathlab",
+            "postinflation room",
+            "",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "recording_index",
+        "string",
+        "Index of the recording within its phase (1-5), ';'-joined if the sheet maps the "
+        "file to several; empty when unknown",
+        nullable=False,
+    ),
+    Field(
+        "occluded_artery",
+        "string",
+        "Free-text occluded artery from the sheet for inflation records; empty otherwise",
+        nullable=False,
+        example="dist circ",
+    ),
+    Field(
+        "artery_territory",
+        "string",
+        "occluded_artery reduced to a coronary territory; empty for non-inflation records",
+        vocabulary=("LAD", "RCA", "LCx", "LM", "UNKNOWN", ""),
+        nullable=False,
+    ),
+    Field(
+        "suspect_leads",
+        "string",
+        "'True' for patients 1, 4, 5, 6 and 89, whose depositors flagged possibly reversed "
+        "leads without saying which",
+        vocabulary=("True", "False"),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "data/<record> WFDB stem",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples from the header, the authoritative length (the sheet's D2 disagrees for 30 "
+        "records)",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 1000 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "header_age",
+        "string",
+        "'# Age:' header comment; empty for patients 14 and 15",
+        nullable=False,
+    ),
+    Field(
+        "header_sex",
+        "string",
+        "'# Sex:' header comment, uppercased",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "inflation_start_s",
+        "string",
+        "Balloon inflation times from the .event file, seconds, ';'-joined; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "deflation_s",
+        "string",
+        "Balloon deflation times, ';'-joined",
+        nullable=False,
+    ),
+    Field(
+        "inflation_duration_s",
+        "string",
+        "Deflation minus inflation per pair, ';'-joined",
+        nullable=False,
+    ),
+    Field(
+        "injection_s",
+        "string",
+        "Contrast injection times, ';'-joined",
+        nullable=False,
+    ),
+    Field(
+        "n_inflations",
+        "integer",
+        "Balloon inflations in the .event file",
+        nullable=False,
+    ),
+    Field(
+        "n_injections",
+        "integer",
+        "Contrast injections in the .event file",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+    ),
+    Field(
+        "age",
+        "string",
+        "Age from the sheet as text; '?' becomes empty",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the sheet, uppercased",
+        vocabulary=("M", "F"),
+    ),
+    Field(
+        "prior_mi_location",
+        "string",
+        "Prior myocardial infarction location from the sheet, lowercased ('no' when none)",
+    ),
+    Field(
+        "prior_mi",
+        "string",
+        "'True'/'False' from prior_mi_location; empty when unknown",
+        vocabulary=("True", "False", ""),
+    ),
+    Field(
+        "primary_artery_territory",
+        "string",
+        "Territory of the patient's first balloon inflation, repeated on all their records; "
+        "empty when none",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "primary_artery_territory with territories held by fewer than 10 patients pooled "
+        "into OTHER",
+        vocabulary=("LAD", "RCA", "LCx", "LM", "OTHER", "UNKNOWN"),
+        nullable=False,
+    ),
+)

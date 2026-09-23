@@ -70,6 +70,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -506,3 +508,318 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "lead_names",
+        "string",
+        "Header channel names pipe-joined, 'ECG1|ECG2'",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples from the header, 230,400 (30 min at 128 Hz)",
+        nullable=False,
+    ),
+    Field(
+        "declared_gain",
+        "number",
+        "Header gain of the first channel: 200, or 0 meaning uncalibrated",
+        unit="adu/mV",
+    ),
+    Field(
+        "header_declares_uncalibrated",
+        "boolean",
+        "declared_gain is 0",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 128 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference beats annotated 'S' (supraventricular premature or ectopic beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference beats annotated 'Q' (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference beats annotated 'F' (fusion of ventricular and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Reference beats annotated 'J' (nodal (junctional) premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Reference beats annotated 'a' (aberrated atrial premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_B",
+        "integer",
+        "Reference beats annotated 'B' (bundle branch block beat (unspecified))",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "Beats in AAMI EC57 class N (normal), comparable across every MIT-BIH database in "
+        "the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "Beats in AAMI EC57 class S (supraventricular ectopic), comparable across every "
+        "MIT-BIH database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "Beats in AAMI EC57 class V (ventricular ectopic), comparable across every MIT-BIH "
+        "database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "Beats in AAMI EC57 class F (fusion), comparable across every MIT-BIH database in "
+        "the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "Beats in AAMI EC57 class Q (unclassifiable/paced), comparable across every MIT-BIH "
+        "database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "'|' artefact markers",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "'~' quality changes; 43 of 78 records carry some",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "'+' rhythm changes: one in the whole release, so there is no rhythm layer",
+        nullable=False,
+    ),
+    Field(
+        "clean_secs",
+        "number",
+        "Seconds both channels are annotated clean (~ subtype 0, plus the span before the "
+        "first ~)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG1_secs",
+        "number",
+        "Seconds ECG1 alone is annotated noisy (~ subtype 1)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG2_secs",
+        "number",
+        "Seconds ECG2 alone is annotated noisy (~ subtype 2)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_both_secs",
+        "number",
+        "Seconds both channels are annotated noisy (~ subtype 3)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "unreadable_secs",
+        "number",
+        "Seconds annotated unreadable (~ subtype -1)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_sveb",
+        "integer",
+        "Supraventricular ectopic beats (AAMI S); this release annotates them 'S' where "
+        "mitdb uses 'A'",
+        nullable=False,
+    ),
+    Field(
+        "sveb_fraction",
+        "number",
+        "n_sveb over n_beats, 0.0 to 0.575",
+    ),
+    Field(
+        "sveb_per_hour",
+        "number",
+        "n_sveb per recorded hour",
+    ),
+    Field(
+        "n_veb",
+        "integer",
+        "Ventricular ectopic beats (AAMI V)",
+        nullable=False,
+    ),
+    Field(
+        "veb_fraction",
+        "number",
+        "n_veb over n_beats",
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "Beats outside AAMI class N",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_fraction",
+        "number",
+        "n_ectopic_beats over n_beats",
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from first to last beat",
+        unit="s",
+    ),
+    Field(
+        "unannotated_head_secs",
+        "number",
+        "Seconds before the first beat (0.01-1.27 s)",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat (under 1.2 s)",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "Beat coverage of the record; whole-record here",
+    ),
+    Field(
+        "noisy_secs",
+        "number",
+        "Seconds any channel is annotated noisy",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_fraction",
+        "number",
+        "noisy_secs over the record",
+    ),
+    Field(
+        "quality_head_unasserted_secs",
+        "number",
+        "Seconds before a first ~ that is a transition INTO clean (803, 855, 857, 885): "
+        "counted clean, as WFDB does, but never asserted; 1,555 s for record 803",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="800",
+    ),
+    Field(
+        "sveb_burden",
+        "string",
+        "sveb_fraction banded at 0.01, 0.03 and 0.10; the config's label column",
+        vocabulary=("minimal", "low", "moderate", "high"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Copy of sveb_burden",
+        vocabulary=("minimal", "low", "moderate", "high"),
+        nullable=False,
+    ),
+)

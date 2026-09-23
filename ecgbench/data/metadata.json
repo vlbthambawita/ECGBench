@@ -1,6 +1,6 @@
 {
- "built_at": "2026-09-23T08:09:14+00:00",
- "content_digest": "sha256:d16c910dfe7294a10cf744d5959ff4e1b3b361054ab7bc373f1dbf16caead836",
+ "built_at": "2026-09-23T11:08:27+00:00",
+ "content_digest": "sha256:cba40501c99c0b7ce016bb68e660f466aa717000eb6a60e3be5ff1f08fd9c8a6",
  "datasets": [
   {
    "access": {
@@ -34919,7 +34919,1015 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Signals in the header: 2",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples per record from the header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate, 200 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Header channel names pipe-joined, 'ECG1|ECG2'",
+     "example": null,
+     "name": "lead_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Per-channel ADC gains pipe-joined",
+     "example": null,
+     "name": "adc_gains",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Per-channel ADC baselines pipe-joined",
+     "example": null,
+     "name": "adc_baselines",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over sampling_rate",
+     "example": null,
+     "name": "record_seconds",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "record_seconds over 3600",
+     "example": null,
+     "name": "record_hours",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "A .atr exists: 98 of the 128 recordings carry rhythm marks",
+     "example": null,
+     "name": "has_rhythm_annotation",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in the .qrs (epltd Pan-Tompkins output, unaudited); identical to the .atr beat positions sample for sample",
+     "example": null,
+     "name": "n_detections",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sample of the last .qrs detection; -1 if none",
+     "example": null,
+     "name": "detector_last_sample",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last detection",
+     "example": null,
+     "name": "detector_unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Mean heart rate over the .qrs detections",
+     "example": null,
+     "name": "detector_mean_heart_rate_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (N) intervals, not annotated (sinus rhythm and any other rhythm outside the protocol). '(N' means NOT ANNOTATED - sinus rhythm, ventricular ectopy, pauses, noise and everything outside the supraventricular protocol - not sinus rhythm. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_N",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (AFIB) intervals, atrial fibrillation. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_AFIB",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (AFL) intervals, atrial flutter. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_AFL",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (AT) intervals, atrial tachycardia. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_AT",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (PAT) intervals, other supraventricular tachycardia, e.g. Wolff-Parkinson-White. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_PAT",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (NOD) intervals, intranodal (AV-nodal) tachycardia. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_NOD",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside (AB) intervals, atrial bigeminy (present in the files, absent from the release's docs). Present in 3 intervals of 2 records but absent from the release's own documentation. Missing for unannotated records.",
+     "example": null,
+     "name": "beats_AB",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (N) intervals, not annotated (sinus rhythm and any other rhythm outside the protocol); missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_N",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (AFIB) intervals, atrial fibrillation; missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_AFIB",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (AFL) intervals, atrial flutter; missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_AFL",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (AT) intervals, atrial tachycardia; missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_AT",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (PAT) intervals, other supraventricular tachycardia, e.g. Wolff-Parkinson-White; missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_PAT",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (NOD) intervals, intranodal (AV-nodal) tachycardia; missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_NOD",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in (AB) intervals, atrial bigeminy (present in the files, absent from the release's docs); missing for unannotated records",
+     "example": null,
+     "name": "rhythm_secs_AB",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "(N) intervals, not annotated (sinus rhythm and any other rhythm outside the protocol); missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_N",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(AFIB) intervals, atrial fibrillation; missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_AFIB",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(AFL) intervals, atrial flutter; missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_AFL",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(AT) intervals, atrial tachycardia; missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_AT",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(PAT) intervals, other supraventricular tachycardia, e.g. Wolff-Parkinson-White; missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_PAT",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(NOD) intervals, intranodal (AV-nodal) tachycardia; missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_NOD",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(AB) intervals, atrial bigeminy (present in the files, absent from the release's docs); missing for unannotated records",
+     "example": null,
+     "name": "n_episodes_AB",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats: every .atr annotation is a '\"' comment on a beat (10.3 million across the 98 files, no typed beat symbols at all); falls back to n_detections when no .atr",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'\"' annotations carrying a rhythm code in their aux_note, i.e. interval starts",
+     "example": null,
+     "name": "n_rhythm_marks",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds covered by rhythm intervals",
+     "example": null,
+     "name": "rhythm_annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Rhythm codes present, pipe-joined by descending seconds; empty when unannotated",
+     "example": "AFIB|N",
+     "name": "rhythms",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Longest rhythm code; empty when unannotated",
+     "example": null,
+     "name": "dominant_rhythm",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "N",
+      "AFIB",
+      "AFL",
+      "AT",
+      "PAT",
+      "NOD",
+      "AB",
+      ""
+     ]
+    },
+    {
+     "description": "Share of rhythm_annotated_secs in it",
+     "example": null,
+     "name": "dominant_rhythm_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AFIB seconds over rhythm_annotated_secs",
+     "example": null,
+     "name": "af_burden",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats inside AFIB intervals over n_beats",
+     "example": null,
+     "name": "af_beat_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AFL seconds over rhythm_annotated_secs",
+     "example": null,
+     "name": "afl_burden",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds in any supraventricular code (AFIB, AFL, AT, PAT, NOD, AB) over rhythm_annotated_secs",
+     "example": null,
+     "name": "svt_burden",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Longest single AFIB interval",
+     "example": null,
+     "name": "longest_af_episode_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Sample of the first rhythm mark; -1 if none",
+     "example": null,
+     "name": "first_mark_sample",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sample of the last beat; -1 if none",
+     "example": null,
+     "name": "last_beat_sample",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Span from the first rhythm mark to the last beat",
+     "example": null,
+     "name": "annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last beat",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Mean heart rate over the .atr beats",
+     "example": null,
+     "name": "mean_heart_rate_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Partner of the one pair sharing a recording: 005 and 020 have byte-identical .dat and .qrs files and differ only in .atr, so the release holds 127 distinct recordings; empty otherwise",
+     "example": null,
+     "name": "duplicate_of",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record stem; flat directory",
+     "example": "001",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Subject identifier; 122 subjects over 128 recordings, the config's patient_id_column",
+     "example": null,
+     "name": "Subject_ID",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: The release's flag that a .atr exists",
+     "example": null,
+     "name": "Annotated",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Height in metres",
+     "example": null,
+     "name": "Height",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "m",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Weight",
+     "example": null,
+     "name": "Weight",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Body-mass index",
+     "example": null,
+     "name": "BMI",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg/m^2",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Holter date, shifted per subject by at least a year for de-identification - cross-row date arithmetic is not safe",
+     "example": null,
+     "name": "Date_Holter",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Indication for the Holter",
+     "example": null,
+     "name": "Indication_Holter",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Age at the Holter; per-recording mean 65.8, not the landing page's 68.0",
+     "example": null,
+     "name": "Age_at_Holter",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Sex",
+     "example": null,
+     "name": "Sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "AdditionalData.csv: AF phenotype; the config's label column",
+     "example": null,
+     "name": "AF_Type",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "PAF",
+      "PerAF",
+      "non-AF"
+     ]
+    },
+    {
+     "description": "AdditionalData.csv: Atrial flutter previously documented (shipped as the strings True/False)",
+     "example": null,
+     "name": "Previously_Documented_AFL",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Prior AF ablation (shipped as the strings True/False)",
+     "example": null,
+     "name": "Previous_AF_Ablation",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Permanent pacemaker present during the Holter (shipped as the strings True/False)",
+     "example": null,
+     "name": "PPM_on_Holter",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Pacemaker implanted after the Holter (shipped as the strings True/False)",
+     "example": null,
+     "name": "PPM_after_Holter",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Pacemaker indication",
+     "example": null,
+     "name": "PPM_Indication",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Pacemaker implantation date (shifted)",
+     "example": null,
+     "name": "PPM_Date",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: First AF/AFL diagnosis date (shifted)",
+     "example": null,
+     "name": "Date_of_First_Diagnosis_of_AF_AFL",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Months since AF diagnosis, the release's own pre-shift interval - use this for time since diagnosis",
+     "example": null,
+     "name": "AF_Duration_Months",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "month",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Non-beta-blocker antiarrhythmic drug",
+     "example": null,
+     "name": "Antiarrhythmic_Drug_nonBB",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Beta-blocker antiarrhythmic drug",
+     "example": null,
+     "name": "Antiarrhythmic_Drug_BB",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Anticoagulant",
+     "example": null,
+     "name": "Anticoagulation",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: First ablation date (shifted)",
+     "example": null,
+     "name": "Date_1st_AF_Ablation",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Pulmonary vein isolation at the first ablation (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Ablation1_PVI",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Cavotricuspid isthmus ablation at the first ablation (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Ablation1_CTI",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Other lesions at the first ablation",
+     "example": null,
+     "name": "Ablation1_Others",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Redo ablation date (shifted)",
+     "example": null,
+     "name": "Date_Redo_AF_Ablation",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Redo ablation detail",
+     "example": null,
+     "name": "Redo_Detail",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Echocardiogram date (shifted)",
+     "example": null,
+     "name": "Echo_Date",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Left atrial diameter on echo",
+     "example": null,
+     "name": "Echo_LAD",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "mm",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Left-ventricular ejection fraction on echo",
+     "example": null,
+     "name": "Echo_LVEF",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "%",
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: LV asynergy on echo",
+     "example": null,
+     "name": "Echo_LV_Asynergy",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Moderate or severe mitral regurgitation (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Moderate_or_Severe_MR",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Moderate or severe tricuspid regurgitation (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Moderate_or_Severe_TR",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Moderate or severe aortic stenosis (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Moderate_or_Severe_AS",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Moderate or severe aortic regurgitation (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "Moderate_or_Severe_AR",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Congestive heart failure (shipped as 1.0/0.0/blank, converted to a nullable boolean)",
+     "example": null,
+     "name": "CHF",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Hypertension (shipped as the strings True/False)",
+     "example": null,
+     "name": "HTN",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Aged 75 or older (shipped as the strings True/False)",
+     "example": null,
+     "name": "Age_75_or_Older",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Diabetes mellitus (shipped as the strings True/False)",
+     "example": null,
+     "name": "DM",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Prior stroke; 19 of 128 recordings, 14.8%, not the landing page's 11.7% (shipped as the strings True/False)",
+     "example": null,
+     "name": "Stroke",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Vascular disease (shipped as the strings True/False)",
+     "example": null,
+     "name": "Vascular_Diseases",
+     "nullable": true,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Free-text comments",
+     "example": null,
+     "name": "Comments",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Holter start time of day",
+     "example": null,
+     "name": "Holter_start_time",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AdditionalData.csv: Holter recording length, H:MM:SS",
+     "example": null,
+     "name": "Holter_recording_length",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "af_burden banded: below 0.05 minimal, above 0.95 sustained, else paroxysmal; unannotated when no .atr",
+     "example": null,
+     "name": "af_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "unannotated",
+      "minimal",
+      "paroxysmal",
+      "sustained"
+     ]
+    },
+    {
+     "description": "AF_Type crossed with whether the record is annotated (PerAF left bare), for fold construction",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "PAF+annotated",
+      "PAF+unannotated",
+      "PerAF",
+      "non-AF+annotated",
+      "non-AF+unannotated"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "SHDB-AF (Saitama Holter Database — Atrial Fibrillation)",
    "origin_country": "Japan",
@@ -35299,7 +36307,221 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Patient identifier; 24,666 patients over 25,770 records, the grouping column",
+     "example": null,
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age, 18-95, complete",
+     "example": null,
+     "name": "age",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex (14,265 M, 11,505 F)",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Recording date as shipped",
+     "example": null,
+     "name": "date",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Record length from metadata.csv column N, 5,000 to 28,000 in 39 distinct values; agrees with the HDF5 array for every record",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The raw AHA_Code string: ';'-separated statements, each a primary code with '+'-joined modifiers, e.g. '60+310;22'",
+     "example": null,
+     "name": "aha_code",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over 500 Hz; 73% of records are 10 s",
+     "example": null,
+     "name": "duration_seconds",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Constant 500 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "records/<ECG_ID>.h5",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Statements normalised as primary+modifier..., ';'-joined; keeps the attachment the flat columns discard",
+     "example": null,
+     "name": "aha_statements",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Statements in the record (1 to 6)",
+     "example": null,
+     "name": "n_statements",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Deduplicated primary codes ';'-joined; multi-label with no ranking - the config's label column and what to train on",
+     "example": "60;22",
+     "name": "aha_primary_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "code.csv descriptions of the primaries, ';'-joined (four contain commas)",
+     "example": null,
+     "name": "aha_primary_descriptions",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "code.csv categories, deduplicated, ';'-joined",
+     "example": null,
+     "name": "aha_primary_categories",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Deduplicated modifier codes ';'-joined; qualifiers, not diagnoses",
+     "example": null,
+     "name": "aha_modifier_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "code.csv descriptions of the modifiers",
+     "example": null,
+     "name": "aha_modifier_descriptions",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Distinct primary codes",
+     "example": null,
+     "name": "n_primary_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The deduplicated primary list is exactly ['1'] (Normal ECG): 13,905 records, 53.96%, matching the paper where a string comparison misses two",
+     "example": null,
+     "name": "is_normal",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Single-label reduction for fold construction: the record's globally rarest primary code. NOT ground truth.",
+     "example": null,
+     "name": "stratify_code",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "code.csv description of stratify_code",
+     "example": null,
+     "name": "stratify_description",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "code.csv category of stratify_code",
+     "example": null,
+     "name": "stratify_category",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "Shandong Provincial Hospital ECG Database (SPHDB)",
    "origin_country": "China",
@@ -35688,7 +36910,310 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "'patientNNN' from the record name; 104 patients",
+     "example": "patient001",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The record name's leading three digits",
+     "example": null,
+     "name": "patient_number",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Where in the PTCA protocol the recording sits, from the annotation spreadsheet; the ground truth for ischaemia detection against the patient's own baseline, and the config's label column. UNKNOWN when the record is not in the sheet.",
+     "example": null,
+     "name": "recording_type",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "BR",
+      "BC",
+      "BI",
+      "PC",
+      "PR",
+      "UNKNOWN"
+     ]
+    },
+    {
+     "description": "Long name of recording_type; empty for UNKNOWN",
+     "example": null,
+     "name": "recording_type_label",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "baseline room",
+      "baseline cathlab",
+      "balloon inflation",
+      "postinflation cathlab",
+      "postinflation room",
+      ""
+     ]
+    },
+    {
+     "description": "Index of the recording within its phase (1-5), ';'-joined if the sheet maps the file to several; empty when unknown",
+     "example": null,
+     "name": "recording_index",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Free-text occluded artery from the sheet for inflation records; empty otherwise",
+     "example": "dist circ",
+     "name": "occluded_artery",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "occluded_artery reduced to a coronary territory; empty for non-inflation records",
+     "example": null,
+     "name": "artery_territory",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "LAD",
+      "RCA",
+      "LCx",
+      "LM",
+      "UNKNOWN",
+      ""
+     ]
+    },
+    {
+     "description": "'True' for patients 1, 4, 5, 6 and 89, whose depositors flagged possibly reversed leads without saying which",
+     "example": null,
+     "name": "suspect_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "True",
+      "False"
+     ]
+    },
+    {
+     "description": "data/<record> WFDB stem",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples from the header, the authoritative length (the sheet's D2 disagrees for 30 records)",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate, 1000 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "'# Age:' header comment; empty for patients 14 and 15",
+     "example": null,
+     "name": "header_age",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'# Sex:' header comment, uppercased",
+     "example": null,
+     "name": "header_sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F",
+      ""
+     ]
+    },
+    {
+     "description": "Balloon inflation times from the .event file, seconds, ';'-joined; empty when none",
+     "example": null,
+     "name": "inflation_start_s",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Balloon deflation times, ';'-joined",
+     "example": null,
+     "name": "deflation_s",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Deflation minus inflation per pair, ';'-joined",
+     "example": null,
+     "name": "inflation_duration_s",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Contrast injection times, ';'-joined",
+     "example": null,
+     "name": "injection_s",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Balloon inflations in the .event file",
+     "example": null,
+     "name": "n_inflations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Contrast injections in the .event file",
+     "example": null,
+     "name": "n_injections",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over sampling_rate",
+     "example": null,
+     "name": "duration_seconds",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Age from the sheet as text; '?' becomes empty",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Sex from the sheet, uppercased",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Prior myocardial infarction location from the sheet, lowercased ('no' when none)",
+     "example": null,
+     "name": "prior_mi_location",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'True'/'False' from prior_mi_location; empty when unknown",
+     "example": null,
+     "name": "prior_mi",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "True",
+      "False",
+      ""
+     ]
+    },
+    {
+     "description": "Territory of the patient's first balloon inflation, repeated on all their records; empty when none",
+     "example": null,
+     "name": "primary_artery_territory",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "primary_artery_territory with territories held by fewer than 10 patients pooled into OTHER",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "LAD",
+      "RCA",
+      "LCx",
+      "LM",
+      "OTHER",
+      "UNKNOWN"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "STAFF III Database",
    "origin_country": "USA / Sweden",
@@ -36065,7 +37590,644 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Signals in the header: 2 for 18 records, 1 for the ten records 313-323. A batch mixing them raises in ecg_collate_fn; batch with leads=['ECG1'].",
+     "example": null,
+     "name": "n_channels",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "1",
+      "2"
+     ]
+    },
+    {
+     "description": "Samples from the header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over sampling_rate",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate, 360 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Header channel descriptions pipe-joined: 'ECG' or 'ECG|ECG', no placement stated",
+     "example": null,
+     "name": "signal_descriptions",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Header gain of the first channel",
+     "example": null,
+     "name": "adc_gain_ECG1",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "adu/mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Header gain of the second channel; missing for the ten one-channel records",
+     "example": null,
+     "name": "adc_gain_ECG2",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "adu/mV",
+     "vocabulary": null
+    },
+    {
+     "description": "The landing page's grouping: records 323-327 are long-term excerpts, the rest exercise stress tests by exclusion ('most', not 'all')",
+     "example": null,
+     "name": "record_group",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "exercise_stress",
+      "long_term_excerpt"
+     ]
+    },
+    {
+     "description": "ST change the landing page attributes to the group: depression for exercise, elevation for long-term excerpts. THE RELEASE HAS NO ST CHANGE ANNOTATIONS; this is transcribed prose. The config's label column.",
+     "example": null,
+     "name": "st_change_type",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "depression",
+      "elevation"
+     ]
+    },
+    {
+     "description": "Constant: the grouping's provenance",
+     "example": null,
+     "name": "group_source",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "landing_page"
+     ]
+    },
+    {
+     "description": "Reference beats annotated 'N' (normal beat)",
+     "example": null,
+     "name": "beat_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'L' (left bundle branch block); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_L",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'R' (right bundle branch block); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_R",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'V' (premature ventricular contraction)",
+     "example": null,
+     "name": "beat_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated '/' (paced); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_/",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'A' (atrial premature); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_A",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'f' (fusion of paced and normal); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_f",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'F' (fusion of ventricular and normal); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'j' (junctional escape); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_j",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'a' (aberrated atrial premature); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_a",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'E' (ventricular escape); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_E",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'J' (junctional premature); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'Q' (unclassifiable); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'e' (atrial escape); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_e",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'S' (supraventricular premature beat)",
+     "example": null,
+     "name": "beat_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'n' (supraventricular escape); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_n",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'B' (bundle branch block); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_B",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'r' (R-on-T premature ventricular); does not occur in this release, counted so a re-release using it is not silently dropped",
+     "example": null,
+     "name": "beat_r",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class N (normal), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class S (supraventricular ectopic), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class V (ventricular ectopic), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class F (fusion), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class Q (unclassifiable/paced), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'|' artefact markers",
+     "example": null,
+     "name": "n_isolated_artifacts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'~' quality changes; six in record 319 and none elsewhere - absence means nobody marked them, not that the record is clean",
+     "example": null,
+     "name": "n_quality_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'+' rhythm changes: none in the release",
+     "example": null,
+     "name": "n_rhythm_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds both channels are annotated clean (~ subtype 0, plus the span before the first ~); only record 319 carries any ~",
+     "example": null,
+     "name": "clean_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds ECG1 alone is annotated noisy (~ subtype 1); only record 319 carries any ~",
+     "example": null,
+     "name": "noisy_ECG1_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds ECG2 alone is annotated noisy (~ subtype 2); only record 319 carries any ~",
+     "example": null,
+     "name": "noisy_ECG2_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds both channels are annotated noisy (~ subtype 3); only record 319 carries any ~",
+     "example": null,
+     "name": "noisy_both_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated unreadable (~ subtype -1); only record 319 carries any ~",
+     "example": null,
+     "name": "unreadable_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Sum of the beat_* counts",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Every annotation in the .atr",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats not annotated N",
+     "example": null,
+     "name": "n_ectopic_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ectopic beats per 100,000 beats",
+     "example": null,
+     "name": "ectopic_per_100k_beats",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Span from first to last beat",
+     "example": null,
+     "name": "annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before the first beat (0.2-1.0 s)",
+     "example": null,
+     "name": "unannotated_head_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last beat (0.1-0.9 s)",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Beat coverage, 99.77% to 99.98%",
+     "example": null,
+     "name": "annotated_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds any channel is annotated noisy",
+     "example": null,
+     "name": "noisy_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "noisy_secs over the record",
+     "example": null,
+     "name": "noisy_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "60 over the mean RR of intervals in 0.3-2.0 s",
+     "example": null,
+     "name": "mean_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Standard deviation of the kept RR intervals",
+     "example": null,
+     "name": "sdnn_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Root mean square of successive RR differences",
+     "example": null,
+     "name": "rmssd_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "RR intervals outside 0.3-2.0 s",
+     "example": null,
+     "name": "n_rr_rejected",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Mean heart rate over the opening 60 s window of the reference beats",
+     "example": null,
+     "name": "baseline_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Highest 60 s-window heart rate",
+     "example": null,
+     "name": "peak_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Heart rate over the final 60 s window",
+     "example": null,
+     "name": "final_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "peak minus baseline: 15-115 bpm in the exercise group, 0-8 in three long-term excerpts, but 88 in record 323, which contradicts its grouping",
+     "example": null,
+     "name": "hr_rise_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "60 s windows (30 s step) with at least 20 beats",
+     "example": null,
+     "name": "n_hr_windows",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record stem; flat directory",
+     "example": "300",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "st_change_type crossed with channel count",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "depression_2ch",
+      "depression_1ch",
+      "elevation_2ch",
+      "elevation_1ch"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "MIT-BIH ST Change Database",
    "origin_country": "USA",
@@ -36448,7 +38610,508 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Header channel names pipe-joined, 'ECG1|ECG2'",
+     "example": null,
+     "name": "lead_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples from the header, 230,400 (30 min at 128 Hz)",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Header gain of the first channel: 200, or 0 meaning uncalibrated",
+     "example": null,
+     "name": "declared_gain",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "adu/mV",
+     "vocabulary": null
+    },
+    {
+     "description": "declared_gain is 0",
+     "example": null,
+     "name": "header_declares_uncalibrated",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over 128 Hz",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'N' (normal beat)",
+     "example": null,
+     "name": "beat_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'S' (supraventricular premature or ectopic beat)",
+     "example": null,
+     "name": "beat_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'V' (premature ventricular contraction)",
+     "example": null,
+     "name": "beat_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'Q' (unclassifiable beat)",
+     "example": null,
+     "name": "beat_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'F' (fusion of ventricular and normal beat)",
+     "example": null,
+     "name": "beat_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'J' (nodal (junctional) premature beat)",
+     "example": null,
+     "name": "beat_J",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'a' (aberrated atrial premature beat)",
+     "example": null,
+     "name": "beat_a",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Reference beats annotated 'B' (bundle branch block beat (unspecified))",
+     "example": null,
+     "name": "beat_B",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class N (normal), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class S (supraventricular ectopic), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class V (ventricular ectopic), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class F (fusion), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats in AAMI EC57 class Q (unclassifiable/paced), comparable across every MIT-BIH database in the catalogue",
+     "example": null,
+     "name": "aami_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'|' artefact markers",
+     "example": null,
+     "name": "n_isolated_artifacts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'~' quality changes; 43 of 78 records carry some",
+     "example": null,
+     "name": "n_quality_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'+' rhythm changes: one in the whole release, so there is no rhythm layer",
+     "example": null,
+     "name": "n_rhythm_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds both channels are annotated clean (~ subtype 0, plus the span before the first ~)",
+     "example": null,
+     "name": "clean_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds ECG1 alone is annotated noisy (~ subtype 1)",
+     "example": null,
+     "name": "noisy_ECG1_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds ECG2 alone is annotated noisy (~ subtype 2)",
+     "example": null,
+     "name": "noisy_ECG2_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds both channels are annotated noisy (~ subtype 3)",
+     "example": null,
+     "name": "noisy_both_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated unreadable (~ subtype -1)",
+     "example": null,
+     "name": "unreadable_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Sum of the beat_* counts",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Every annotation in the .atr",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Supraventricular ectopic beats (AAMI S); this release annotates them 'S' where mitdb uses 'A'",
+     "example": null,
+     "name": "n_sveb",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_sveb over n_beats, 0.0 to 0.575",
+     "example": null,
+     "name": "sveb_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_sveb per recorded hour",
+     "example": null,
+     "name": "sveb_per_hour",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ventricular ectopic beats (AAMI V)",
+     "example": null,
+     "name": "n_veb",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_veb over n_beats",
+     "example": null,
+     "name": "veb_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Beats outside AAMI class N",
+     "example": null,
+     "name": "n_ectopic_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_ectopic_beats over n_beats",
+     "example": null,
+     "name": "ectopic_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Span from first to last beat",
+     "example": null,
+     "name": "annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before the first beat (0.01-1.27 s)",
+     "example": null,
+     "name": "unannotated_head_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last beat (under 1.2 s)",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Beat coverage of the record; whole-record here",
+     "example": null,
+     "name": "annotated_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds any channel is annotated noisy",
+     "example": null,
+     "name": "noisy_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "noisy_secs over the record",
+     "example": null,
+     "name": "noisy_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before a first ~ that is a transition INTO clean (803, 855, 857, 885): counted clean, as WFDB does, but never asserted; 1,555 s for record 803",
+     "example": null,
+     "name": "quality_head_unasserted_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "60 over the mean RR of intervals in 0.3-2.0 s",
+     "example": null,
+     "name": "mean_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Standard deviation of the kept RR intervals",
+     "example": null,
+     "name": "sdnn_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Root mean square of successive RR differences",
+     "example": null,
+     "name": "rmssd_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "RR intervals outside 0.3-2.0 s",
+     "example": null,
+     "name": "n_rr_rejected",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "WFDB record stem; flat directory",
+     "example": "800",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "sveb_fraction banded at 0.01, 0.03 and 0.10; the config's label column",
+     "example": null,
+     "name": "sveb_burden",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "minimal",
+      "low",
+      "moderate",
+      "high"
+     ]
+    },
+    {
+     "description": "Copy of sveb_burden",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "minimal",
+      "low",
+      "moderate",
+      "high"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "MIT-BIH Supraventricular Arrhythmia Database",
    "origin_country": "USA",
@@ -37035,7 +39698,668 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "RECONSTRUCTED by ECGBench, not shipped: the release has 7 records and no subject identifier, the paper describes five women, and SUBJECT_IDS maps sz02-sz04 to one subject so she cannot leak across folds (verify_subject_grouping recomputes the evidence). The config's patient_id_column.",
+     "example": null,
+     "name": "subject_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "szdb_subj_1",
+      "szdb_subj_2",
+      "szdb_subj_3",
+      "szdb_subj_4",
+      "szdb_subj_5"
+     ]
+    },
+    {
+     "description": "Constant True",
+     "example": null,
+     "name": "subject_id_is_reconstructed",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples from the header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over sampling_rate",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Header sampling rate, 200 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Header gain of the single channel",
+     "example": null,
+     "name": "adc_gain",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "adu/mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Header channel name, 'ECG'",
+     "example": null,
+     "name": "lead_names",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seizure intervals in times.seize for this record; 10 across the release where the paper describes 11 - one 15 s seizure has no released interval",
+     "example": null,
+     "name": "n_seizures",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seizure onsets in seconds, pipe-joined, read from simultaneous EEG that was never released; empty when none",
+     "example": null,
+     "name": "seizure_starts_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seizure offsets in seconds, pipe-joined",
+     "example": null,
+     "name": "seizure_ends_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seizure durations, pipe-joined (25-110 s)",
+     "example": null,
+     "name": "seizure_durations_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Summed seizure duration",
+     "example": null,
+     "name": "seizure_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Onset of the first seizure",
+     "example": null,
+     "name": "first_seizure_start_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Longest seizure",
+     "example": null,
+     "name": "longest_seizure_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Shortest seizure",
+     "example": null,
+     "name": "shortest_seizure_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Recording remaining after the last seizure ends",
+     "example": null,
+     "name": "post_ictal_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Unaudited ARISTOTLE detections annotated 'N' (normal beat)",
+     "example": null,
+     "name": "beat_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unaudited ARISTOTLE detections annotated 'Q' (unclassifiable beat)",
+     "example": null,
+     "name": "beat_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unaudited ARISTOTLE detections annotated 'S' (supraventricular premature or ectopic beat)",
+     "example": null,
+     "name": "beat_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unaudited ARISTOTLE detections annotated 'V' (premature ventricular contraction)",
+     "example": null,
+     "name": "beat_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Unaudited ARISTOTLE detections annotated 'r' (R-on-T premature ventricular contraction)",
+     "example": null,
+     "name": "beat_r",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections in AAMI EC57 class N (normal)",
+     "example": null,
+     "name": "aami_N",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections in AAMI EC57 class S (supraventricular ectopic)",
+     "example": null,
+     "name": "aami_S",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections in AAMI EC57 class V (ventricular ectopic)",
+     "example": null,
+     "name": "aami_V",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections in AAMI EC57 class F (fusion)",
+     "example": null,
+     "name": "aami_F",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections in AAMI EC57 class Q (unclassifiable/paced); the 50 learning marks fold into Q",
+     "example": null,
+     "name": "aami_Q",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'s' ST-change markers (74 across the release)",
+     "example": null,
+     "name": "n_st_markers",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'+' rhythm markers: two, both in sz02",
+     "example": null,
+     "name": "n_rhythm_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'~' quality changes: none in the release",
+     "example": null,
+     "name": "n_quality_changes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'|' artefact markers: none in the release",
+     "example": null,
+     "name": "n_isolated_artifacts",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'?' learning-phase detections: exactly 50 open every record",
+     "example": null,
+     "name": "n_learning_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "All beat-class detections including the learning marks",
+     "example": null,
+     "name": "n_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Every annotation in the .ari",
+     "example": null,
+     "name": "n_annotations",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Ventricular ectopic detections (AAMI V)",
+     "example": null,
+     "name": "n_veb",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_veb over n_beats",
+     "example": null,
+     "name": "veb_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_veb per recorded hour",
+     "example": null,
+     "name": "veb_per_hour",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Supraventricular ectopic detections (AAMI S)",
+     "example": null,
+     "name": "n_sveb",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_sveb over n_beats",
+     "example": null,
+     "name": "sveb_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Detections outside AAMI class N",
+     "example": null,
+     "name": "n_ectopic_beats",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_ectopic_beats over n_beats",
+     "example": null,
+     "name": "ectopic_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST episodes delimited by '(ST0+'/'ST0+)' or '(ST0-'/'ST0-)' aux strings; 37 across the release, 24 in sz02 and none in sz04",
+     "example": null,
+     "name": "n_st_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST elevation episodes",
+     "example": null,
+     "name": "n_st_elevation_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ST depression episodes",
+     "example": null,
+     "name": "n_st_depression_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Summed ST episode duration",
+     "example": null,
+     "name": "st_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Summed ST elevation duration",
+     "example": null,
+     "name": "st_elevation_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Summed ST depression duration",
+     "example": null,
+     "name": "st_depression_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Longest ST episode (826 s in sz06)",
+     "example": null,
+     "name": "longest_st_episode_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "ST episodes opened but never closed",
+     "example": null,
+     "name": "n_st_unclosed",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds annotated (AFIB: 17.4 s in sz02, 25 s before its second seizure, and 0 elsewhere - meaning never assessed, not no AF (see has_rhythm_annotation)",
+     "example": null,
+     "name": "af_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "af_secs over the record",
+     "example": null,
+     "name": "af_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "(AFIB episodes",
+     "example": null,
+     "name": "n_af_episodes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Any '+' marker present (sz02 only)",
+     "example": null,
+     "name": "has_rhythm_annotation",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds covered by a rhythm marker",
+     "example": null,
+     "name": "rhythm_asserted_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before the first rhythm marker",
+     "example": null,
+     "name": "rhythm_head_unasserted_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Span from first to last beat",
+     "example": null,
+     "name": "annotated_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds before the first beat (0.1-0.9 s)",
+     "example": null,
+     "name": "unannotated_head_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds after the last beat (under 0.6 s)",
+     "example": null,
+     "name": "unannotated_tail_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Beat coverage of the record",
+     "example": null,
+     "name": "annotated_fraction",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "60 over the mean RR of intervals in 0.3-2.0 s, spanning pre-ictal, ictal and post-ictal time in one number - segment on the seizure times instead",
+     "example": null,
+     "name": "mean_hr_bpm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "bpm",
+     "vocabulary": null
+    },
+    {
+     "description": "Standard deviation of the kept RR intervals",
+     "example": null,
+     "name": "sdnn_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "Root mean square of successive RR differences",
+     "example": null,
+     "name": "rmssd_ms",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "ms",
+     "vocabulary": null
+    },
+    {
+     "description": "RR intervals outside 0.3-2.0 s",
+     "example": null,
+     "name": "n_rr_rejected",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Constant: every subject has partial epilepsy; the config's label column",
+     "example": null,
+     "name": "cohort_label",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "partial_epilepsy"
+     ]
+    },
+    {
+     "description": "WFDB record stem; flat directory",
+     "example": "sz01",
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Copy of cohort_label",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "partial_epilepsy"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "Post-Ictal Heart Rate Oscillations in Partial Epilepsy",
    "origin_country": "USA — Boston, MA",
@@ -37414,7 +40738,266 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "The OpenSignals file (sitting) this channel came from, DataSet.csv ID such as '15_1'; the four channels of one sitting are simultaneous measurements of the same beats, so collapse on this before counting observations",
+     "example": null,
+     "name": "source_record",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "OpenSignals channel of the electrode pair",
+     "example": null,
+     "name": "channel",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+     ]
+    },
+    {
+     "description": "Surface texture of the electrode pair; pyramidal (A3) is live in only 7 of 145 sittings",
+     "example": null,
+     "name": "electrode_texture",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "flat",
+      "sinusoidal",
+      "pyramidal",
+      "trapezoidal"
+     ]
+    },
+    {
+     "description": "ECG_EXP/<sitting>.txt:<channel>",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Samples in the sitting, 14,400 to 197,250",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over 1000 Hz (14.4 to 197.2 s, not 'up to 5 minutes')",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Constant 1000 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "The channel recorded something: ECGBench's own check_flat_line verdict, so the clean version is exactly these 342 of 580 channels. A floor, not a guarantee - a channel oscillating between the rails passes it.",
+     "example": null,
+     "name": "signal_active",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Variance of the channel",
+     "example": null,
+     "name": "variance_mv2",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV^2",
+     "vocabulary": null
+    },
+    {
+     "description": "Fraction of samples at either +/-1.5 mV converter rail - the main quality axis; filter on it for anything morphological",
+     "example": null,
+     "name": "clipped_fraction",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Minimum sample",
+     "example": null,
+     "name": "min_mv",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Maximum sample",
+     "example": null,
+     "name": "max_mv",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "mV",
+     "vocabulary": null
+    },
+    {
+     "description": "Age from DataSet.csv",
+     "example": null,
+     "name": "age",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight from DataSet.csv",
+     "example": null,
+     "name": "weight_kg",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Height from DataSet.csv",
+     "example": null,
+     "name": "height_cm",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Gender from DataSet.csv, lowercased",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "male",
+      "female"
+     ]
+    },
+    {
+     "description": "The 'Observations field' free text; empty when blank. The config's label column.",
+     "example": null,
+     "name": "observations",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Derived from weight and height",
+     "example": null,
+     "name": "bmi",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg/m^2",
+     "vocabulary": null
+    },
+    {
+     "description": "The sitting id before '_'; 86 subjects, the config's patient_id_column",
+     "example": "15",
+     "name": "subject_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The sitting id after '_', 0 for a bare id",
+     "example": null,
+     "name": "session_index",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Distinct sittings of the subject",
+     "example": null,
+     "name": "n_sittings_for_subject",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ECG_REF/<sitting>.XML exists: a clinical 12-lead reference for 23 sittings, not loaded by ECGBench",
+     "example": null,
+     "name": "has_reference_ecg",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ECG_REF/<sitting>.XML or empty",
+     "example": null,
+     "name": "reference_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Sex initial crossed with signal_active",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "F_active",
+      "M_active",
+      "F_flat",
+      "M_flat"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "tOLIet (Thigh-based ECG, toilet seat)",
    "origin_country": "Portugal — Lisbon",
@@ -37793,7 +41376,590 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "<record>_lifecard.edf, the 3-channel Holter ECGBench splits and validates",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "<record>.rec, the 14-channel polysomnogram (not loadable through ECGBench's EDF reader)",
+     "example": null,
+     "name": "psg_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "<record>_stage.txt",
+     "example": null,
+     "name": "stage_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "<record>_respevt.txt",
+     "example": null,
+     "name": "respevt_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The record, except that ucddb014 and ucddb028 share 'ucddb014+ucddb028' because their Holter payloads are bit-identical; the config's patient_id_column",
+     "example": null,
+     "name": "recording_group",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "SubjectDetails 'Study Number' as shipped",
+     "example": "UCDDB002",
+     "name": "subject_number",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age",
+     "example": null,
+     "name": "age",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Gender",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "Height",
+     "example": null,
+     "name": "height_cm",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "cm",
+     "vocabulary": null
+    },
+    {
+     "description": "Weight",
+     "example": null,
+     "name": "weight_kg",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg",
+     "vocabulary": null
+    },
+    {
+     "description": "Body-mass index",
+     "example": null,
+     "name": "bmi",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "kg/m^2",
+     "vocabulary": null
+    },
+    {
+     "description": "Epworth Sleepiness Score",
+     "example": null,
+     "name": "epworth_score",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The shipped apnoea-hypopnoea index ('PSG AHI')",
+     "example": null,
+     "name": "psg_ahi",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "events/h",
+     "vocabulary": null
+    },
+    {
+     "description": "psg_ahi banded at 5, 15 and 30; the config's label column",
+     "example": null,
+     "name": "ahi_severity",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "normal",
+      "mild",
+      "moderate",
+      "severe",
+      "unknown"
+     ]
+    },
+    {
+     "description": "psg_ahi at or above 15",
+     "example": null,
+     "name": "osa_moderate_severe",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Shipped 'Study Duration (hr)'",
+     "example": null,
+     "name": "psg_study_duration_h",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "Shipped 'Sleep Efficiency (%)'",
+     "example": null,
+     "name": "psg_sleep_efficiency_pct",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "%",
+     "vocabulary": null
+    },
+    {
+     "description": "Hours in sleep stages 1-5 from the 30 s epochs",
+     "example": null,
+     "name": "sleep_time_h",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "h",
+     "vocabulary": null
+    },
+    {
+     "description": "Recomputed from the epochs; within 0.5 points of the shipped value for all 25",
+     "example": null,
+     "name": "sleep_efficiency_recomputed_pct",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "%",
+     "vocabulary": null
+    },
+    {
+     "description": "Apnoeas plus hypopnoeas over sleep_time_h; within 1.0 of psg_ahi for 23 of 25 records (94.8 vs 91 for ucddb025, 48.2 vs 46 for ucddb028)",
+     "example": null,
+     "name": "ahi_recomputed",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "events/h",
+     "vocabulary": null
+    },
+    {
+     "description": "30 s epochs in the stage file",
+     "example": null,
+     "name": "n_epochs",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored wake (stage code 0)",
+     "example": null,
+     "name": "n_epochs_wake",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored rem (stage code 1)",
+     "example": null,
+     "name": "n_epochs_rem",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored s1 (stage code 2)",
+     "example": null,
+     "name": "n_epochs_s1",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored s2 (stage code 3)",
+     "example": null,
+     "name": "n_epochs_s2",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored s3 (stage code 4)",
+     "example": null,
+     "name": "n_epochs_s3",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored s4 (stage code 5)",
+     "example": null,
+     "name": "n_epochs_s4",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored artifact (stage code 6)",
+     "example": null,
+     "name": "n_epochs_artifact",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored indeterminate (stage code 7)",
+     "example": null,
+     "name": "n_epochs_indeterminate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Epochs scored undocumented (stage code 8)",
+     "example": null,
+     "name": "n_epochs_undocumented",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Lines in the respiratory event list, including periodic breathing and possible events",
+     "example": null,
+     "name": "n_resp_events",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Apnoeas plus hypopnoeas, the AHI numerator",
+     "example": null,
+     "name": "n_apnea_hypopnea",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type APNEA-O",
+     "example": null,
+     "name": "n_apnea_obstructive",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type APNEA-C",
+     "example": null,
+     "name": "n_apnea_central",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type APNEA-M",
+     "example": null,
+     "name": "n_apnea_mixed",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type HYP-O",
+     "example": null,
+     "name": "n_hypopnea_obstructive",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type HYP-C",
+     "example": null,
+     "name": "n_hypopnea_central",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type HYP-M",
+     "example": null,
+     "name": "n_hypopnea_mixed",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type PB",
+     "example": null,
+     "name": "n_periodic_breathing",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Events of type POSSIBLE",
+     "example": null,
+     "name": "n_possible",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Seconds the Holter started BEFORE the polysomnogram, recovered by cross-correlating heart rate because the Holter clock is an archive placeholder; annotations are in PSG time. Missing for ucddb028, whose Holter is another subject's.",
+     "example": null,
+     "name": "psg_offset_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Correlation of the recovered alignment",
+     "example": null,
+     "name": "psg_offset_r",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Disagreement between the three Holter channels on the lag",
+     "example": null,
+     "name": "psg_offset_spread_secs",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "r at least 0.70 and spread at most 30 s; False for ucddb013, ucddb023 and ucddb028",
+     "example": null,
+     "name": "psg_offset_reliable",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'ucddb014' for ucddb028, whose Holter payload is a byte-identical copy; empty otherwise",
+     "example": null,
+     "name": "holter_duplicate_of",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "False for ucddb028: its ECG belongs to ucddb014's subject, so drop it from record-level supervised work",
+     "example": null,
+     "name": "waveform_matches_subject",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Distinct Holter channels: 2 for ucddb002, whose channels 2 and 3 are identical",
+     "example": null,
+     "name": "n_distinct_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Length of the 2 Hz calibration square wave every record opens with (8,576 to 15,232 samples); window=(0, n) returns the same non-ECG waveform for every record",
+     "example": null,
+     "name": "calibration_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "calibration_samples over 128 Hz (67-119 s)",
+     "example": null,
+     "name": "calibration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Holter samples from the EDF header",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over 128 Hz",
+     "example": null,
+     "name": "duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Constant 128 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Holter EDF channels (3)",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Polysomnogram ECG samples (data records x 128)",
+     "example": null,
+     "name": "psg_n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Polysomnogram data records, one second each",
+     "example": null,
+     "name": "psg_duration_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Polysomnogram start time of day in seconds, the annotations' time reference",
+     "example": null,
+     "name": "psg_start_time_secs",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "osa_moderate_severe as a class",
+     "example": null,
+     "name": "stratify_class",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "osa_moderate_severe",
+      "osa_none_mild"
+     ]
+    }
+   ],
    "implementation_state": "published",
    "name": "St. Vincent's / UCD Sleep Apnea Database (UCDDB)",
    "origin_country": "Ireland — Dublin",
@@ -38356,7 +42522,161 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "'patientNNN' from the record path; 92 patients over 540 segments, 1-31 each",
+     "example": "patient001",
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'segMM' from the record path",
+     "example": null,
+     "name": "segment",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "'#Age:' header comment",
+     "example": null,
+     "name": "age",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "'#Sex:' header comment",
+     "example": null,
+     "name": "sex",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "M",
+      "F"
+     ]
+    },
+    {
+     "description": "'#Diagnosis report:' normalised: cp1252 non-breaking spaces folded, whitespace collapsed, SPELLING_FIXES applied. Per patient, not per segment - an admission diagnosis repeated on every segment. 40 distinct strings.",
+     "example": null,
+     "name": "diagnosis",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Non ST segment elevation myocardial infarction (NSTEMI)",
+      "ST segment elevation myocardial infarction (STEMI)",
+      "Inferior STEMI (ST segment elevation myocardial infarction)",
+      "Type 2 myocardial infarction",
+      "Non ST segment elevation myocardial infarction (NSTEMI)- rapid Atrial fibrillation",
+      "Stable angina",
+      "Coronary artery disease",
+      "Angina",
+      "Unstable angina",
+      "Stable angina underwent PCI (percutaneous coronary intervention)",
+      "Atrial fibrillation",
+      "Atrial fibrillation with rapid ventricular response",
+      "Atrial flutter",
+      "Slow AF",
+      "Atrial fibrillation with tachy-brady syndrome-pericarditis",
+      "Atrial fibrillation-cardiomyopathy",
+      "Atrial fibrillation-heart failure",
+      "Pulmonary embolism-Atrial fibrillation",
+      "Rapid Atrial fibrillation - pericarditis",
+      "Rapid atrial fibrillation with new cardiomyopathy",
+      "Ventricular tachycardia (VT)",
+      "Supraventricular tachycardia (SVT)",
+      "Supraventricular tachycardia (SVT): Atrioventricular nodal reentry tachycardia (AVNRT)",
+      "Hypertrophic obstructive cardiomyopathy",
+      "Cardiomyopathy",
+      "Congestive cardiac failure (CCF)",
+      "Congestive cardiac failure (CHF) exacerbation",
+      "Syncope-cardiomyopathy",
+      "Sinus bradycardia",
+      "Complete Heart block",
+      "Atypical chest pain",
+      "Chest pain",
+      "Epigastric pain",
+      "Gastritis (non cardiac chest pain)",
+      "Fall secondary to alcohol intoxication",
+      "Urosepsis",
+      "Pulmonary embolism",
+      "Severe Mitral Stenosis",
+      "Syncope - undetermined cause",
+      "not reported"
+     ]
+    },
+    {
+     "description": "The header string verbatim, byte 0xA0 included",
+     "example": null,
+     "name": "diagnosis_raw",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "False for the 10 patients (38 segments) whose diagnosis is 'not reported'",
+     "example": null,
+     "name": "diagnosis_reported",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Single-label reduction of the free text to 8 groups plus 'Not reported' - a judgement call where a string names two conditions. Stratification only; the config's label column.",
+     "example": null,
+     "name": "diagnosis_group",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "Myocardial infarction",
+      "Angina or coronary artery disease",
+      "Atrial fibrillation or flutter",
+      "Other tachyarrhythmia",
+      "Cardiomyopathy or heart failure",
+      "Bradyarrhythmia or conduction block",
+      "Other or non-cardiac",
+      "Not reported"
+     ]
+    },
+    {
+     "description": "Channels synthesised as V = UV - WCT rather than recorded, from the '#Reconstruct Precordials:' comment (8 segments of 5 patients); empty otherwise. Exclude them from any evaluation of precordial reconstruction.",
+     "example": null,
+     "name": "reconstructed_precordials",
+     "nullable": false,
+     "source": "labels",
+     "type": "array[string]",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "reconstructed_precordials is non-empty",
+     "example": null,
+     "name": "has_reconstructed_precordials",
+     "nullable": false,
+     "source": "labels",
+     "type": "boolean",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "Wilson Central Terminal ECG Database",
    "origin_country": "Australia",
@@ -38770,7 +43090,284 @@
      "value": true
     }
    ],
-   "fields": [],
+   "fields": [
+    {
+     "description": "Patient_ID; the config's patient_id_column",
+     "example": null,
+     "name": "patient_id",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Age in days parsed from '572d'; 1 to 5,474, median 3,150, 546 records under one year - prefer this to age_years for anything paediatric",
+     "example": null,
+     "name": "age_days",
+     "nullable": true,
+     "source": "labels",
+     "type": "integer",
+     "unit": "day",
+     "vocabulary": null
+    },
+    {
+     "description": "age_days over 365.25",
+     "example": null,
+     "name": "age_years",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": "year",
+     "vocabulary": null
+    },
+    {
+     "description": "Gender ('Female'/'Male') as F/M; missing otherwise",
+     "example": null,
+     "name": "sex",
+     "nullable": true,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": [
+      "F",
+      "M"
+     ]
+    },
+    {
+     "description": "Acquisition_date parsed; missing when unparseable",
+     "example": null,
+     "name": "acquisition_date",
+     "nullable": true,
+     "source": "labels",
+     "type": "datetime",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Stored leads: 12, or 9 for 1,856 records that drop V2, V4 and V6 so stored position 7 is V3, not V2 - see the config's alternate_lead_names",
+     "example": null,
+     "name": "n_leads",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": [
+      "9",
+      "12"
+     ]
+    },
+    {
+     "description": "Sampling_point",
+     "example": null,
+     "name": "n_samples",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "n_samples over 500 Hz",
+     "example": null,
+     "name": "duration_seconds",
+     "nullable": false,
+     "source": "labels",
+     "type": "number",
+     "unit": "s",
+     "vocabulary": null
+    },
+    {
+     "description": "Constant 500 Hz",
+     "example": null,
+     "name": "sampling_rate",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": "Hz",
+     "vocabulary": null
+    },
+    {
+     "description": "Child_ecg/<Filename>",
+     "example": null,
+     "name": "signal_path",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "AHA finding codes comma-joined, quotes stripped; where the AHA vocabulary has no code (14 of 105 findings) the entry is the plain-English description. The config's label column.",
+     "example": null,
+     "name": "aha_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "aha_codes with '+Modifier' suffixes stripped",
+     "example": null,
+     "name": "aha_base_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "CHN finding codes comma-joined (29 findings have none)",
+     "example": null,
+     "name": "chn_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "chn_codes with modifiers stripped",
+     "example": null,
+     "name": "chn_base_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Canonical ECGCode.csv description of every finding, ';'-joined, whichever vocabulary names it",
+     "example": null,
+     "name": "ecg_findings",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Findings in the record",
+     "example": null,
+     "name": "n_findings",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ICD-10 codes comma-joined, quotes stripped, study prefixes such as '(FO) ' kept; empty when none",
+     "example": null,
+     "name": "icd10_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "ICD-10 codes in the record",
+     "example": null,
+     "name": "n_icd10_codes",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "DiseaseCode.csv disease types of the record's ICD-10 codes, sorted, comma-joined; 3,716 records carry one of the 19 mapped codes against the descriptor's 3,516",
+     "example": null,
+     "name": "disease_groups",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Distinct disease groups",
+     "example": null,
+     "name": "n_disease_groups",
+     "nullable": false,
+     "source": "labels",
+     "type": "integer",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Rarest disease group of the record, or NONE; for stratification",
+     "example": null,
+     "name": "primary_disease_group",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Mean pSQI over the leads present (Null leads skipped)",
+     "example": null,
+     "name": "psqi_mean",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The shipped per-lead pSQI string verbatim",
+     "example": null,
+     "name": "psqi_by_lead",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Mean basSQI over present leads; lower in records that hit the ~26.6 mV rail",
+     "example": null,
+     "name": "bassqi_mean",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The shipped per-lead basSQI string verbatim",
+     "example": null,
+     "name": "bassqi_by_lead",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "Mean bSQI over present leads",
+     "example": null,
+     "name": "bsqi_mean",
+     "nullable": true,
+     "source": "labels",
+     "type": "number",
+     "unit": null,
+     "vocabulary": null
+    },
+    {
+     "description": "The shipped per-lead bSQI string verbatim",
+     "example": null,
+     "name": "bsqi_by_lead",
+     "nullable": false,
+     "source": "labels",
+     "type": "string",
+     "unit": null,
+     "vocabulary": null
+    }
+   ],
    "implementation_state": "published",
    "name": "ZZU pECG (Zhengzhou University Pediatric ECG Database)",
    "origin_country": "China",

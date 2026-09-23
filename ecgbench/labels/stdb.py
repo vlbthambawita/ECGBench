@@ -89,6 +89,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
 from ecgbench.labels.svdb import AAMI_CLASSES, AAMI_ORDER
 
 if TYPE_CHECKING:
@@ -531,3 +532,423 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_channels",
+        "integer",
+        "Signals in the header: 2 for 18 records, 1 for the ten records 313-323. A batch "
+        "mixing them raises in ecg_collate_fn; batch with leads=['ECG1'].",
+        vocabulary=("1", "2"),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "number",
+        "Header sampling rate, 360 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_descriptions",
+        "string",
+        "Header channel descriptions pipe-joined: 'ECG' or 'ECG|ECG', no placement stated",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain_ECG1",
+        "number",
+        "Header gain of the first channel",
+        unit="adu/mV",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain_ECG2",
+        "number",
+        "Header gain of the second channel; missing for the ten one-channel records",
+        unit="adu/mV",
+    ),
+    Field(
+        "record_group",
+        "string",
+        "The landing page's grouping: records 323-327 are long-term excerpts, the rest "
+        "exercise stress tests by exclusion ('most', not 'all')",
+        vocabulary=("exercise_stress", "long_term_excerpt"),
+        nullable=False,
+    ),
+    Field(
+        "st_change_type",
+        "string",
+        "ST change the landing page attributes to the group: depression for exercise, "
+        "elevation for long-term excerpts. THE RELEASE HAS NO ST CHANGE ANNOTATIONS; this "
+        "is transcribed prose. The config's label column.",
+        vocabulary=("depression", "elevation"),
+        nullable=False,
+    ),
+    Field(
+        "group_source",
+        "string",
+        "Constant: the grouping's provenance",
+        vocabulary=("landing_page",),
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_L",
+        "integer",
+        "Reference beats annotated 'L' (left bundle branch block); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Reference beats annotated 'R' (right bundle branch block); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_/",
+        "integer",
+        "Reference beats annotated '/' (paced); does not occur in this release, counted so "
+        "a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Reference beats annotated 'A' (atrial premature); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_f",
+        "integer",
+        "Reference beats annotated 'f' (fusion of paced and normal); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference beats annotated 'F' (fusion of ventricular and normal); does not occur "
+        "in this release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Reference beats annotated 'j' (junctional escape); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Reference beats annotated 'a' (aberrated atrial premature); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_E",
+        "integer",
+        "Reference beats annotated 'E' (ventricular escape); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Reference beats annotated 'J' (junctional premature); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference beats annotated 'Q' (unclassifiable); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_e",
+        "integer",
+        "Reference beats annotated 'e' (atrial escape); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference beats annotated 'S' (supraventricular premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_n",
+        "integer",
+        "Reference beats annotated 'n' (supraventricular escape); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_B",
+        "integer",
+        "Reference beats annotated 'B' (bundle branch block); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_r",
+        "integer",
+        "Reference beats annotated 'r' (R-on-T premature ventricular); does not occur in "
+        "this release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "Beats in AAMI EC57 class N (normal), comparable across every MIT-BIH database in "
+        "the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "Beats in AAMI EC57 class S (supraventricular ectopic), comparable across every "
+        "MIT-BIH database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "Beats in AAMI EC57 class V (ventricular ectopic), comparable across every MIT-BIH "
+        "database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "Beats in AAMI EC57 class F (fusion), comparable across every MIT-BIH database in "
+        "the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "Beats in AAMI EC57 class Q (unclassifiable/paced), comparable across every MIT-BIH "
+        "database in the catalogue",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "'|' artefact markers",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "'~' quality changes; six in record 319 and none elsewhere - absence means nobody "
+        "marked them, not that the record is clean",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "'+' rhythm changes: none in the release",
+        nullable=False,
+    ),
+    Field(
+        "clean_secs",
+        "number",
+        "Seconds both channels are annotated clean (~ subtype 0, plus the span before the "
+        "first ~); only record 319 carries any ~",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG1_secs",
+        "number",
+        "Seconds ECG1 alone is annotated noisy (~ subtype 1); only record 319 carries any ~",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG2_secs",
+        "number",
+        "Seconds ECG2 alone is annotated noisy (~ subtype 2); only record 319 carries any ~",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_both_secs",
+        "number",
+        "Seconds both channels are annotated noisy (~ subtype 3); only record 319 carries "
+        "any ~",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "unreadable_secs",
+        "number",
+        "Seconds annotated unreadable (~ subtype -1); only record 319 carries any ~",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "Beats not annotated N",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_per_100k_beats",
+        "number",
+        "Ectopic beats per 100,000 beats",
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from first to last beat",
+        unit="s",
+    ),
+    Field(
+        "unannotated_head_secs",
+        "number",
+        "Seconds before the first beat (0.2-1.0 s)",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat (0.1-0.9 s)",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "Beat coverage, 99.77% to 99.98%",
+    ),
+    Field(
+        "noisy_secs",
+        "number",
+        "Seconds any channel is annotated noisy",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_fraction",
+        "number",
+        "noisy_secs over the record",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s",
+        nullable=False,
+    ),
+    Field(
+        "baseline_hr_bpm",
+        "number",
+        "Mean heart rate over the opening 60 s window of the reference beats",
+        unit="bpm",
+    ),
+    Field(
+        "peak_hr_bpm",
+        "number",
+        "Highest 60 s-window heart rate",
+        unit="bpm",
+    ),
+    Field(
+        "final_hr_bpm",
+        "number",
+        "Heart rate over the final 60 s window",
+        unit="bpm",
+    ),
+    Field(
+        "hr_rise_bpm",
+        "number",
+        "peak minus baseline: 15-115 bpm in the exercise group, 0-8 in three long-term "
+        "excerpts, but 88 in record 323, which contradicts its grouping",
+        unit="bpm",
+    ),
+    Field(
+        "n_hr_windows",
+        "integer",
+        "60 s windows (30 s step) with at least 20 beats",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="300",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "st_change_type crossed with channel count",
+        vocabulary=("depression_2ch", "depression_1ch", "elevation_2ch", "elevation_1ch"),
+        nullable=False,
+    ),
+)

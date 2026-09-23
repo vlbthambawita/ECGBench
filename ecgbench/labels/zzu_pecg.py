@@ -65,6 +65,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -416,3 +418,179 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int(df["n_findings"].median()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "Patient_ID; the config's patient_id_column",
+        nullable=False,
+    ),
+    Field(
+        "age_days",
+        "integer",
+        "Age in days parsed from '572d'; 1 to 5,474, median 3,150, 546 records under one "
+        "year - prefer this to age_years for anything paediatric",
+        unit="day",
+    ),
+    Field(
+        "age_years",
+        "number",
+        "age_days over 365.25",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Gender ('Female'/'Male') as F/M; missing otherwise",
+        vocabulary=("F", "M"),
+    ),
+    Field(
+        "acquisition_date",
+        "datetime",
+        "Acquisition_date parsed; missing when unparseable",
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Stored leads: 12, or 9 for 1,856 records that drop V2, V4 and V6 so stored "
+        "position 7 is V3, not V2 - see the config's alternate_lead_names",
+        vocabulary=("9", "12"),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Sampling_point",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples over 500 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 500 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Child_ecg/<Filename>",
+        nullable=False,
+    ),
+    Field(
+        "aha_codes",
+        "string",
+        "AHA finding codes comma-joined, quotes stripped; where the AHA vocabulary has no "
+        "code (14 of 105 findings) the entry is the plain-English description. The config's "
+        "label column.",
+        nullable=False,
+    ),
+    Field(
+        "aha_base_codes",
+        "string",
+        "aha_codes with '+Modifier' suffixes stripped",
+        nullable=False,
+    ),
+    Field(
+        "chn_codes",
+        "string",
+        "CHN finding codes comma-joined (29 findings have none)",
+        nullable=False,
+    ),
+    Field(
+        "chn_base_codes",
+        "string",
+        "chn_codes with modifiers stripped",
+        nullable=False,
+    ),
+    Field(
+        "ecg_findings",
+        "string",
+        "Canonical ECGCode.csv description of every finding, ';'-joined, whichever "
+        "vocabulary names it",
+        nullable=False,
+    ),
+    Field(
+        "n_findings",
+        "integer",
+        "Findings in the record",
+        nullable=False,
+    ),
+    Field(
+        "icd10_codes",
+        "string",
+        "ICD-10 codes comma-joined, quotes stripped, study prefixes such as '(FO) ' kept; "
+        "empty when none",
+        nullable=False,
+    ),
+    Field(
+        "n_icd10_codes",
+        "integer",
+        "ICD-10 codes in the record",
+        nullable=False,
+    ),
+    Field(
+        "disease_groups",
+        "string",
+        "DiseaseCode.csv disease types of the record's ICD-10 codes, sorted, comma-joined; "
+        "3,716 records carry one of the 19 mapped codes against the descriptor's 3,516",
+        nullable=False,
+    ),
+    Field(
+        "n_disease_groups",
+        "integer",
+        "Distinct disease groups",
+        nullable=False,
+    ),
+    Field(
+        "primary_disease_group",
+        "string",
+        "Rarest disease group of the record, or NONE; for stratification",
+        nullable=False,
+    ),
+    Field(
+        "psqi_mean",
+        "number",
+        "Mean pSQI over the leads present (Null leads skipped)",
+    ),
+    Field(
+        "psqi_by_lead",
+        "string",
+        "The shipped per-lead pSQI string verbatim",
+        nullable=False,
+    ),
+    Field(
+        "bassqi_mean",
+        "number",
+        "Mean basSQI over present leads; lower in records that hit the ~26.6 mV rail",
+    ),
+    Field(
+        "bassqi_by_lead",
+        "string",
+        "The shipped per-lead basSQI string verbatim",
+        nullable=False,
+    ),
+    Field(
+        "bsqi_mean",
+        "number",
+        "Mean bSQI over present leads",
+    ),
+    Field(
+        "bsqi_by_lead",
+        "string",
+        "The shipped per-lead bSQI string verbatim",
+        nullable=False,
+    ),
+)
