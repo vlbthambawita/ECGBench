@@ -95,6 +95,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -421,3 +423,246 @@ def _canonical_header_position(value: object) -> str:
     """
     text = re.sub(r"\s*\([^)]*\)\s*$", "", str(value)).strip()
     return text or ""
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "scanner_field_T",
+        "integer",
+        "Scanner field strength from the record name",
+        unit="T",
+        vocabulary=("1", "3", "7"),
+        nullable=False,
+    ),
+    Field(
+        "field_strength_T",
+        "integer",
+        "Field the subject was in: 0 for reference records outside the scanner, else "
+        "scanner_field_T",
+        unit="T",
+        vocabulary=("0", "1", "3", "7"),
+        nullable=False,
+    ),
+    Field(
+        "subject_number",
+        "string",
+        "Zero-padded subject number from the record name, scoped per scanner - 1T01 and "
+        "3T01 are different people",
+        nullable=False,
+        example="01",
+    ),
+    Field(
+        "scanner_subject_slot",
+        "string",
+        "scanner_field_T and subject_number joined",
+        nullable=False,
+        example="3T01",
+    ),
+    Field(
+        "position",
+        "string",
+        "Body position from the record-name suffix",
+        vocabulary=("Feet first", "Head first", "Prone", "Supine", "Outside the scanner"),
+        nullable=False,
+    ),
+    Field(
+        "run",
+        "integer",
+        "Repetition number from the record name, 1 when absent",
+        nullable=False,
+    ),
+    Field(
+        "is_reference",
+        "boolean",
+        "position is 'Outside the scanner'",
+        nullable=False,
+    ),
+    Field(
+        "condition",
+        "string",
+        "The acquisition condition a user models against; the config's label column",
+        vocabulary=("reference", "1T", "3T", "7T"),
+        nullable=False,
+    ),
+    Field(
+        "n_signals",
+        "integer",
+        "Signals in the header, 12 or 3",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 1024 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Header sample count",
+        nullable=False,
+    ),
+    Field(
+        "channel_names",
+        "string",
+        "Header channel names pipe-joined",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "field_strength_header",
+        "string",
+        "Header 'Magnetic field strength' verbatim ('3T', 'Outside the scanner'); "
+        "ECGMRI1T01Out says '1T' although it is a reference record, so filter on "
+        "is_reference instead; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "mr_scanner",
+        "string",
+        "Header 'MR scanner'; a Philips Achiva ships for two records that the README never "
+        "mentions; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "b0_orientation",
+        "string",
+        "Header 'Orientation of the static magnetic field (B0)'; empty when the key is "
+        "absent",
+        nullable=False,
+    ),
+    Field(
+        "ecg_recorder",
+        "string",
+        "Header 'ECG recorder'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "adc_resolution",
+        "string",
+        "Header 'ADC resolution'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "adc_input_range",
+        "string",
+        "Header 'ADC input voltage range'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "lead_config",
+        "string",
+        "Header 'ECG lead configuration'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Header 'Sex'; empty when the key is absent",
+        vocabulary=("Male", "Female", ""),
+        nullable=False,
+    ),
+    Field(
+        "age_raw",
+        "string",
+        "Header 'Age' verbatim, e.g. '27years'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "weight_raw",
+        "string",
+        "Header 'Weight' verbatim, e.g. '75kg'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "height_raw",
+        "string",
+        "Header 'Height' verbatim, e.g. '190cm'; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "position_header",
+        "string",
+        "Header 'Positon in the scanner' (the source's spelling); ECGMRI3T01Hf's says feet "
+        "first while its name says head first; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "respiration",
+        "string",
+        "Header 'Respiration'; all 53 say spontaneous, no breath-hold record exists despite "
+        "the README; empty when the key is absent",
+        nullable=False,
+    ),
+    Field(
+        "n_qrs",
+        "integer",
+        "Manually marked QRS positions ('N') in the .qrs file, with no normal/ectopic "
+        "distinction; 0 when the file is missing",
+        nullable=False,
+    ),
+    Field(
+        "n_qrs_other",
+        "integer",
+        "Other symbols in the .qrs file",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "number",
+        "Number parsed from age_raw",
+        unit="year",
+    ),
+    Field(
+        "weight",
+        "number",
+        "Number parsed from weight_raw",
+        unit="kg",
+    ),
+    Field(
+        "height",
+        "number",
+        "Number parsed from height_raw",
+        unit="cm",
+    ),
+    Field(
+        "subject_key",
+        "string",
+        "Derived subject identity, sex/age/weight/height, because the release ships none "
+        "and the filename subject number is scoped per scanner: collapses 29 slots into 26 "
+        "people (the README says 23) and reunites the three subjects recorded in more than "
+        "one scanner. The config's patient_id_column.",
+        nullable=False,
+        example="Male/27years/75kg/190cm",
+    ),
+    Field(
+        "position_disagrees",
+        "boolean",
+        "The record-name position and the header's disagree (ECGMRI3T01Hf)",
+        nullable=False,
+    ),
+    Field(
+        "reference_header_agrees",
+        "boolean",
+        "False when a reference record's header field strength is not 'Outside the scanner' "
+        "(ECGMRI1T01Out)",
+        nullable=False,
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "n_qrs over duration_seconds times 60",
+        unit="bpm",
+    ),
+)

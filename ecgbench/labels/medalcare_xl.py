@@ -65,6 +65,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -262,3 +264,118 @@ def load_simulation_parameters(
 
     logger.info("Loaded simulation parameters: %d records x %d parameters", len(out), out.shape[1])
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "pathology",
+        "string",
+        "Coarse simulated condition, exact by construction: the pathology the simulator was "
+        "configured to produce",
+        vocabulary=("sinus", "avblock", "lbbb", "rbbb", "lae", "fam", "iab", "mi"),
+        nullable=False,
+    ),
+    Field(
+        "pathology_name",
+        "string",
+        "Long name of pathology",
+        vocabulary=(
+            "normal sinus rhythm",
+            "AV block",
+            "left bundle branch block",
+            "right bundle branch block",
+            "left atrial enlargement",
+            "fibrotic atrial cardiomyopathy",
+            "interatrial conduction block",
+            "myocardial infarction",
+        ),
+    ),
+    Field(
+        "pathology_subclass",
+        "string",
+        "15 classes: the 7 non-MI pathologies plus 8 MI subclasses (occlusion site x "
+        "transmurality, region for LCX); the config's label and stratification column",
+        nullable=False,
+        example="mi_LAD_1.0",
+    ),
+    Field(
+        "mi_subclass",
+        "string",
+        "MI subclass without the 'mi_' prefix; missing for the 9,042 non-MI records",
+        example="LAD_1.0",
+    ),
+    Field(
+        "mi_occlusion_site",
+        "string",
+        "Occluded artery; missing for non-MI records",
+        vocabulary=("LAD", "LCX", "RCA"),
+    ),
+    Field(
+        "mi_transmurality",
+        "number",
+        "Ischaemic transmurality; missing for non-MI records",
+        vocabulary=("0.3", "1.0"),
+    ),
+    Field(
+        "mi_region",
+        "string",
+        "Anterior/posterior region, resolved only for LCX occlusions; missing otherwise",
+        vocabulary=("ant", "post"),
+    ),
+    Field(
+        "model_id",
+        "string",
+        "Anatomical model the run used; the config's patient_id_column",
+        nullable=False,
+        example="S65",
+    ),
+    Field(
+        "source_split",
+        "string",
+        "The release's own split directory",
+        vocabulary=("train", "validation", "test"),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "Path of the record's CSV relative to the dataset root",
+        nullable=False,
+    ),
+    Field(
+        "signal_path_raw",
+        "string",
+        "Path of the raw (unfiltered) signal CSV",
+        nullable=False,
+    ),
+    Field(
+        "signal_path_noise",
+        "string",
+        "Path of the noise-added signal CSV",
+        nullable=False,
+    ),
+    Field(
+        "atrial_params_path",
+        "string",
+        "Path of the record's AtrialParameters.txt (~21 keys), read on demand by "
+        "load_simulation_parameters",
+        nullable=False,
+    ),
+    Field(
+        "ventricular_params_path",
+        "string",
+        "Path of the record's VentricularParameters.txt (~105 keys)",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant: 500 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+)

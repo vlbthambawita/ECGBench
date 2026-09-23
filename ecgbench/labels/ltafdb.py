@@ -109,6 +109,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -538,3 +540,364 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "n_leads",
+        "integer",
+        "Signals in the header: 2",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record from the header",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 128 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Header start time; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "start_date",
+        "string",
+        "Header start date (DD/MM/YYYY); empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header channel descriptions pipe-joined - 'ECG|ECG' in all 84 records, so the "
+        "config declares positional ECG1/ECG2 instead",
+        nullable=False,
+    ),
+    Field(
+        "adc_gains",
+        "string",
+        "Per-channel ADC gains pipe-joined, 50 distinct measured values across the release "
+        "and sometimes different for a record's two channels; record 62's ECG1 declares an "
+        "anomalous 1123.6 adu/mV that is reported, not corrected",
+        nullable=False,
+    ),
+    Field(
+        "record_seconds",
+        "number",
+        "n_samples over sampling_rate",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "record_hours",
+        "number",
+        "record_seconds over 3600",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference (.atr) beats annotated 'N' (normal beat); manually verified PocketECG "
+        "output",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Reference (.atr) beats annotated 'A' (atrial premature beat); manually verified "
+        "PocketECG output",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference (.atr) beats annotated 'V' (premature ventricular contraction); manually "
+        "verified PocketECG output",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference (.atr) beats annotated 'Q' (unclassifiable beat); manually verified "
+        "PocketECG output",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_N",
+        "number",
+        "Seconds in rhythm (N), sinus rhythm or any other unlisted rhythm; the last episode "
+        "is closed at the record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AFIB",
+        "number",
+        "Seconds in rhythm (AFIB), atrial fibrillation; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SVTA",
+        "number",
+        "Seconds in rhythm (SVTA), supraventricular tachyarrhythmia; the last episode is "
+        "closed at the record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_VT",
+        "number",
+        "Seconds in rhythm (VT), ventricular tachycardia; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_B",
+        "number",
+        "Seconds in rhythm (B), ventricular bigeminy; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_T",
+        "number",
+        "Seconds in rhythm (T), ventricular trigeminy; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_IVR",
+        "number",
+        "Seconds in rhythm (IVR), idioventricular rhythm; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_AB",
+        "number",
+        "Seconds in rhythm (AB), atrial bigeminy; the last episode is closed at the record "
+        "end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_secs_SBR",
+        "number",
+        "Seconds in rhythm (SBR), sinus bradycardia; the last episode is closed at the "
+        "record end as PhysioNet's own tables do",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_N",
+        "integer",
+        "Episodes of rhythm (N), sinus rhythm or any other unlisted rhythm",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_AFIB",
+        "integer",
+        "Episodes of rhythm (AFIB), atrial fibrillation",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_SVTA",
+        "integer",
+        "Episodes of rhythm (SVTA), supraventricular tachyarrhythmia",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_VT",
+        "integer",
+        "Episodes of rhythm (VT), ventricular tachycardia",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_B",
+        "integer",
+        "Episodes of rhythm (B), ventricular bigeminy",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_T",
+        "integer",
+        "Episodes of rhythm (T), ventricular trigeminy",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_IVR",
+        "integer",
+        "Episodes of rhythm (IVR), idioventricular rhythm",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_AB",
+        "integer",
+        "Episodes of rhythm (AB), atrial bigeminy",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_SBR",
+        "integer",
+        "Episodes of rhythm (SBR), sinus bradycardia",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Rhythm-change ('+') annotations",
+        nullable=False,
+    ),
+    Field(
+        "n_comment_annotations",
+        "integer",
+        "Comment ('\"') annotations inside the record; the file terminator that every .atr "
+        "carries (record 30's lies past the record end) is excluded from every measurement",
+        nullable=False,
+    ),
+    Field(
+        "n_missed_beats",
+        "integer",
+        "Comment annotations reading MISSB, MB or M",
+        nullable=False,
+    ),
+    Field(
+        "n_pauses",
+        "integer",
+        "Comment annotations reading PSE",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_annotated_secs",
+        "number",
+        "Seconds classified by a rhythm annotation - the af_burden denominator; the lead-in "
+        "before the first rhythm annotation (25.7 of 1,960.6 recorded hours) is "
+        "unclassified",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rhythms",
+        "string",
+        "Rhythm codes present, pipe-joined in descending duration",
+        nullable=False,
+        example="AFIB|N",
+    ),
+    Field(
+        "dominant_rhythm",
+        "string",
+        "Rhythm code with the longest duration; the config's label column",
+        vocabulary=("N", "AFIB", "SVTA", "VT", "B", "T", "IVR", "AB", "SBR", ""),
+        nullable=False,
+    ),
+    Field(
+        "dominant_rhythm_fraction",
+        "number",
+        "Share of rhythm_annotated_secs in dominant_rhythm",
+    ),
+    Field(
+        "af_burden",
+        "number",
+        "AFIB seconds over rhythm_annotated_secs. AFIB alone: this release has no atrial "
+        "flutter code, unlike afdb, so the two databases' burdens are not computed from the "
+        "same code set.",
+    ),
+    Field(
+        "longest_af_episode_secs",
+        "number",
+        "Longest single AFIB episode",
+        unit="s",
+    ),
+    Field(
+        "last_beat_sample",
+        "integer",
+        "Sample of the last beat annotation; 0 if none",
+        nullable=False,
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "last_beat_sample over sampling_rate",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat annotation: median 4.9 s, but 35 of 84 records stop "
+        "more than ten minutes early and record 117 stops 8.05 hours early; a window into "
+        "that tail has no reference behind it",
+        unit="s",
+    ),
+    Field(
+        "mean_heart_rate_bpm",
+        "number",
+        "60 over the mean RR of intervals between 0.2 and 2.5 s",
+        unit="bpm",
+    ),
+    Field(
+        "n_detections",
+        "integer",
+        "Unaudited sqrs detections ('N') in the .qrs file, never mixed into the .atr counts",
+        nullable=False,
+    ),
+    Field(
+        "n_detector_artifacts",
+        "integer",
+        "'|' artifact markers in the .qrs file",
+        nullable=False,
+    ),
+    Field(
+        "n_af_terminations",
+        "integer",
+        "'T' markers in the .qrs file flagging spontaneous AF terminations (in .atr the "
+        "same letter is ventricular trigeminy)",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="00",
+    ),
+    Field(
+        "af_class",
+        "string",
+        "af_burden banded: below 0.05 minimal, above 0.95 sustained, else paroxysmal "
+        "(missing burden counts as 0)",
+        vocabulary=("minimal", "paroxysmal", "sustained"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Copy of af_class, for fold construction",
+        vocabulary=("minimal", "paroxysmal", "sustained"),
+        nullable=False,
+    ),
+)

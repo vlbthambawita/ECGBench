@@ -57,6 +57,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -507,3 +509,417 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "subject_id",
+        "string",
+        "Subject number from the subject-info CSV; one record per subject, 29 children and "
+        "10 adults",
+        nullable=False,
+    ),
+    Field(
+        "file_name",
+        "string",
+        "Record stem as shipped in the CSV, xNNN",
+        nullable=False,
+    ),
+    Field(
+        "gender",
+        "string",
+        "Sex as shipped in the CSV",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "number",
+        "Age parsed from the CSV; x007's malformed '.14.3' is read as 14.3 (see age_raw)",
+        unit="year",
+    ),
+    Field(
+        "diagnosis",
+        "string",
+        "Diagnosis text as shipped, e.g. 'AVRT-WPW', 'AVNRT', 'TOF with VT'",
+        nullable=False,
+    ),
+    Field(
+        "ap_location",
+        "string",
+        "Accessory-pathway location from the children's CSV (spelled 'ap_loacation' in the "
+        "source); missing for adults, whose CSV has no such column",
+    ),
+    Field(
+        "ecg_duration",
+        "string",
+        "Recording duration as shipped, H:MM:SS.sss",
+        nullable=False,
+    ),
+    Field(
+        "cohort",
+        "string",
+        "Which subject-info CSV the row came from",
+        vocabulary=("child", "adult"),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+    ),
+    Field(
+        "age_raw",
+        "string",
+        "The CSV age string verbatim",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "ecg_duration parsed to seconds",
+        unit="s",
+    ),
+    Field(
+        "diagnosis_family",
+        "string",
+        "Leading token of diagnosis",
+        vocabulary=("AVRT", "AVNRT", "TOF", "UNKNOWN"),
+        nullable=False,
+    ),
+    Field(
+        "n_signals",
+        "integer",
+        "Channels in the header: 14, 18, 19 or 20 across six layouts; 0 if unreadable",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 977 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Header sample count",
+        nullable=False,
+    ),
+    Field(
+        "header_seconds",
+        "number",
+        "n_samples over sampling_rate; disagrees with ecg_duration by 2.8 s for x005",
+        unit="s",
+    ),
+    Field(
+        "channel_names",
+        "string",
+        "Header channel names pipe-joined. Only channels 0-11 (the 12-lead ECG) are the "
+        "same channel in the same position in every record; locate anything beyond by name.",
+        nullable=False,
+    ),
+    Field(
+        "n_iegm_channels",
+        "integer",
+        "Channels beyond the 12 surface leads: ablation, RVA and coronary-sinus "
+        "electrograms plus the undocumented ABL_uni and ART",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Beats annotated 'N': normal (sinus) beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_X",
+        "integer",
+        "Beats annotated 'X': tachycardia beat - see the tachy_* columns for which",
+        nullable=False,
+    ),
+    Field(
+        "beat_/",
+        "integer",
+        "Beats annotated '/': paced beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Beats annotated 'R': complete right bundle branch block beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Beats annotated 'A': premature atrial beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Beats annotated 'V': premature ventricular beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Beats annotated 'J': premature junctional beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Beats annotated 'F': fusion beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Beats annotated 'a': aberrated premature atrial beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_f",
+        "integer",
+        "Beats annotated 'f': fusion of ventricular paced and normal beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_L",
+        "integer",
+        "Beats annotated 'L': complete left bundle branch block beat",
+        nullable=False,
+    ),
+    Field(
+        "beat_b",
+        "integer",
+        "Beats annotated 'b': AV block 1 degree",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Beats annotated 'j': junctional escape beat",
+        nullable=False,
+    ),
+    Field(
+        "n_unclassifiable",
+        "integer",
+        "Count of unclassifiable ('Q') annotations, 1,824 in the release and not in the "
+        "README's beat total",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_marks",
+        "integer",
+        "Count of signal-quality-change ('~') annotations, 228 in the release",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Count of rhythm-change ('+') annotations, 2,238 in the release",
+        nullable=False,
+    ),
+    Field(
+        "tachy_AVRT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'AVRT'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_AVNRT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'AVNRT'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_aberrated_AVRT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'avrt'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_aberrated_AVNRT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'avnrt'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_AVNRT_with_AVblock2",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'AVNRT+BII'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_VT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'VT'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_IVR",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'IVR'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_AFIB",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'AFIB'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_EAT",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'EAT'",
+        nullable=False,
+    ),
+    Field(
+        "tachy_AFL",
+        "integer",
+        "Tachycardia beats ('X') whose aux string is 'AFL'",
+        nullable=False,
+    ),
+    Field(
+        "aux_preexcited_N",
+        "integer",
+        "Beats carrying the aux string 'N-Prex'",
+        nullable=False,
+    ),
+    Field(
+        "aux_preexcited_A",
+        "integer",
+        "Beats carrying the aux string 'A-Prex'",
+        nullable=False,
+    ),
+    Field(
+        "aux_paced_atrial",
+        "integer",
+        "Beats carrying the aux string '/A'",
+        nullable=False,
+    ),
+    Field(
+        "aux_paced_ventricular",
+        "integer",
+        "Beats carrying the aux string '/V'",
+        nullable=False,
+    ),
+    Field(
+        "aux_avblock1",
+        "integer",
+        "Beats carrying the aux string 'BI'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_sinus",
+        "integer",
+        "Rhythm-change annotations opening '(N'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_VT",
+        "integer",
+        "Rhythm-change annotations opening '(VT'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_IVR",
+        "integer",
+        "Rhythm-change annotations opening '(IVR'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_AVRT",
+        "integer",
+        "Rhythm-change annotations opening '(AVRT'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_AVNRT",
+        "integer",
+        "Rhythm-change annotations opening '(AVNRT'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_AFIB",
+        "integer",
+        "Rhythm-change annotations opening '(AFIB'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_EAT",
+        "integer",
+        "Rhythm-change annotations opening '(EAT'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_AFL",
+        "integer",
+        "Rhythm-change annotations opening '(AFL'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_ectopic_atrial",
+        "integer",
+        "Rhythm-change annotations opening '(A'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_ventricular_bigeminy",
+        "integer",
+        "Rhythm-change annotations opening '(B'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_junctional",
+        "integer",
+        "Rhythm-change annotations opening '(J'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_paced_atrial",
+        "integer",
+        "Rhythm-change annotations opening '(/A'",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_paced_ventricular",
+        "integer",
+        "Rhythm-change annotations opening '(/V'",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Beats in the classes the README tabulates; reproduces its 113,924 total",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .atr (118,214 across the release)",
+        nullable=False,
+    ),
+    Field(
+        "duration_delta_seconds",
+        "number",
+        "header_seconds minus duration_seconds",
+        unit="s",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "diagnosis_family with families of fewer than 10 records pooled into OTHER; the "
+        "config's label column",
+        vocabulary=("AVRT", "AVNRT", "TOF", "UNKNOWN", "OTHER"),
+        nullable=False,
+    ),
+)

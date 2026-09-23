@@ -673,6 +673,263 @@ def _build_edgar(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _build_ikem(tmp_path: Path) -> Path:
+    """exams.csv with the -1 sentinel in every numeric column, plus one HDF5 part."""
+    h5py = pytest.importorskip("h5py")
+    pd.DataFrame({
+        "exam_id": [1, 2, 3],
+        "acquisition_date": ["03-18-2004", "07-26-2022", "01-01-2017"],
+        "patient_id": ["a" * 40, "b" * 40, "a" * 40],
+        "age": [56, -1, 0],
+        "is_male": [1, 0, -1],
+        "weight": [-1, 80, -1],
+        "height": [-1, 180, -1],
+        "ventricular_rate": [72, 110, 50],
+        "atrial_rate": [72, -1, 50],
+    }).to_csv(tmp_path / "exams.csv", index=False)
+    with h5py.File(tmp_path / "exams_part_0.hdf5", "w") as handle:
+        handle.create_dataset("exam_id", data=np.array([1, 2, 3]))
+        handle.create_dataset("real_lengths", data=np.array([4096, 2500, 4096]))
+    return tmp_path
+
+
+def _build_incartdb(tmp_path: Path) -> Path:
+    """Two records of one patient, one header without the <diagnoses> token."""
+    wfdb = pytest.importorskip("wfdb")
+    comments = {
+        "I01": "#<age>: 65 <sex>: F <diagnoses> Coronary artery disease, arterial hypertension",
+        "I02": "#<age>: 65 <sex>: F",
+    }
+    for name, line in comments.items():
+        (tmp_path / f"{name}.hea").write_text(
+            f"{name} 2 257 5140\n"
+            f"{name}.dat 16 306 16 0 0 0 0 I\n"
+            f"{name}.dat 16 306 16 0 0 0 0 II\n"
+            f"{line}\n# patient 1\n# PVCs, noise\n",
+            encoding="utf-8",
+        )
+        wfdb.wrann(
+            name, "atr",
+            sample=np.array([100, 400, 700, 1000, 1300]),
+            symbol=["+", "N", "V", "N", "R"],
+            aux_note=["(N", "", "", "", ""],
+            fs=257,
+            write_dir=str(tmp_path),
+        )
+    return tmp_path
+
+
+def _build_leipzig_heart_center_ecg(tmp_path: Path) -> Path:
+    """One child and one adult record; X and b need the release's custom labels."""
+    wfdb = pytest.importorskip("wfdb")
+    pd.DataFrame({
+        "subject_id": ["001"], "file_name": ["x001"], "gender": ["M"], "age": [".14.3"],
+        "diagnosis": ["AVRT-WPW"], "ap_loacation": ["right posteroseptal"],
+        "ecg_duration": ["0:00:02.0"],
+    }).to_csv(tmp_path / "children-subject-info.csv", index=False)
+    pd.DataFrame({
+        "subject_id": ["100"], "file_name": ["x100"], "gender": ["F"], "age": ["64.16"],
+        "diagnosis": ["TOF with VT"], "ecg_duration": ["0:00:02.0"],
+    }).to_csv(tmp_path / "adults-subject-info.csv", index=False)
+    twelve = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    for record, extra in (("x001", ["ABL12", "RVA12"]), ("x100", ["CS12", "RVA12"])):
+        names = twelve + extra
+        n = len(names)
+        wfdb.wrsamp(
+            record, fs=977, units=["mV"] * n, sig_name=names,
+            p_signal=np.tile(np.arange(1954, dtype=np.float64)[:, None] / 1000.0, (1, n)),
+            fmt=["16"] * n, adc_gain=[2000.0] * n, baseline=[0] * n, write_dir=str(tmp_path),
+        )
+        wfdb.wrann(
+            record, "atr",
+            np.array([10, 20, 30, 40, 50, 60, 70, 80]),
+            np.array(["N", "X", "X", "/", "Q", "~", "+", "b"]),
+            aux_note=["N-Prex", "AVRT", "AFIB", "/V", "", "", "(N", "BI"],
+            fs=977, write_dir=str(tmp_path),
+            custom_labels=[(42, "X", "Tachycardias"), (43, "b", "AV-Block")],
+        )
+    return tmp_path
+
+
+def _build_ltafdb(tmp_path: Path) -> Path:
+    """Two records with comment-free headers, an AFIB episode and a .qrs detector file."""
+    wfdb = pytest.importorskip("wfdb")
+    n_samples = 128 * 1000
+    for rec in ("00", "100"):
+        (tmp_path / f"{rec}.hea").write_text(
+            f"{rec} 2 128 {n_samples} 9:30:00 31/01/2003\n"
+            f"{rec}.dat 16 166.945/mV 0 0 -1 -8202 0 ECG\n"
+            f"{rec}.dat 16 173.01/mV 0 0 3 6311 0 ECG\n",
+            encoding="utf-8",
+        )
+        wfdb.wrann(
+            rec, "atr",
+            sample=np.array([10, 200, 328, 456, 128 * 400, 128 * 401, 128 * 700, 128 * 800]),
+            symbol=["+", "N", "A", "V", "+", "N", '"', "N"],
+            aux_note=["(N", "", "", "", "(AFIB", "", "PSE", ""],
+            fs=128, write_dir=str(tmp_path),
+        )
+        wfdb.wrann(
+            rec, "qrs",
+            sample=np.array([200, 328, 456, 600]),
+            symbol=["N", "N", "|", "T"],
+            fs=128, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("00\n100\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_ltstdb(tmp_path: Path) -> Path:
+    """One two-signal record with the full comment tree and all four annotators."""
+    wfdb = pytest.importorskip("wfdb")
+    name = "s20021"
+    (tmp_path / f"{name}.hea").write_text(
+        "s20021 2 250 18975000 11:00:00 28/02/1984\n"
+        "s20021.dat 212 200/mV 12 0 6 -10121 0 MLIII\n"
+        "s20021.dat 212 200/mV 12 0 -2 -17799 0 V4\n"
+        "#Age: 55  Sex: M\n"
+        "#Comments:\n"
+        "#  An excerpt of this recording is included in the European\n"
+        "#  ST-T Database (record e0113).\n"
+        "#Symptoms during Holter recording: No data\n"
+        "#Diagnoses: \n"
+        "#  Prinzmetal's angina\n"
+        "#Treatment:\n"
+        "#  Medications: \n"
+        "#    Nitrates\n"
+        "#    Verapamil\n"
+        "#  Balloon Angioplasty: No data\n"
+        "#  Coronary Artery bypass Grafting: No\n"
+        "#History: \n"
+        "#  Smoker, hypertriglyceridemia\n"
+        "#  Hypertension: No\n"
+        "#  Left ventricular hypertrophy: Septum 13 mm\n"
+        "#  Previous Myocardial Infarction: Yes, unknown date\n"
+        "#  Intraventricular conduction block: Right bundle branch block\n"
+        "#  Previous tests:\n"
+        "#    ECG stress test: Yes \n"
+        "#      Date: No Data\n"
+        "#      Findings: ST depression V4-6\n"
+        "#    Coronary Arteriography: \n"
+        "#      Left anterior descending coronary artery 75% stenosis\n"
+        "#Holter Recording:\n"
+        "#  Date: 28/02/1984\n"
+        "#  Recorder: Oxford Medilog\n",
+        encoding="utf-8",
+    )
+    wfdb.wrann(
+        name, "atr",
+        sample=np.array([50, 250, 450, 650, 850]),
+        symbol=["N", "N", "V", "N", "A"],
+        fs=250, write_dir=str(tmp_path),
+    )
+    st = [
+        (1000, "(st0-120", 0), (2000, "ast0-160", 0), (3000, "st0-90)", 0),
+        (4000, "(rtst1+100", 1), (5000, "artst1+130", 1), (6000, "rtst1+80)", 1),
+        (7000, "sst0", 0), (7500, "sccst1", 1), (8000, "noi0+50", 0),
+        (9000, "(urd1", 1), (9500, "urd1)", 1),
+    ]
+    for ext in ("sta", "stb", "stc"):
+        wfdb.wrann(
+            name, ext,
+            sample=np.array([s for s, _, _ in st]),
+            symbol=["s"] * len(st),
+            subtype=np.zeros(len(st), dtype=int),
+            chan=np.array([c for _, _, c in st]),
+            aux_note=[a for _, a, _ in st],
+            fs=250, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text(f"{name}\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_ludb(tmp_path: Path) -> Path:
+    """ludb.csv with the release's newline-joined cells and the '>89' age."""
+    pd.DataFrame({
+        "ID": [1, 2, 34],
+        "Sex": ["M\n", "F\n", "M\n"],
+        "Age": ["55\n", "62\n", ">89\n"],
+        "Rhythms": ["Sinus rhythm\n", "Sinus bradycardia\n", "Sinus rhythm\n"],
+        "Conduction abnormalities": ["", "Incomplete right bundle branch block\n", ""],
+        "Extrasystolies": ["", "", "Atrial extrasystole: undefined\n"],
+        "Hypertrophies": ["Left ventricular hypertrophy\n", "", ""],
+        "Cardiac pacing": ["", "", ""],
+        "Ischemia": ["", "STEMI: anterior wall\nIschemia: lateral wall\n", ""],
+        "Non-specific repolarization abnormalities": ["", "", "Anterior wall\n"],
+        "Other states": ["", "", "Atrial fibrillation\n"],
+        "Electric axis of the heart": [
+            "Electric axis of the heart: normal.\n",
+            "Electric axis of the heart: left axis deviation.\n",
+            "",
+        ],
+    }).to_csv(tmp_path / "ludb.csv", index=False)
+    return tmp_path
+
+
+def _build_medalcare_xl(tmp_path: Path) -> Path:
+    """The generated metadata CSV, the only source this loader reads."""
+    pd.DataFrame({
+        "record_id": ["S65_sinus_1", "S65_mi_LAD_1.0_2", "S66_lbbb_3"],
+        "record_number": ["1", "2", "3"],
+        "pathology": ["sinus", "mi", "lbbb"],
+        "pathology_subclass": ["sinus", "mi_LAD_1.0", "lbbb"],
+        "mi_subclass": [None, "LAD_1.0", None],
+        "mi_occlusion_site": [None, "LAD", None],
+        "mi_transmurality": [None, 1.0, None],
+        "mi_region": [None, None, None],
+        "model_id": ["S65", "S65", "S66"],
+        "source_split": ["train", "validation", "test"],
+        "fold": [1, 2, 3],
+        "signal_path": ["a/1.csv", "a/2.csv", "b/3.csv"],
+        "signal_path_raw": ["a/1_raw.csv", "a/2_raw.csv", "b/3_raw.csv"],
+        "signal_path_noise": ["a/1_noise.csv", "a/2_noise.csv", "b/3_noise.csv"],
+        "atrial_params_path": ["a/1_AtrialParameters.txt"] * 3,
+        "ventricular_params_path": ["a/1_VentricularParameters.txt"] * 3,
+    }).to_csv(tmp_path / "ecgbench_metadata.csv", index=False)
+    return tmp_path
+
+
+def _build_mhd_effect_ecg_mri(tmp_path: Path) -> Path:
+    """Three 3-channel headers: a 3T feet-first run, a head-first run and the reference."""
+    wfdb = pytest.importorskip("wfdb")
+
+    def header(record, field, b0, position):
+        return (
+            f"{record} 3 1024 25000\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 I\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 II\n"
+            f"{record}.dat 16 12000.5(1234)/mV 0 0 100 200 0 III\n"
+            "#*Technical parameters of the MR scanner:\n"
+            f"#--Magnetic field strength:{field}\n"
+            "#--MR scanner:Siemens Magnetom Skyra\n"
+            f"#--Orientation of the static magnetic field (B0):{b0}\n"
+            "#--ECG recorder:Getemed CM 3000, 12-lead Holter ECG\n"
+            "#--ADC resolution:12bit\n"
+            "#--ADC input voltage range:+/-6mV\n"
+            "#--ECG lead configuration:Diagnostic 12 lead ECG\n"
+            "#--Sex:Male\n#--Age:27years\n#--Weight:75kg\n#--Height:190cm\n"
+            f"#--Positon in the scanner:{position}\n"
+            "#--Respiration:Spontaneous respiration\n"
+        )
+
+    headers = {
+        "ECGMRI3T01Ff": header("ECGMRI3T01Ff", "3T", "Horizontal", "Feet first (Ff)"),
+        "ECGMRI3T01Hf": header("ECGMRI3T01Hf", "3T", "Horizontal", "Feet first (Ff)"),
+        "ECGMRI3T01Out": header(
+            "ECGMRI3T01Out", "Outside the scanner", "Outside the scanner",
+            "Outside the scanner",
+        ),
+    }
+    (tmp_path / "RECORDS").write_text("\n".join(headers) + "\n", encoding="utf-8")
+    for record, text in headers.items():
+        (tmp_path / f"{record}.hea").write_text(text, encoding="utf-8")
+        wfdb.wrann(
+            record, "qrs", sample=np.arange(1, 25) * 1000, symbol=["N"] * 24,
+            fs=1024, write_dir=str(tmp_path),
+        )
+    return tmp_path
+
+
 #: Dataset -> builder writing a minimal synthetic source tree into tmp_path.
 BUILDERS = {
     "ptbxl": _build_ptbxl,
@@ -701,14 +958,22 @@ BUILDERS = {
     "echonext": _build_echonext,
     "edb": _build_edb,
     "edgar": _build_edgar,
+    # batch 4
+    "ikem": _build_ikem,
+    "incartdb": _build_incartdb,
+    "leipzig_heart_center_ecg": _build_leipzig_heart_center_ecg,
+    "ltafdb": _build_ltafdb,
+    "ltstdb": _build_ltstdb,
+    "ludb": _build_ludb,
+    "medalcare_xl": _build_medalcare_xl,
+    "mhd_effect_ecg_mri": _build_mhd_effect_ecg_mri,
 }
 
 #: Label-bearing datasets whose fields are not declared yet (later Phase 3 batches).
 PENDING = {
-    "ikem", "incartdb", "leipzig_heart_center_ecg", "ltafdb", "ltstdb", "ludb",
-    "medalcare_xl", "mhd_effect_ecg_mri", "ningbo_iva", "norwegian_athlete_ecg", "nsrdb",
-    "picsdb", "ptbdb", "qtdb", "sami_trop", "sddb", "shdb_af", "sph", "staffiii", "stdb",
-    "svdb", "szdb", "tollet", "ucddb", "wctecgdb", "zzu_pecg",
+    "ningbo_iva", "norwegian_athlete_ecg", "nsrdb", "picsdb", "ptbdb", "qtdb", "sami_trop",
+    "sddb", "shdb_af", "sph", "staffiii", "stdb", "svdb", "szdb", "tollet", "ucddb",
+    "wctecgdb", "zzu_pecg",
 }
 
 

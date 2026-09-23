@@ -74,6 +74,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -309,3 +311,137 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         int(df["is_male"].isna().sum()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "40-character SHA-1 surrogate patient key; 30,290 patients over 98,130 records, "
+        "19,078 with more than one record and the largest with 96, so folds are grouped on "
+        "it",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age with the source's -1 sentinel converted to missing (8,816 records, 9%); 546 "
+        "records give 0 and 21 give 100 or more, kept as shipped",
+        unit="year",
+    ),
+    Field(
+        "is_male",
+        "boolean",
+        "Sex as a nullable boolean; the 376 records shipped as -1 are missing rather than "
+        "false",
+    ),
+    Field(
+        "weight",
+        "number",
+        "Weight with -1 converted to missing - absent for 87,916 records (89.6%), so the "
+        "shipped column literally averages to about -76 kg",
+        unit="kg",
+    ),
+    Field(
+        "height",
+        "number",
+        "Height with -1 converted to missing; absent for 87,674 records (89.3%)",
+        unit="cm",
+    ),
+    Field(
+        "ventricular_rate",
+        "number",
+        "Cart-measured ventricular rate; -1 (6 records) converted to missing, and one "
+        "record reads 0",
+        unit="bpm",
+    ),
+    Field(
+        "atrial_rate",
+        "number",
+        "Cart-measured atrial rate; -1 (410 records) converted to missing",
+        unit="bpm",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Derived from is_male; missing where sex was unknown",
+        vocabulary=("M", "F"),
+    ),
+    Field(
+        "has_age",
+        "boolean",
+        "age is present",
+        nullable=False,
+    ),
+    Field(
+        "has_weight",
+        "boolean",
+        "weight is present",
+        nullable=False,
+    ),
+    Field(
+        "has_height",
+        "boolean",
+        "height is present",
+        nullable=False,
+    ),
+    Field(
+        "acquisition_date",
+        "date",
+        "Acquisition date parsed from the source's MM-DD-YYYY text, which sorts wrongly as "
+        "a string; the true range is 2004-03-18 to 2022-07-26",
+    ),
+    Field(
+        "acquisition_year",
+        "integer",
+        "Year of acquisition_date; 57,179 records are from 2017 and 33,355 from 2018, the "
+        "whole 2004-2016 tail is 190",
+        unit="year",
+    ),
+    Field(
+        "real_length_samples",
+        "integer",
+        "True sample count from the HDF5 parts' real_lengths dataset: 48 records hold only "
+        "2,500 real samples zero-padded to 4,096. Present only when a part file is beside "
+        "exams.csv; missing for an exam_id no part lists.",
+    ),
+    Field(
+        "real_duration_seconds",
+        "number",
+        "real_length_samples over 500 Hz (5.0 s for the 48 short records)",
+        unit="s",
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Constant: the rectangular array length, 4,096",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "Constant: 4,096 samples at 500 Hz, 8.192 s",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant: 500 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Fold-construction band of ventricular_rate: below 60, 60-100, above 100; a missing "
+        "or zero rate is treated as NORMAL. The config's label column - there is no "
+        "diagnosis in this release.",
+        vocabulary=("BRADY", "NORMAL", "TACHY"),
+        nullable=False,
+    ),
+)

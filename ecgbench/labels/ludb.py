@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -144,3 +146,102 @@ def _pool_rare(rhythms: list[str]) -> list[str]:
             len(rare), MIN_CLASS_SIZE, OTHER, sorted(rare),
         )
     return [OTHER if r in rare else r for r in rhythms]
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "sex",
+        "string",
+        "From the 'Sex' column, trailing newline stripped",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "age_raw",
+        "string",
+        "The 'Age' cell verbatim after stripping; record 34 reads '>89'",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "age_raw as a number; missing for '>89'",
+        unit="year",
+    ),
+    Field(
+        "rhythms",
+        "array[string]",
+        "Rhythm findings from the 'Rhythms' column ('Rhythms' column): the cell's "
+        "newline-joined values split into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "conduction_abnormalities",
+        "array[string]",
+        "Conduction abnormalities ('Conduction abnormalities' column): the cell's "
+        "newline-joined values split into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "extrasystolies",
+        "array[string]",
+        "Extrasystoles ('Extrasystolies' column): the cell's newline-joined values split "
+        "into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "hypertrophies",
+        "array[string]",
+        "Hypertrophies ('Hypertrophies' column): the cell's newline-joined values split "
+        "into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "cardiac_pacing",
+        "array[string]",
+        "Cardiac pacing findings ('Cardiac pacing' column): the cell's newline-joined "
+        "values split into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "ischemia",
+        "array[string]",
+        "Ischaemia findings (40 distinct strings raw, a handful once split) ('Ischemia' "
+        "column): the cell's newline-joined values split into a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "repolarization_abnormalities",
+        "array[string]",
+        "Non-specific repolarisation abnormalities ('Non-specific repolarization "
+        "abnormalities' column): the cell's newline-joined values split into a list, empty "
+        "when blank",
+        nullable=False,
+    ),
+    Field(
+        "other_states",
+        "array[string]",
+        "Other states ('Other states' column): the cell's newline-joined values split into "
+        "a list, empty when blank",
+        nullable=False,
+    ),
+    Field(
+        "electric_axis",
+        "string",
+        "'Electric axis of the heart' with the repeated prefix and trailing period removed; "
+        "empty when blank",
+        nullable=False,
+        example="normal",
+    ),
+    Field(
+        "primary_rhythm",
+        "string",
+        "First entry of rhythms, with rhythms held by fewer than 10 records pooled into "
+        "OTHER; the config's label column",
+        nullable=False,
+    ),
+)

@@ -44,6 +44,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -269,3 +271,150 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "string",
+        "Age from the header's <age> token, kept as text as shipped (18-80, mean 56.2 - the "
+        "README's 58 is wrong); empty when the header fails to parse",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the header's <sex> token; 18 men and 14 women against the README's 17 and "
+        "15",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "diagnosis",
+        "string",
+        "Patient-level confirmed diagnoses after the <diagnoses> token; empty for the 34 of "
+        "75 records (14 patients) whose header omits the token entirely. The config's label "
+        "column.",
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "'patientNN' from the '# patient N' header line; 32 patients over 75 records",
+        nullable=False,
+        example="patient01",
+    ),
+    Field(
+        "record_features",
+        "string",
+        "The third header comment verbatim: free-text ECG findings of this record (WPW, AF, "
+        "AV block and bundle branch block appear only here, never in diagnosis)",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference beats annotated 'N' (normal); positions were algorithm-placed and not "
+        "corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference beats annotated 'V' (premature ventricular contraction); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Reference beats annotated 'R' (right bundle branch block beat); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Reference beats annotated 'A' (atrial premature contraction); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference beats annotated 'F' (fusion of ventricular and normal); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Reference beats annotated 'j' (nodal (junctional) escape); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_n",
+        "integer",
+        "Reference beats annotated 'n' (supraventricular escape); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference beats annotated 'S' (premature or ectopic supraventricular); positions "
+        "were algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference beats annotated 'Q' (unclassifiable); positions were algorithm-placed "
+        "and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "beat_B",
+        "integer",
+        "Reference beats annotated 'B' (left or right bundle branch block); positions were "
+        "algorithm-placed and not corrected, counts are unaffected",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_rhythm_changes",
+        "integer",
+        "Rhythm-change ('+') annotations",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; the release is a flat directory",
+        nullable=False,
+        example="I01",
+    ),
+    Field(
+        "pvc_fraction",
+        "number",
+        "beat_V over n_beats; missing when no beats",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "diagnosis with blanks as UNKNOWN and any class held by fewer than 10 patients "
+        "pooled into OTHER, for fold construction",
+        nullable=False,
+    ),
+)

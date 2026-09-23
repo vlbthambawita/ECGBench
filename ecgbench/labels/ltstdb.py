@@ -121,6 +121,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
 from ecgbench.labels.svdb import AAMI_CLASSES, AAMI_ORDER
 
 if TYPE_CHECKING:
@@ -767,3 +768,852 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "patient_id",
+        "string",
+        "Subject group read off the record name: 'Records obtained from the same subject "
+        "have names that differ in the last digit only', so s20271-s20274 are one subject; "
+        "80 subjects over 86 records, the published figure. The three middle digits.",
+        nullable=False,
+        example="027",
+    ),
+    Field(
+        "subject_number",
+        "integer",
+        "patient_id as an integer",
+        nullable=False,
+    ),
+    Field(
+        "record_number",
+        "integer",
+        "Last digit of the record name",
+        nullable=False,
+    ),
+    Field(
+        "n_leads",
+        "integer",
+        "Signals in the header, 2 or 3, matching the record name's first digit",
+        vocabulary=("2", "3"),
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header lead names pipe-joined; 'ECG|ECG' for the 22 records whose headers say "
+        "electrode locations were not recorded",
+        nullable=False,
+    ),
+    Field(
+        "sig_len",
+        "integer",
+        "Samples per record from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "sig_len over 250 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "duration_hours",
+        "number",
+        "duration_secs over 3600",
+        unit="h",
+        nullable=False,
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Header base time; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "recording_date",
+        "string",
+        "Header base date as ISO YYYY-MM-DD; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "From '#Age:'; missing when the header says 'No data'",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "From 'Sex:'; empty when 'No data'",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "comments",
+        "string",
+        "Header field 'Comments' block of the header, lines joined with ' | '; empty when "
+        "absent",
+        nullable=False,
+    ),
+    Field(
+        "symptoms",
+        "string",
+        "Header field 'Symptoms during Holter recording'; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "diagnoses",
+        "string",
+        "Header field 'Diagnoses' block; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "medications",
+        "string",
+        "Header field 'Treatment / Medications' lines joined with ' | '; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "history",
+        "string",
+        "Header field Free-text lines of the 'History' block (its keyed fields are separate "
+        "columns); empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "ecg_stress_test",
+        "string",
+        "Header field 'History / Previous tests / ECG stress test'; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "thallium_stress_echo",
+        "string",
+        "Header field 'History / Previous tests / Thallium/Stress echo'; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "lv_function",
+        "string",
+        "Header field 'History / Previous tests / Left ventricular function'; empty when "
+        "absent",
+        nullable=False,
+    ),
+    Field(
+        "echocardiogram",
+        "string",
+        "Header field 'History / Previous tests / Echocardiogram'; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "coronary_arteriography",
+        "string",
+        "Header field 'History / Previous tests / Coronary Arteriography'; empty when "
+        "absent",
+        nullable=False,
+    ),
+    Field(
+        "baseline_ecg",
+        "string",
+        "Header field 'History / Previous tests / Baseline ECG'; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "recorder",
+        "string",
+        "Header field 'Holter Recording / Recorder', the recorder model; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "holter_date",
+        "string",
+        "Header field 'Holter Recording / Date' as written (DD/MM/YYYY); empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "balloon_angioplasty_text",
+        "string",
+        "Header field 'Treatment / Balloon Angioplasty' verbatim; free text even where it "
+        "looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "balloon_angioplasty",
+        "boolean",
+        "'Treatment / Balloon Angioplasty' read as yes/no; missing when the text is 'No "
+        "data', empty or not a yes/no answer",
+    ),
+    Field(
+        "bypass_grafting_text",
+        "string",
+        "Header field 'Treatment / Coronary Artery bypass Grafting' verbatim; free text "
+        "even where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "bypass_grafting",
+        "boolean",
+        "'Treatment / Coronary Artery bypass Grafting' read as yes/no; missing when the "
+        "text is 'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "hypertension_text",
+        "string",
+        "Header field 'History / Hypertension' verbatim; free text even where it looks "
+        "boolean",
+        nullable=False,
+    ),
+    Field(
+        "hypertension",
+        "boolean",
+        "'History / Hypertension' read as yes/no; missing when the text is 'No data', empty "
+        "or not a yes/no answer",
+    ),
+    Field(
+        "lv_hypertrophy_text",
+        "string",
+        "Header field 'History / Left ventricular hypertrophy' verbatim; free text even "
+        "where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "lv_hypertrophy",
+        "boolean",
+        "'History / Left ventricular hypertrophy' read as yes/no; missing when the text is "
+        "'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "cardiomyopathy_text",
+        "string",
+        "Header field 'History / Cardiomyopathy' verbatim; free text even where it looks "
+        "boolean",
+        nullable=False,
+    ),
+    Field(
+        "cardiomyopathy",
+        "boolean",
+        "'History / Cardiomyopathy' read as yes/no; missing when the text is 'No data', "
+        "empty or not a yes/no answer",
+    ),
+    Field(
+        "valve_disease_text",
+        "string",
+        "Header field 'History / Valve disease' verbatim; free text even where it looks "
+        "boolean",
+        nullable=False,
+    ),
+    Field(
+        "valve_disease",
+        "boolean",
+        "'History / Valve disease' read as yes/no; missing when the text is 'No data', "
+        "empty or not a yes/no answer",
+    ),
+    Field(
+        "electrolyte_abnormalities_text",
+        "string",
+        "Header field 'History / Electrolyte abnormalities' verbatim; free text even where "
+        "it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "electrolyte_abnormalities",
+        "boolean",
+        "'History / Electrolyte abnormalities' read as yes/no; missing when the text is 'No "
+        "data', empty or not a yes/no answer",
+    ),
+    Field(
+        "hypercapnia_anemia_hypotension_hyperventilation_text",
+        "string",
+        "Header field 'History / Hypercapnia, anemia, hypotension, hyperventilation' "
+        "verbatim; free text even where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "hypercapnia_anemia_hypotension_hyperventilation",
+        "boolean",
+        "'History / Hypercapnia, anemia, hypotension, hyperventilation' read as yes/no; "
+        "missing when the text is 'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "av_nodal_conduction_delay_text",
+        "string",
+        "Header field 'History / Atrioventricular nodal conduction delay' verbatim; free "
+        "text even where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "av_nodal_conduction_delay",
+        "boolean",
+        "'History / Atrioventricular nodal conduction delay' read as yes/no; missing when "
+        "the text is 'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "intraventricular_conduction_block_text",
+        "string",
+        "Header field 'History / Intraventricular conduction block' verbatim; free text "
+        "even where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "intraventricular_conduction_block",
+        "boolean",
+        "'History / Intraventricular conduction block' read as yes/no; missing when the "
+        "text is 'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "previous_mi_text",
+        "string",
+        "Header field 'History / Previous Myocardial Infarction' verbatim; free text even "
+        "where it looks boolean",
+        nullable=False,
+    ),
+    Field(
+        "previous_mi",
+        "boolean",
+        "'History / Previous Myocardial Infarction' read as yes/no; missing when the text "
+        "is 'No data', empty or not a yes/no answer",
+    ),
+    Field(
+        "edb_record",
+        "string",
+        "European ST-T Database record made from the same tape, named in the header for 10 "
+        "records ('An excerpt of this recording is included in the European ST-T Database "
+        "(record e0113)'); empty otherwise. Redigitised and rescaled, so samples and "
+        "annotations are not comparable.",
+        nullable=False,
+        example="e0113",
+    ),
+    Field(
+        "pilot_record",
+        "string",
+        "Record of the initial pilot Long-Term ST Database named in the header; empty "
+        "otherwise",
+        nullable=False,
+    ),
+    Field(
+        "leads_named",
+        "boolean",
+        "False for the 22 records whose header states 'Electrode locations were not "
+        "recorded'",
+        nullable=False,
+    ),
+    Field(
+        "n_medications",
+        "integer",
+        "Lines under 'Treatment / Medications'",
+        nullable=False,
+    ),
+    Field(
+        "n_ischemic_episodes",
+        "integer",
+        "Ischaemic ST episodes ('(st', 'ast', 'st)' triples), counted at the extremum as "
+        "the release's own .cnt summaries do (1,795 under criterion A). Criterion 75 uV / "
+        "30 s (.sta).",
+        nullable=False,
+    ),
+    Field(
+        "n_rate_related_episodes",
+        "integer",
+        "Rate-related ST episodes ('(rtst' ...), the same deviation attributed to a "
+        "heart-rate rise (516 under A); never sum with the ischaemic count without saying "
+        "so. Criterion 75 uV / 30 s (.sta).",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs",
+        "number",
+        "Summed duration of ischaemic episodes over all leads. Criterion 75 uV / 30 s "
+        "(.sta).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rate_related_secs",
+        "number",
+        "Summed duration of rate-related episodes over all leads. Criterion 75 uV / 30 s "
+        "(.sta).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs_any_lead",
+        "number",
+        "Seconds during which an ischaemic episode is open on any lead (bounded union). "
+        "Criterion 75 uV / 30 s (.sta).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "peak_st_deviation_uv",
+        "integer",
+        "Largest ischaemic extremum in microvolts, against the annotators' own "
+        "piecewise-linear baseline; 0 when none. Criterion 75 uV / 30 s (.sta).",
+        unit="uV",
+        nullable=False,
+    ),
+    Field(
+        "n_st_elevation_episodes",
+        "integer",
+        "Ischaemic episodes with a positive extremum. Criterion 75 uV / 30 s (.sta).",
+        nullable=False,
+    ),
+    Field(
+        "n_st_depression_episodes",
+        "integer",
+        "Ischaemic episodes with a negative extremum. Criterion 75 uV / 30 s (.sta).",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_open_at_start",
+        "integer",
+        "Episodes already in progress when the recording started (extremum and end, no "
+        "onset); 22 under A. Criterion 75 uV / 30 s (.sta).",
+        nullable=False,
+    ),
+    Field(
+        "n_unterminated_episodes",
+        "integer",
+        "Episodes with no end annotation, closed at the record end. Criterion 75 uV / 30 s "
+        "(.sta).",
+        nullable=False,
+    ),
+    Field(
+        "n_axis_shifts",
+        "integer",
+        "Axis-shift marks ('sst'), 1,493 in the release and identical across the three "
+        "criteria",
+        nullable=False,
+    ),
+    Field(
+        "n_conduction_change_shifts",
+        "integer",
+        "Conduction-change shift marks ('sccst'), 895",
+        nullable=False,
+    ),
+    Field(
+        "n_noise_events",
+        "integer",
+        "Noise marks ('noi'), 31",
+        nullable=False,
+    ),
+    Field(
+        "n_unreadable_intervals",
+        "integer",
+        "Unreadable intervals ('(urd' ... 'urd)'), 60",
+        nullable=False,
+    ),
+    Field(
+        "unreadable_secs",
+        "number",
+        "Summed unreadable interval duration",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_ischemic_episodes_lead0",
+        "integer",
+        "Criterion-A ischaemic episodes annotated on lead 0",
+        nullable=False,
+    ),
+    Field(
+        "n_ischemic_episodes_lead1",
+        "integer",
+        "Criterion-A ischaemic episodes annotated on lead 1",
+        nullable=False,
+    ),
+    Field(
+        "n_ischemic_episodes_lead2",
+        "integer",
+        "Criterion-A ischaemic episodes annotated on lead 2; missing for the 68 two-lead "
+        "records",
+    ),
+    Field(
+        "n_ischemic_episodes_b",
+        "integer",
+        "Ischaemic ST episodes ('(st', 'ast', 'st)' triples), counted at the extremum as "
+        "the release's own .cnt summaries do (1,795 under criterion A). Criterion 100 uV / "
+        "30 s (.stb).",
+        nullable=False,
+    ),
+    Field(
+        "n_rate_related_episodes_b",
+        "integer",
+        "Rate-related ST episodes ('(rtst' ...), the same deviation attributed to a "
+        "heart-rate rise (516 under A); never sum with the ischaemic count without saying "
+        "so. Criterion 100 uV / 30 s (.stb).",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs_b",
+        "number",
+        "Summed duration of ischaemic episodes over all leads. Criterion 100 uV / 30 s "
+        "(.stb).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rate_related_secs_b",
+        "number",
+        "Summed duration of rate-related episodes over all leads. Criterion 100 uV / 30 s "
+        "(.stb).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs_any_lead_b",
+        "number",
+        "Seconds during which an ischaemic episode is open on any lead (bounded union). "
+        "Criterion 100 uV / 30 s (.stb).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "peak_st_deviation_uv_b",
+        "integer",
+        "Largest ischaemic extremum in microvolts, against the annotators' own "
+        "piecewise-linear baseline; 0 when none. Criterion 100 uV / 30 s (.stb).",
+        unit="uV",
+        nullable=False,
+    ),
+    Field(
+        "n_st_elevation_episodes_b",
+        "integer",
+        "Ischaemic episodes with a positive extremum. Criterion 100 uV / 30 s (.stb).",
+        nullable=False,
+    ),
+    Field(
+        "n_st_depression_episodes_b",
+        "integer",
+        "Ischaemic episodes with a negative extremum. Criterion 100 uV / 30 s (.stb).",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_open_at_start_b",
+        "integer",
+        "Episodes already in progress when the recording started (extremum and end, no "
+        "onset); 22 under A. Criterion 100 uV / 30 s (.stb).",
+        nullable=False,
+    ),
+    Field(
+        "n_unterminated_episodes_b",
+        "integer",
+        "Episodes with no end annotation, closed at the record end. Criterion 100 uV / 30 s "
+        "(.stb).",
+        nullable=False,
+    ),
+    Field(
+        "n_ischemic_episodes_c",
+        "integer",
+        "Ischaemic ST episodes ('(st', 'ast', 'st)' triples), counted at the extremum as "
+        "the release's own .cnt summaries do (1,795 under criterion A). Criterion 100 uV / "
+        "60 s (.stc).",
+        nullable=False,
+    ),
+    Field(
+        "n_rate_related_episodes_c",
+        "integer",
+        "Rate-related ST episodes ('(rtst' ...), the same deviation attributed to a "
+        "heart-rate rise (516 under A); never sum with the ischaemic count without saying "
+        "so. Criterion 100 uV / 60 s (.stc).",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs_c",
+        "number",
+        "Summed duration of ischaemic episodes over all leads. Criterion 100 uV / 60 s "
+        "(.stc).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rate_related_secs_c",
+        "number",
+        "Summed duration of rate-related episodes over all leads. Criterion 100 uV / 60 s "
+        "(.stc).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ischemic_secs_any_lead_c",
+        "number",
+        "Seconds during which an ischaemic episode is open on any lead (bounded union). "
+        "Criterion 100 uV / 60 s (.stc).",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "peak_st_deviation_uv_c",
+        "integer",
+        "Largest ischaemic extremum in microvolts, against the annotators' own "
+        "piecewise-linear baseline; 0 when none. Criterion 100 uV / 60 s (.stc).",
+        unit="uV",
+        nullable=False,
+    ),
+    Field(
+        "n_st_elevation_episodes_c",
+        "integer",
+        "Ischaemic episodes with a positive extremum. Criterion 100 uV / 60 s (.stc).",
+        nullable=False,
+    ),
+    Field(
+        "n_st_depression_episodes_c",
+        "integer",
+        "Ischaemic episodes with a negative extremum. Criterion 100 uV / 60 s (.stc).",
+        nullable=False,
+    ),
+    Field(
+        "n_episodes_open_at_start_c",
+        "integer",
+        "Episodes already in progress when the recording started (extremum and end, no "
+        "onset); 22 under A. Criterion 100 uV / 60 s (.stc).",
+        nullable=False,
+    ),
+    Field(
+        "n_unterminated_episodes_c",
+        "integer",
+        "Episodes with no end annotation, closed at the record end. Criterion 100 uV / 60 s "
+        "(.stc).",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Beats annotated 'N' (normal) in the .atr, which holds beats and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_L",
+        "integer",
+        "Beats annotated 'L' (left bundle branch block) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Beats annotated 'R' (right bundle branch block) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_B",
+        "integer",
+        "Beats annotated 'B' (bundle branch block (unspecified)) in the .atr, which holds "
+        "beats and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Beats annotated 'A' (atrial premature) in the .atr, which holds beats and nothing "
+        "else",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Beats annotated 'a' (aberrated atrial premature) in the .atr, which holds beats "
+        "and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Beats annotated 'J' (nodal (junctional) premature) in the .atr, which holds beats "
+        "and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Beats annotated 'S' (supraventricular premature or ectopic) in the .atr, which "
+        "holds beats and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Beats annotated 'V' (premature ventricular) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_r",
+        "integer",
+        "Beats annotated 'r' (R-on-T premature ventricular) in the .atr, which holds beats "
+        "and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Beats annotated 'F' (fusion of ventricular and normal) in the .atr, which holds "
+        "beats and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_e",
+        "integer",
+        "Beats annotated 'e' (atrial escape) in the .atr, which holds beats and nothing "
+        "else",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Beats annotated 'j' (nodal (junctional) escape) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_n",
+        "integer",
+        "Beats annotated 'n' (supraventricular escape) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_E",
+        "integer",
+        "Beats annotated 'E' (ventricular escape) in the .atr, which holds beats and "
+        "nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_/",
+        "integer",
+        "Beats annotated '/' (paced) in the .atr, which holds beats and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_f",
+        "integer",
+        "Beats annotated 'f' (fusion of paced and normal) in the .atr, which holds beats "
+        "and nothing else",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Beats annotated 'Q' (unclassifiable) in the .atr, which holds beats and nothing "
+        "else",
+        nullable=False,
+    ),
+    Field(
+        "aami_N",
+        "integer",
+        "Beats in AAMI EC57 class N (symbols N, L, R, e, j, B)",
+        nullable=False,
+    ),
+    Field(
+        "aami_S",
+        "integer",
+        "Beats in AAMI EC57 class S (symbols A, a, J, S, n)",
+        nullable=False,
+    ),
+    Field(
+        "aami_V",
+        "integer",
+        "Beats in AAMI EC57 class V (symbols V, E, r)",
+        nullable=False,
+    ),
+    Field(
+        "aami_F",
+        "integer",
+        "Beats in AAMI EC57 class F (symbols F)",
+        nullable=False,
+    ),
+    Field(
+        "aami_Q",
+        "integer",
+        "Beats in AAMI EC57 class Q (symbols /, f, Q)",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "Beats outside AAMI class N",
+        nullable=False,
+    ),
+    Field(
+        "n_non_beat_annotations",
+        "integer",
+        "Non-beat annotations in the .atr: 0 in all 86 files",
+        nullable=False,
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "Span from first to last beat over the record; at least 0.9998 in every record",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "Mean heart rate over physiologic RR intervals",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="s20021",
+    ),
+    Field(
+        "st_class",
+        "string",
+        "Which criterion-A findings the record holds; the config's label column",
+        vocabulary=(
+            "ischemic",
+            "ischemic_and_rate_related",
+            "rate_related_only",
+            "shift_only",
+            "none",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "ischemic_fraction",
+        "number",
+        "ischemic_secs_any_lead over duration_secs",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_fraction",
+        "number",
+        "n_ectopic_beats over n_beats; missing when no beats",
+    ),
+    Field(
+        "ischemic_burden_band",
+        "string",
+        "Band of n_ischemic_episodes (criterion A), for fold construction",
+        vocabulary=("none", "1-5", "6-20", "21+"),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Copy of ischemic_burden_band",
+        vocabulary=("none", "1-5", "6-20", "21+"),
+        nullable=False,
+    ),
+)
