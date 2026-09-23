@@ -111,6 +111,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -1241,3 +1243,529 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         df["source_database"].nunique(),
     )
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="sel100",
+    ),
+    Field(
+        "source_database",
+        "string",
+        "Database the 15-minute excerpt was drawn from (SOURCE_DATABASE_RECORDS); the "
+        "config's label and stratification column, not a diagnosis. Six of the seven are "
+        "datasets ECGBench already partitions, so training on qtdb and testing on them is "
+        "testing on training data.",
+        vocabulary=("mitdb", "stdb", "svdb", "ltdb", "edb", "nsrdb", "sddb", "bih_control"),
+        nullable=False,
+    ),
+    Field(
+        "source_database_name",
+        "string",
+        "Long name of source_database",
+        nullable=False,
+    ),
+    Field(
+        "source_catalogue_slug",
+        "string",
+        "ECGBench catalogue slug of the source; empty for ltdb and the BIH control",
+        nullable=False,
+    ),
+    Field(
+        "source_record",
+        "string",
+        "Source record named by the header's 'Produced by xform' line; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "source_offset_secs",
+        "number",
+        "Offset into the source recording where the excerpt begins",
+        unit="s",
+    ),
+    Field(
+        "source_sampling_rate",
+        "integer",
+        "Native rate of the source database",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "resampled_from_source",
+        "boolean",
+        "The header carries a counter frequency, i.e. xform resampled to 250 Hz",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record (225,000 or a few fewer)",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 250 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header lead names semicolon-joined",
+        nullable=False,
+    ),
+    Field(
+        "lead_0",
+        "string",
+        "First lead name",
+        nullable=False,
+    ),
+    Field(
+        "lead_1",
+        "string",
+        "Second lead name; empty for a single-channel record",
+        nullable=False,
+    ),
+    Field(
+        "positional_lead_names",
+        "boolean",
+        "Leads are named only ECG1/ECG2",
+        nullable=False,
+    ),
+    Field(
+        "declared_gain_0",
+        "number",
+        "Header gain of signal 0; 0 means uncalibrated",
+        unit="adu/mV",
+        nullable=False,
+    ),
+    Field(
+        "declared_gain_1",
+        "number",
+        "Header gain of signal 1",
+        unit="adu/mV",
+    ),
+    Field(
+        "amplitude_calibrated",
+        "boolean",
+        "False for the 34 records whose gains are estimates: no gain of 0 declared and not "
+        "a sudden-death or BIH-control excerpt",
+        nullable=False,
+    ),
+    Field(
+        "dc_pedestal_mv",
+        "number",
+        "Constant offset wfdb applies from baseline and adc_zero; +5.12 mV for sel100, "
+        "sel102, sel103 and sel104",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "signal_0_delay_samples",
+        "integer",
+        "Delay applied to signal 0 per the header (7 samples in some sudden-death "
+        "excerpts); 0 otherwise",
+        nullable=False,
+    ),
+    Field(
+        "n_first_pass_annotations",
+        "integer",
+        "Annotations in the unaudited .qt1 file",
+        nullable=False,
+    ),
+    Field(
+        "has_second_annotator",
+        "boolean",
+        "A .q2c file exists (11 MIT-BIH records)",
+        nullable=False,
+    ),
+    Field(
+        "n_annotated_beats_annotator2",
+        "integer",
+        "Beats annotator 2 annotated; 3 in sel102 against annotator 1's 85",
+        nullable=False,
+    ),
+    Field(
+        "source_record_verified",
+        "boolean",
+        "Waveform match to the source confirmed (edb and sddb excerpts only; False for "
+        "sel32, whose samples occur nowhere in sddb record 32); missing for the other "
+        "sources",
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age from the inherited clinical header text",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the header text; empty when none",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "recorder",
+        "string",
+        "Recorder from the header text; empty when none",
+        nullable=False,
+    ),
+    Field(
+        "medications",
+        "string",
+        "Medication line from the header text",
+        nullable=False,
+    ),
+    Field(
+        "clinical_findings",
+        "string",
+        "Semicolon-joined clinical finding lines",
+        nullable=False,
+    ),
+    Field(
+        "clinical_notes",
+        "string",
+        "Other clinical text lines",
+        nullable=False,
+    ),
+    Field(
+        "analog_tape",
+        "string",
+        "Tape number from a MIT-BIH-style header line",
+        nullable=False,
+    ),
+    Field(
+        "playback_speed",
+        "string",
+        "Playback speed from a MIT-BIH-style header line",
+        nullable=False,
+        example="x1",
+    ),
+    Field(
+        "clinical_source",
+        "string",
+        "Which header vintage the clinical text came from; the 33 European ST-T excerpts "
+        "carry a coarser, earlier text that contradicts edb 1.0.0 for three subjects",
+        vocabulary=("none", "mitdb_header", "esc_header"),
+        nullable=False,
+    ),
+    Field(
+        "n_annotated_beats",
+        "integer",
+        "Manually annotated beats in .q1c (3,623 across the release; sel223 has 31 where "
+        "the paper says 30); annotation lives in the last five minutes only",
+        nullable=False,
+    ),
+    Field(
+        "n_p_waves",
+        "integer",
+        "Annotated P-wave peaks; absent from seven records",
+    ),
+    Field(
+        "n_qrs_onsets",
+        "integer",
+        "Annotated QRS onsets",
+    ),
+    Field(
+        "n_qrs_offsets",
+        "integer",
+        "Annotated QRS offsets",
+    ),
+    Field(
+        "n_t_onsets",
+        "integer",
+        "Annotated T-wave onsets",
+    ),
+    Field(
+        "n_t_ends",
+        "integer",
+        "Annotated T-wave ends; none in sel35 and sel37",
+    ),
+    Field(
+        "n_u_waves",
+        "integer",
+        "Annotated U-wave peaks (821 across the release)",
+    ),
+    Field(
+        "annotates_p",
+        "boolean",
+        "Any P wave annotated",
+    ),
+    Field(
+        "annotates_t",
+        "boolean",
+        "Any T wave annotated",
+    ),
+    Field(
+        "annotates_u",
+        "boolean",
+        "Any U wave annotated",
+    ),
+    Field(
+        "beat_symbols",
+        "string",
+        "Annotated beat symbol counts, 'N:30;V:2' form",
+        example="N:30;V:2",
+    ),
+    Field(
+        "n_morphology_groups",
+        "integer",
+        "Distinct beat morphology groups",
+    ),
+    Field(
+        "waveform_pattern",
+        "string",
+        "Table 2's notation recomputed from the files, e.g. '(p)(N)t)u)'; agrees for 101 of "
+        "105 records",
+    ),
+    Field(
+        "annotation_start_secs",
+        "number",
+        "Time of the first manual annotation",
+        unit="s",
+    ),
+    Field(
+        "annotation_end_secs",
+        "number",
+        "Time of the last manual annotation",
+        unit="s",
+    ),
+    Field(
+        "median_qt_ms",
+        "number",
+        "Median QT over annotated beats; missing where no T end",
+        unit="ms",
+    ),
+    Field(
+        "median_qtc_bazett_ms",
+        "number",
+        "Median Bazett-corrected QT",
+        unit="ms",
+    ),
+    Field(
+        "median_rr_ms",
+        "number",
+        "Median RR between annotated beats",
+        unit="ms",
+    ),
+    Field(
+        "median_qrs_ms",
+        "number",
+        "Median QRS duration",
+        unit="ms",
+    ),
+    Field(
+        "median_pr_ms",
+        "number",
+        "Median PR interval; missing where no P wave",
+        unit="ms",
+    ),
+    Field(
+        "median_p_ms",
+        "number",
+        "Median P-wave duration",
+        unit="ms",
+    ),
+    Field(
+        "median_heart_rate_bpm",
+        "number",
+        "60000 over median_rr_ms",
+        unit="bpm",
+    ),
+    Field(
+        "n_annotated_beats_published",
+        "integer",
+        "The paper's Table 2 beat count; -1 for a record it does not list",
+    ),
+    Field(
+        "annotated_beats_matches_published",
+        "boolean",
+        "n_annotated_beats equals the published count",
+    ),
+    Field(
+        "waveform_pattern_matches_published",
+        "boolean",
+        "waveform_pattern equals the published notation",
+    ),
+    Field(
+        "has_source_annotations",
+        "boolean",
+        "A .atr inherited from the source database exists (absent for the 23 sudden-death "
+        "excerpts)",
+        nullable=False,
+    ),
+    Field(
+        "n_source_annotations",
+        "integer",
+        "Annotations in the inherited .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_source_beats",
+        "integer",
+        "Beats in the inherited .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_source_rhythm_changes",
+        "integer",
+        "'+' rhythm changes in the inherited .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_source_missed_beats",
+        "integer",
+        "MISSB comment annotations",
+        nullable=False,
+    ),
+    Field(
+        "n_source_st_markers",
+        "integer",
+        "'s' ST-change markers",
+        nullable=False,
+    ),
+    Field(
+        "n_source_t_markers",
+        "integer",
+        "'T' T-change markers",
+        nullable=False,
+    ),
+    Field(
+        "n_source_artifacts",
+        "integer",
+        "'|' artefact markers",
+        nullable=False,
+    ),
+    Field(
+        "n_source_quality_changes",
+        "integer",
+        "'~' quality changes",
+        nullable=False,
+    ),
+    Field(
+        "source_beat_symbols",
+        "string",
+        "Inherited beat symbol counts, 'N:2;V:1' form",
+        nullable=False,
+    ),
+    Field(
+        "source_rhythms",
+        "string",
+        "Inherited rhythm durations, 'sinus rhythm:900s;...' form",
+        nullable=False,
+    ),
+    Field(
+        "dominant_source_rhythm",
+        "string",
+        "Longest inherited rhythm, named through RHYTHM_NAMES; empty when none",
+        vocabulary=(
+            "sinus rhythm",
+            "pre-excitation (WPW)",
+            "ventricular bigeminy",
+            "ventricular tachycardia",
+            "atrial fibrillation",
+            "ventricular trigeminy",
+            "sino-atrial block",
+            "paced rhythm",
+            "second-degree heart block",
+            "sinus bradycardia",
+            "nodal (AV junctional) rhythm",
+            "supraventricular tachyarrhythmia",
+            "",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "n_source_aami_N",
+        "integer",
+        "Inherited beats in AAMI EC57 class N (normal)",
+        nullable=False,
+    ),
+    Field(
+        "n_source_aami_S",
+        "integer",
+        "Inherited beats in AAMI EC57 class S (supraventricular ectopic)",
+        nullable=False,
+    ),
+    Field(
+        "n_source_aami_V",
+        "integer",
+        "Inherited beats in AAMI EC57 class V (ventricular ectopic)",
+        nullable=False,
+    ),
+    Field(
+        "n_source_aami_F",
+        "integer",
+        "Inherited beats in AAMI EC57 class F (fusion)",
+        nullable=False,
+    ),
+    Field(
+        "n_source_aami_Q",
+        "integer",
+        "Inherited beats in AAMI EC57 class Q (unclassifiable/paced)",
+        nullable=False,
+    ),
+    Field(
+        "n_auto_beats_pu",
+        "integer",
+        "Beats in the ecgpuwave output on both signals (.pu)",
+        nullable=False,
+    ),
+    Field(
+        "n_auto_beats_pu0",
+        "integer",
+        "Beats in the ecgpuwave output on signal 0 alone (.pu0)",
+        nullable=False,
+    ),
+    Field(
+        "n_auto_beats_pu1",
+        "integer",
+        "Beats in the ecgpuwave output on signal 1 alone (.pu1)",
+        nullable=False,
+    ),
+    Field(
+        "dominant_t_morphology",
+        "string",
+        "Most frequent ecgpuwave T-wave morphology class in .pu; empty when none",
+        vocabulary=(
+            "normal",
+            "inverted",
+            "only_upwards",
+            "only_downwards",
+            "biphasic_neg_pos",
+            "biphasic_pos_neg",
+            "",
+        ),
+        nullable=False,
+    ),
+    Field(
+        "t_morphology_counts",
+        "string",
+        "ecgpuwave T morphology counts, 'normal:20;...'",
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "Subject grouping: the record name except for the two European ST-T pairs "
+        "(e0121+e0122, e0124+e0126) that are one subject each - 103 subjects at most",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Copy of source_database, for fold construction",
+        vocabulary=("mitdb", "stdb", "svdb", "ltdb", "edb", "nsrdb", "sddb", "bih_control"),
+        nullable=False,
+    ),
+)

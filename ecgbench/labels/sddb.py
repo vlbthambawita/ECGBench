@@ -122,6 +122,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
 from ecgbench.labels.svdb import AAMI_CLASSES, AAMI_ORDER
 
 if TYPE_CHECKING:
@@ -923,3 +924,795 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "sex",
+        "string",
+        "From CLINICAL_TABLE, transcribed from the PhysioNet landing page - nothing "
+        "clinical ships inside the files; empty when unknown",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "From the clinical table; missing when 'Unknown'",
+        unit="year",
+    ),
+    Field(
+        "history",
+        "string",
+        "Clinical history verbatim from the table, incl. 'Unknown'",
+        nullable=False,
+    ),
+    Field(
+        "has_history",
+        "boolean",
+        "history is a real entry, not Unknown",
+        nullable=False,
+    ),
+    Field(
+        "medication",
+        "string",
+        "Medication verbatim from the table",
+        nullable=False,
+    ),
+    Field(
+        "has_medication",
+        "boolean",
+        "medication is a real entry",
+        nullable=False,
+    ),
+    Field(
+        "underlying_rhythm",
+        "string",
+        "The landing page's 'Underlying Cardiac Rhythm' verbatim - the AF label to use, "
+        "never the ari_afib_* columns",
+        nullable=False,
+    ),
+    Field(
+        "rhythm_class",
+        "string",
+        "underlying_rhythm reduced to three classes (18 sinus, 4 afib, 1 paced); the "
+        "config's label column",
+        vocabulary=("sinus", "afib", "paced"),
+        nullable=False,
+    ),
+    Field(
+        "has_pacing",
+        "boolean",
+        "underlying_rhythm mentions pacing",
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 250 Hz (about 25 h)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Header sampling rate, 250 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header channel names pipe-joined, 'ECG|ECG'",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "string",
+        "Per-channel gains pipe-joined; estimates only, the Holters were not amplitude "
+        "calibrated",
+        nullable=False,
+        example="800|800",
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Header base time; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "vf_onset_secs",
+        "number",
+        "Onset of the terminal ventricular fibrillation from the header's '#vfon:' comment, "
+        "the one clinical fact the files carry; missing in 3 records",
+        unit="s",
+    ),
+    Field(
+        "has_vf_onset",
+        "boolean",
+        "vf_onset_secs is present",
+        nullable=False,
+    ),
+    Field(
+        "vf_onset_fraction",
+        "number",
+        "vf_onset_secs over the record",
+    ),
+    Field(
+        "secs_after_vf_onset",
+        "number",
+        "Recording remaining after VF onset",
+        unit="s",
+    ),
+    Field(
+        "has_audited_annotation",
+        "boolean",
+        "A .atr exists: the audited reference, for only 12 of 23 records. Filter on this "
+        "before using any atr_* column.",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_N",
+        "integer",
+        "Audited (.atr) beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_B",
+        "integer",
+        "Audited (.atr) beats annotated 'B' (bundle branch block beat (unspecified))",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_V",
+        "integer",
+        "Audited (.atr) beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_/",
+        "integer",
+        "Audited (.atr) beats annotated '/' (paced beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_J",
+        "integer",
+        "Audited (.atr) beats annotated 'J' (nodal (junctional) premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_f",
+        "integer",
+        "Audited (.atr) beats annotated 'f' (fusion of paced and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_S",
+        "integer",
+        "Audited (.atr) beats annotated 'S' (supraventricular premature or ectopic beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_F",
+        "integer",
+        "Audited (.atr) beats annotated 'F' (fusion of ventricular and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_Q",
+        "integer",
+        "Audited (.atr) beats annotated 'Q' (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_E",
+        "integer",
+        "Audited (.atr) beats annotated 'E' (ventricular escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_beat_a",
+        "integer",
+        "Audited (.atr) beats annotated 'a' (aberrated atrial premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "atr_aami_N",
+        "integer",
+        "Audited (.atr) beats in AAMI EC57 class N (normal); the two annotators use "
+        "disjoint symbol vocabularies, so these are the only cross-annotator-comparable "
+        "counts",
+        nullable=False,
+    ),
+    Field(
+        "atr_aami_S",
+        "integer",
+        "Audited (.atr) beats in AAMI EC57 class S (supraventricular ectopic); the two "
+        "annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "atr_aami_V",
+        "integer",
+        "Audited (.atr) beats in AAMI EC57 class V (ventricular ectopic); the two "
+        "annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "atr_aami_F",
+        "integer",
+        "Audited (.atr) beats in AAMI EC57 class F (fusion); the two annotators use "
+        "disjoint symbol vocabularies, so these are the only cross-annotator-comparable "
+        "counts",
+        nullable=False,
+    ),
+    Field(
+        "atr_aami_Q",
+        "integer",
+        "Audited (.atr) beats in AAMI EC57 class Q (unclassifiable/paced); the two "
+        "annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_rhythm_changes",
+        "integer",
+        "Audited (.atr) '+' rhythm markers",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_quality_changes",
+        "integer",
+        "Audited (.atr) '~' quality changes",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_isolated_artifacts",
+        "integer",
+        "Audited (.atr) '|' isolated artefact markers",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_learning",
+        "integer",
+        "Audited (.atr) '?' LEARN annotations (50 open every .ari record)",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_st_markers",
+        "integer",
+        "Audited (.atr) 's' ST-change markers",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_annotations",
+        "integer",
+        "Audited (.atr) annotations of every kind",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_beats",
+        "integer",
+        "Audited (.atr) beats (sum of the beat columns)",
+        nullable=False,
+    ),
+    Field(
+        "atr_n_veb",
+        "integer",
+        "Audited (.atr) ventricular ectopic beats (AAMI V)",
+        nullable=False,
+    ),
+    Field(
+        "atr_veb_fraction",
+        "number",
+        "Ventricular ectopic beats over beats",
+    ),
+    Field(
+        "atr_veb_per_hour",
+        "number",
+        "Ventricular ectopic beats per hour",
+    ),
+    Field(
+        "atr_n_sveb",
+        "integer",
+        "Audited (.atr) supraventricular ectopic beats (AAMI S)",
+        nullable=False,
+    ),
+    Field(
+        "atr_sveb_fraction",
+        "number",
+        "Supraventricular ectopic beats over beats",
+    ),
+    Field(
+        "atr_n_paced_beats",
+        "integer",
+        "Audited (.atr) paced beats",
+        nullable=False,
+    ),
+    Field(
+        "atr_paced_fraction",
+        "number",
+        "Paced beats over beats",
+    ),
+    Field(
+        "atr_n_ectopic_beats",
+        "integer",
+        "Audited (.atr) beats outside AAMI class N",
+        nullable=False,
+    ),
+    Field(
+        "atr_ectopic_fraction",
+        "number",
+        "Ectopic beats over beats",
+    ),
+    Field(
+        "atr_n_st_episodes",
+        "integer",
+        "Audited (.atr) ST episodes opened by an '(ST<ch><dir>' aux string",
+        nullable=False,
+    ),
+    Field(
+        "atr_afib_secs",
+        "number",
+        "Seconds the Audited (.atr) '+' markers spell (AFIB; the audited files carry almost "
+        "none",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "atr_afib_fraction",
+        "number",
+        "afib_secs over asserted rhythm time",
+    ),
+    Field(
+        "atr_n_afib_episodes",
+        "integer",
+        "(AFIB episodes",
+        nullable=False,
+    ),
+    Field(
+        "atr_has_rhythm_annotation",
+        "boolean",
+        "Any '+' marker present",
+        nullable=False,
+    ),
+    Field(
+        "atr_rhythm_asserted_secs",
+        "number",
+        "Seconds covered by a rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "atr_rhythm_head_unasserted_secs",
+        "number",
+        "Seconds before the first rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "atr_noisy_secs",
+        "number",
+        "Seconds annotated noisy. The '~' subtype here is 0 or 51, not a channel bitmask, "
+        "so no per-channel split is reported.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "atr_clean_secs",
+        "number",
+        "Seconds annotated clean",
+        unit="s",
+    ),
+    Field(
+        "atr_quality_head_unasserted_secs",
+        "number",
+        "Seconds before the first '~'",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "atr_quality_subtypes",
+        "string",
+        "Distinct '~' subtypes seen, pipe-joined ('0|51'); empty when none",
+        nullable=False,
+    ),
+    Field(
+        "atr_annotated_secs",
+        "number",
+        "Span from first to last beat",
+        unit="s",
+    ),
+    Field(
+        "atr_unannotated_head_secs",
+        "number",
+        "Seconds before the first beat",
+        unit="s",
+    ),
+    Field(
+        "atr_unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat; the audited .atr stops at exactly 24 h in four "
+        "records and 2,000-5,000 s early elsewhere",
+        unit="s",
+    ),
+    Field(
+        "atr_annotated_fraction",
+        "number",
+        "annotated_secs over the record",
+    ),
+    Field(
+        "atr_mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s, spanning a terminal arrhythmia - a "
+        "description of the annotation file, not physiology",
+        unit="bpm",
+    ),
+    Field(
+        "atr_sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "atr_rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "atr_n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_N",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_r",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'r' (R-on-T premature ventricular "
+        "contraction)",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_S",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'S' (supraventricular premature or "
+        "ectopic beat)",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_V",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_E",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'E' (ventricular escape beat)",
+        nullable=False,
+    ),
+    Field(
+        "ari_beat_Q",
+        "integer",
+        "Unaudited detector (.ari) beats annotated 'Q' (unclassifiable beat)",
+        nullable=False,
+    ),
+    Field(
+        "ari_aami_N",
+        "integer",
+        "Unaudited detector (.ari) beats in AAMI EC57 class N (normal); the two annotators "
+        "use disjoint symbol vocabularies, so these are the only cross-annotator-comparable "
+        "counts",
+        nullable=False,
+    ),
+    Field(
+        "ari_aami_S",
+        "integer",
+        "Unaudited detector (.ari) beats in AAMI EC57 class S (supraventricular ectopic); "
+        "the two annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "ari_aami_V",
+        "integer",
+        "Unaudited detector (.ari) beats in AAMI EC57 class V (ventricular ectopic); the "
+        "two annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "ari_aami_F",
+        "integer",
+        "Unaudited detector (.ari) beats in AAMI EC57 class F (fusion); the two annotators "
+        "use disjoint symbol vocabularies, so these are the only cross-annotator-comparable "
+        "counts",
+        nullable=False,
+    ),
+    Field(
+        "ari_aami_Q",
+        "integer",
+        "Unaudited detector (.ari) beats in AAMI EC57 class Q (unclassifiable/paced); the "
+        "two annotators use disjoint symbol vocabularies, so these are the only "
+        "cross-annotator-comparable counts",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_rhythm_changes",
+        "integer",
+        "Unaudited detector (.ari) '+' rhythm markers",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_quality_changes",
+        "integer",
+        "Unaudited detector (.ari) '~' quality changes",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_isolated_artifacts",
+        "integer",
+        "Unaudited detector (.ari) '|' isolated artefact markers",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_learning",
+        "integer",
+        "Unaudited detector (.ari) '?' LEARN annotations (50 open every .ari record)",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_st_markers",
+        "integer",
+        "Unaudited detector (.ari) 's' ST-change markers",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_annotations",
+        "integer",
+        "Unaudited detector (.ari) annotations of every kind",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_beats",
+        "integer",
+        "Unaudited detector (.ari) beats (sum of the beat columns)",
+        nullable=False,
+    ),
+    Field(
+        "ari_n_veb",
+        "integer",
+        "Unaudited detector (.ari) ventricular ectopic beats (AAMI V)",
+        nullable=False,
+    ),
+    Field(
+        "ari_veb_fraction",
+        "number",
+        "Ventricular ectopic beats over beats",
+    ),
+    Field(
+        "ari_veb_per_hour",
+        "number",
+        "Ventricular ectopic beats per hour",
+    ),
+    Field(
+        "ari_n_sveb",
+        "integer",
+        "Unaudited detector (.ari) supraventricular ectopic beats (AAMI S)",
+        nullable=False,
+    ),
+    Field(
+        "ari_sveb_fraction",
+        "number",
+        "Supraventricular ectopic beats over beats",
+    ),
+    Field(
+        "ari_n_paced_beats",
+        "integer",
+        "Unaudited detector (.ari) paced beats",
+        nullable=False,
+    ),
+    Field(
+        "ari_paced_fraction",
+        "number",
+        "Paced beats over beats",
+    ),
+    Field(
+        "ari_n_ectopic_beats",
+        "integer",
+        "Unaudited detector (.ari) beats outside AAMI class N",
+        nullable=False,
+    ),
+    Field(
+        "ari_ectopic_fraction",
+        "number",
+        "Ectopic beats over beats",
+    ),
+    Field(
+        "ari_n_st_episodes",
+        "integer",
+        "Unaudited detector (.ari) ST episodes opened by an '(ST<ch><dir>' aux string",
+        nullable=False,
+    ),
+    Field(
+        "ari_afib_secs",
+        "number",
+        "Seconds the Unaudited detector (.ari) '+' markers spell (AFIB. NOT an atrial "
+        "fibrillation label: wrong in both directions against the clinical table (0.95% in "
+        "AF record 37, 22-36% in six sinus records)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ari_afib_fraction",
+        "number",
+        "afib_secs over asserted rhythm time",
+    ),
+    Field(
+        "ari_n_afib_episodes",
+        "integer",
+        "(AFIB episodes",
+        nullable=False,
+    ),
+    Field(
+        "ari_has_rhythm_annotation",
+        "boolean",
+        "Any '+' marker present",
+        nullable=False,
+    ),
+    Field(
+        "ari_rhythm_asserted_secs",
+        "number",
+        "Seconds covered by a rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ari_rhythm_head_unasserted_secs",
+        "number",
+        "Seconds before the first rhythm marker",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ari_noisy_secs",
+        "number",
+        "Seconds annotated noisy. The '~' subtype here is 0 or 51, not a channel bitmask, "
+        "so no per-channel split is reported.",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ari_clean_secs",
+        "number",
+        "Seconds annotated clean",
+        unit="s",
+    ),
+    Field(
+        "ari_quality_head_unasserted_secs",
+        "number",
+        "Seconds before the first '~'",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "ari_quality_subtypes",
+        "string",
+        "Distinct '~' subtypes seen, pipe-joined ('0|51'); empty when none",
+        nullable=False,
+    ),
+    Field(
+        "ari_annotated_secs",
+        "number",
+        "Span from first to last beat",
+        unit="s",
+    ),
+    Field(
+        "ari_unannotated_head_secs",
+        "number",
+        "Seconds before the first beat",
+        unit="s",
+    ),
+    Field(
+        "ari_unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat; the audited .atr stops at exactly 24 h in four "
+        "records and 2,000-5,000 s early elsewhere",
+        unit="s",
+    ),
+    Field(
+        "ari_annotated_fraction",
+        "number",
+        "annotated_secs over the record",
+    ),
+    Field(
+        "ari_mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s, spanning a terminal arrhythmia - a "
+        "description of the annotation file, not physiology",
+        unit="bpm",
+    ),
+    Field(
+        "ari_sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "ari_rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "ari_n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s",
+        nullable=False,
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "Copy of ari_mean_hr_bpm, the annotator covering all 23",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Copy of ari_sdnn_ms",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Copy of ari_rmssd_ms",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "Copy of ari_n_rr_rejected",
+        nullable=False,
+    ),
+    Field(
+        "cohort_label",
+        "string",
+        "Constant: every subject experienced sudden cardiac death during the recording",
+        vocabulary=("sudden_cardiac_death",),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="30",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "rhythm_class, with unknown for a record not in the clinical table",
+        vocabulary=("sinus", "afib", "paced", "unknown"),
+        nullable=False,
+    ),
+)

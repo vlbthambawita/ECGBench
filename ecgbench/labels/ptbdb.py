@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -159,3 +161,352 @@ def _pool_rare(diagnoses: list[str]) -> list[str]:
             len(rare), MIN_CLASS_SIZE, OTHER, sorted(rare),
         )
     return [OTHER if d in rare else d for d in named]
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Header 'age' as a number; missing where it does not parse",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Header 'sex' as shipped, lower-case; empty for patient285/s0544_re",
+        vocabulary=("male", "female", ""),
+        nullable=False,
+    ),
+    Field(
+        "ECG date",
+        "string",
+        "Header 'ECG date' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Diagnose",
+        "string",
+        "Header section marker 'Diagnose:', which carries no value",
+        nullable=False,
+    ),
+    Field(
+        "Reason for admission",
+        "string",
+        "Header 'Reason for admission', the diagnosis; empty ('n/a') for 27 records. Also "
+        "returned as diagnosis.",
+        nullable=False,
+    ),
+    Field(
+        "Acute infarction (localization)",
+        "string",
+        "Header 'Acute infarction (localization)' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Former infarction (localization)",
+        "string",
+        "Header 'Former infarction (localization)' verbatim; empty where the source says "
+        "n/a",
+        nullable=False,
+    ),
+    Field(
+        "Additional diagnoses",
+        "string",
+        "Header 'Additional diagnoses' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Smoker",
+        "string",
+        "Header 'Smoker' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Number of coronary vessels involved",
+        "string",
+        "Header 'Number of coronary vessels involved' verbatim; empty where the source says "
+        "n/a",
+        nullable=False,
+    ),
+    Field(
+        "Infarction date (acute)",
+        "string",
+        "Header 'Infarction date (acute)' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Previous infarction (1) date",
+        "string",
+        "Header 'Previous infarction (1) date' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Previous infarction (2) date",
+        "string",
+        "Header 'Previous infarction (2) date' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Hemodynamics",
+        "string",
+        "Header section marker 'Hemodynamics:', which carries no value",
+        nullable=False,
+    ),
+    Field(
+        "Catheterization date",
+        "string",
+        "Header 'Catheterization date' under Hemodynamics (the first of its two "
+        "occurrences)",
+        nullable=False,
+    ),
+    Field(
+        "Ventriculography",
+        "string",
+        "Header 'Ventriculography' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Chest X-ray",
+        "string",
+        "Header 'Chest X-ray' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Peripheral blood Pressure (syst/diast)",
+        "string",
+        "Header 'Peripheral blood Pressure (syst/diast)' verbatim; European decimal commas "
+        "(e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary artery pressure (at rest) (syst/diast)",
+        "string",
+        "Header 'Pulmonary artery pressure (at rest) (syst/diast)' verbatim; European "
+        "decimal commas (e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary artery pressure (at rest) (mean)",
+        "string",
+        "Header 'Pulmonary artery pressure (at rest) (mean)' verbatim; European decimal "
+        "commas (e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary capillary wedge pressure (at rest)",
+        "string",
+        "Header 'Pulmonary capillary wedge pressure (at rest)' verbatim; European decimal "
+        "commas (e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Cardiac output (at rest)",
+        "string",
+        "Header 'Cardiac output (at rest)' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Cardiac index (at rest)",
+        "string",
+        "Header 'Cardiac index (at rest)' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Stroke volume index (at rest)",
+        "string",
+        "Header 'Stroke volume index (at rest)' verbatim; European decimal commas (e.g. "
+        "'4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary artery pressure (laod) (syst/diast)",
+        "string",
+        "Header 'Pulmonary artery pressure (laod) (syst/diast)' verbatim ('laod' is the "
+        "source's own typo); European decimal commas (e.g. '4,34 l/min'), kept as text; "
+        "empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary artery pressure (laod) (mean)",
+        "string",
+        "Header 'Pulmonary artery pressure (laod) (mean)' verbatim ('laod' is the source's "
+        "own typo); European decimal commas (e.g. '4,34 l/min'), kept as text; empty where "
+        "the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Pulmonary capillary wedge pressure (load)",
+        "string",
+        "Header 'Pulmonary capillary wedge pressure (load)' verbatim; European decimal "
+        "commas (e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Cardiac output (load)",
+        "string",
+        "Header 'Cardiac output (load)' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Cardiac index (load)",
+        "string",
+        "Header 'Cardiac index (load)' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Stroke volume index (load)",
+        "string",
+        "Header 'Stroke volume index (load)' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Aorta (at rest) (syst/diast)",
+        "string",
+        "Header 'Aorta (at rest) (syst/diast)' verbatim; European decimal commas (e.g. "
+        "'4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Aorta (at rest) mean",
+        "string",
+        "Header 'Aorta (at rest) mean' verbatim; European decimal commas (e.g. '4,34 "
+        "l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Left ventricular enddiastolic pressure",
+        "string",
+        "Header 'Left ventricular enddiastolic pressure' verbatim; European decimal commas "
+        "(e.g. '4,34 l/min'), kept as text; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Left coronary artery stenoses (RIVA)",
+        "string",
+        "Header 'Left coronary artery stenoses (RIVA)' verbatim; empty where the source "
+        "says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Left coronary artery stenoses (RCX)",
+        "string",
+        "Header 'Left coronary artery stenoses (RCX)' verbatim; empty where the source says "
+        "n/a",
+        nullable=False,
+    ),
+    Field(
+        "Right coronary artery stenoses (RCA)",
+        "string",
+        "Header 'Right coronary artery stenoses (RCA)' verbatim; empty where the source "
+        "says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Echocardiography",
+        "string",
+        "Header 'Echocardiography' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Therapy",
+        "string",
+        "Header section marker 'Therapy:', which carries no value",
+        nullable=False,
+    ),
+    Field(
+        "Infarction date",
+        "string",
+        "Header 'Infarction date' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Catheterization date (2)",
+        "string",
+        "Header 'Catheterization date' under Therapy, the repeated key that a dict parse "
+        "would silently overwrite",
+        nullable=False,
+    ),
+    Field(
+        "Admission date",
+        "string",
+        "Header 'Admission date' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Medication pre admission",
+        "string",
+        "Header 'Medication pre admission' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Start lysis therapy (hh.mm)",
+        "string",
+        "Header 'Start lysis therapy (hh.mm)' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Lytic agent",
+        "string",
+        "Header 'Lytic agent' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Dosage (lytic agent)",
+        "string",
+        "Header 'Dosage (lytic agent)' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Additional medication",
+        "string",
+        "Header 'Additional medication' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "In hospital medication",
+        "string",
+        "Header 'In hospital medication' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "Medication after discharge",
+        "string",
+        "Header 'Medication after discharge' verbatim; empty where the source says n/a",
+        nullable=False,
+    ),
+    Field(
+        "patient_id",
+        "string",
+        "The patientNNN directory; 113 of 290 patients have more than one recording",
+        nullable=False,
+        example="patient001",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "patientNNN/<record> WFDB stem",
+        nullable=False,
+    ),
+    Field(
+        "diagnosis",
+        "string",
+        "'Reason for admission' verbatim; empty for the 27 n/a",
+        nullable=False,
+    ),
+    Field(
+        "primary_diagnosis",
+        "string",
+        "diagnosis with empty as UNKNOWN and classes under 10 records pooled into OTHER; "
+        "stratification only, do not train on it",
+        nullable=False,
+    ),
+)

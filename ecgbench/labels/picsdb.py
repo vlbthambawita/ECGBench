@@ -81,6 +81,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -686,3 +688,294 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "subject_id",
+        "string",
+        "'infantN', the record name without '_ecg'; the config's patient_id_column",
+        nullable=False,
+        example="infant1",
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem of the ECG record; flat directory",
+        nullable=False,
+        example="infant1_ecg",
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples in the ECG record",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over sampling_rate (20 to 70 hours)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Per-record rate: 250 Hz for infant1 and infant5, 500 Hz for the other eight, so a "
+        "window in samples is not a window in time",
+        unit="Hz",
+        vocabulary=("250", "500"),
+        nullable=False,
+    ),
+    Field(
+        "lead_name",
+        "string",
+        "Header channel name of the single ECG channel",
+        nullable=False,
+    ),
+    Field(
+        "adc_gain",
+        "number",
+        "Header ADC gain",
+        unit="adu/mV",
+        nullable=False,
+    ),
+    Field(
+        "adc_baseline",
+        "number",
+        "Header ADC baseline",
+        unit="adu",
+        nullable=False,
+    ),
+    Field(
+        "min_mv",
+        "number",
+        "Minimum sample value",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "max_mv",
+        "number",
+        "Maximum sample value",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "rail_low_mv",
+        "number",
+        "The -32767 converter rail in millivolts",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "rail_high_mv",
+        "number",
+        "The +32767 converter rail in millivolts",
+        unit="mV",
+        nullable=False,
+    ),
+    Field(
+        "n_rail_samples",
+        "integer",
+        "Samples at either 16-bit rail; a handful for eight records, 422,773 for infant5",
+        nullable=False,
+    ),
+    Field(
+        "rail_secs",
+        "number",
+        "n_rail_samples in seconds (1,691 s for infant5)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "rail_fraction",
+        "number",
+        "rail_secs over the record",
+    ),
+    Field(
+        "n_invalid_samples",
+        "integer",
+        "Samples at WFDB's -32768 invalid marker: 0 in every record, exposed so a "
+        "re-release introducing one is visible",
+        nullable=False,
+    ),
+    Field(
+        "flat_secs",
+        "number",
+        "Seconds inside constant runs of a second or more (239 to 3,147 s per record), "
+        "which the whole-record flat_line check cannot see",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "flat_fraction",
+        "number",
+        "flat_secs over the record",
+    ),
+    Field(
+        "longest_flat_secs",
+        "number",
+        "Longest single constant run (1,456 s in infant5)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "longest_flat_value_adu",
+        "integer",
+        "Digital value held during that run",
+        unit="adu",
+        nullable=False,
+    ),
+    Field(
+        "n_bradycardias",
+        "integer",
+        "Manually validated bradycardia onsets in the .atr ('[' marks; 622 across the "
+        "release): heart rate under 100 bpm for at least two beats, events within 3 min "
+        "aggregated",
+        nullable=False,
+    ),
+    Field(
+        "bradycardias_per_hour",
+        "number",
+        "n_bradycardias per recorded hour",
+    ),
+    Field(
+        "bradycardia_onsets_secs",
+        "string",
+        "Pipe-joined onset times in seconds; empty when none. The onset marks the beat "
+        "opening the first long RR interval, one sample late in 493 of 622, so never isin() "
+        "it against the R peaks.",
+        nullable=False,
+    ),
+    Field(
+        "first_bradycardia_secs",
+        "number",
+        "Time of the first onset",
+        unit="s",
+    ),
+    Field(
+        "last_bradycardia_secs",
+        "number",
+        "Time of the last onset",
+        unit="s",
+    ),
+    Field(
+        "min_interevent_secs",
+        "number",
+        "Shortest gap between consecutive onsets (369 s at the least in the release)",
+        unit="s",
+    ),
+    Field(
+        "n_rpeaks",
+        "integer",
+        "Manually verified R peaks in the .qrsc (3,797,503 across the release)",
+        nullable=False,
+    ),
+    Field(
+        "annotated_head_secs",
+        "number",
+        "Seconds before the first R peak; 1,631 s for infant5",
+        unit="s",
+    ),
+    Field(
+        "annotated_tail_secs",
+        "number",
+        "Seconds after the last R peak; 7,667 s (2.13 h) for infant10",
+        unit="s",
+    ),
+    Field(
+        "annotation_gap_secs",
+        "number",
+        "Summed internal gaps between R peaks longer than 10 s",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_annotation_gaps",
+        "integer",
+        "Internal gaps longer than 10 s (49 in infant10)",
+        nullable=False,
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "R-peak coverage of the record, 94.0% to 99.9%",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.2-3.0 s",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.2-3.0 s",
+        nullable=False,
+    ),
+    Field(
+        "resp_path",
+        "string",
+        "WFDB stem of the companion respiration record ('infantN_resp'), a separate record "
+        "and not a lead of the ECG; empty when its header cannot be read",
+        nullable=False,
+    ),
+    Field(
+        "resp_sampling_rate",
+        "integer",
+        "Respiration sampling rate: 50 Hz for nine infants, 500 for infant1; -1 when "
+        "unreadable",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "resp_n_samples",
+        "integer",
+        "Samples in the respiration record",
+        nullable=False,
+    ),
+    Field(
+        "resp_duration_secs",
+        "number",
+        "Respiration record duration; infant5's is 1.0 h longer than its ECG",
+        unit="s",
+    ),
+    Field(
+        "n_resp_peaks",
+        "integer",
+        "Algorithmic breath peaks in the .resp file, never manually vetted",
+        nullable=False,
+    ),
+    Field(
+        "cohort_label",
+        "string",
+        "Constant: every subject is a preterm infant in one NICU; the config's label "
+        "column. The product of this database is an event time, not a diagnosis.",
+        vocabulary=("preterm_infant",),
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "Constant, the same as cohort_label",
+        vocabulary=("preterm_infant",),
+        nullable=False,
+    ),
+)

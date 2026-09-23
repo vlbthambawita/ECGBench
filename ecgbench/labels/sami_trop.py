@@ -55,6 +55,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -186,3 +188,98 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         float(df["followup_years"].median()),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "row",
+        "integer",
+        "Position in exams.csv, which is the waveform's row in exams.hdf5: the release "
+        "ships no identifier dataset, and row order was verified from the sex/QRS amplitude "
+        "relation (Welch t 4.98 against a permutation maximum of 3.44)",
+        nullable=False,
+    ),
+    Field(
+        "age",
+        "integer",
+        "Age as shipped, 26-98",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "is_male",
+        "boolean",
+        "Sex flag as shipped",
+        nullable=False,
+    ),
+    Field(
+        "nn_predicted_age",
+        "number",
+        "Age predicted from the tracing by the network of Lima et al. - a model output, not "
+        "an observation; 22.6-95.9",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "normal_ecg",
+        "boolean",
+        "The only ECG label: 286 of 1,631 tracings flagged normal, the rest only known to "
+        "be not normal. Every patient has chronic Chagas cardiomyopathy, so a normal "
+        "tracing is not a healthy control.",
+        nullable=False,
+    ),
+    Field(
+        "death",
+        "boolean",
+        "Died during follow-up (104 patients); complete for all records",
+        nullable=False,
+    ),
+    Field(
+        "followup_years",
+        "number",
+        "Time to death or censoring (source column timey); complete, median 2.07, range "
+        "0.07-3.39",
+        unit="year",
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Derived from is_male",
+        vocabulary=("M", "F"),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Constant 4,096",
+        nullable=False,
+    ),
+    Field(
+        "duration_seconds",
+        "number",
+        "Constant 10.24 s",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 400 Hz",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "DEATH where death, else NORMAL where normal_ecg, else ABNORMAL_ALIVE (three "
+        "classes, because only 3 records are both dead and normal); the config's label "
+        "column",
+        vocabulary=("DEATH", "NORMAL", "ABNORMAL_ALIVE"),
+        nullable=False,
+    ),
+)

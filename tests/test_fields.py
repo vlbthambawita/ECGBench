@@ -930,6 +930,254 @@ def _build_mhd_effect_ecg_mri(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _build_ningbo_iva(tmp_path: Path) -> Path:
+    pd.DataFrame(
+        [
+            (1000364, "PVC", "Right", "AC", "female"),
+            (991591, "VT", "Left", "LCC", "male"),
+            (991592, "PVC", "Right", None, "female"),
+        ],
+        columns=["HospitalID", "Type", "LeftRight", "Sublocation", "Gender"],
+    ).to_csv(tmp_path / "Diagnosis.csv", index=False)
+    return tmp_path
+
+
+def _build_norwegian_athlete_ecg(tmp_path: Path) -> Path:
+    """Three headers: a borderline SL12 read, a STEMI alert, and a lowercase finding."""
+    headers = {
+        "ath_001": (
+            "#SL12: Sinus bradycardia with marked sinus arrhythmia, Right axis"
+            " deviation, Borderline ECG\n"
+            "#C: Sinus arrhythmia,  Normal ECG\n"
+        ),
+        "ath_002": (
+            "#SL12: ***Critical test result: STEMI, Sinus rhythm, ST elevation, consider"
+            " early repolarization, pericarditis, or injury, ** ** ACUTE MI/STEMI** **,"
+            " Abnormal EKG\n"
+            "#C: Normal sinus rhythm, Borderline ECG\n"
+        ),
+        "ath_005": (
+            "#SL12: Sinus bradycardia, Otherwise normal ECG\n"
+            "#C: Sinus bradycardia, normal sinus rhythm, First degree AV block, Normal ECG\n"
+        ),
+    }
+    (tmp_path / "RECORDS").write_text("\n".join(headers) + "\n", encoding="utf-8")
+    for name, comments in headers.items():
+        (tmp_path / f"{name}.hea").write_text(
+            f"{name} 12 500 5000\n{name}.dat 16 50000/mV 16 0 10251 49595 0 I\n{comments}",
+            encoding="utf-8",
+        )
+    return tmp_path
+
+
+def _build_nsrdb(tmp_path: Path) -> Path:
+    wfdb = pytest.importorskip("wfdb")
+    for name, comment in (("16265", "# 32 M"), ("16272", "# 20 F")):
+        (tmp_path / f"{name}.hea").write_text(
+            f"{name} 2 128 128000  8:04:00\n"
+            f"{name}.dat 212 0 12 0 -33 15756 0 ECG1\n"
+            f"{name}.dat 212 0 12 0 -65 -21174 0 ECG2\n"
+            f"{comment}\n",
+            encoding="utf-8",
+        )
+        wfdb.wrann(
+            name, "atr",
+            sample=np.array([100, 228, 356, 484, 612, 740, 900, 1028]),
+            symbol=["|", "N", "V", "N", "S", "~", "N", "~"],
+            subtype=np.array([0, 0, 0, 0, 0, 1, 0, 0]),
+            fs=128, write_dir=str(tmp_path),
+        )
+    (tmp_path / "RECORDS").write_text("16265\n16272\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_picsdb(tmp_path: Path) -> Path:
+    """Two infants' ECG records with .dat (the loader memmaps it) and their respiration."""
+    wfdb = pytest.importorskip("wfdb")
+
+    def record(name, d_signal, fs, lead, annotations=()):
+        wfdb.wrsamp(
+            name, fs=fs, units=["mV"], sig_name=[lead],
+            d_signal=np.asarray(d_signal, dtype=np.int16).reshape(-1, 1),
+            fmt=["16"], adc_gain=[800.0], baseline=[0], write_dir=str(tmp_path),
+        )
+        for extension, samples, symbol in annotations:
+            wfdb.wrann(
+                name, extension, sample=np.asarray(samples, dtype=np.int64),
+                symbol=[symbol] * len(samples), fs=fs, write_dir=str(tmp_path),
+            )
+
+    names = []
+    for infant, fs, lead in ((1, 250, "ECG"), (2, 500, "II")):
+        ecg, resp = f"infant{infant}_ecg", f"infant{infant}_resp"
+        signal = np.arange(20_000, dtype=np.int16) % 71
+        signal[:600] = -32767  # a spell at the converter rail
+        peaks = np.arange(200, 20_000, 200)
+        record(ecg, signal, fs, lead, [("qrsc", peaks, "N"), ("atr", [4001, 12001], "[")])
+        record(resp, np.arange(1000, dtype=np.int16), 50, "RESP",
+               [("resp", np.arange(5) * 100 + 10, "N")])
+        names += [ecg, resp]
+    (tmp_path / "RECORDS").write_text("\n".join(names) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+#: The 48 comment lines of a PTBDB header (47 keys; Catheterization date repeats),
+#: transcribed from PhysioNet's patient001/s0010_re.hea. Not verified against a
+#: local copy of the release - none is on this machine.
+_PTBDB_COMMENT_KEYS = (
+    "age", "sex", "ECG date", "Diagnose", "Reason for admission",
+    "Acute infarction (localization)", "Former infarction (localization)",
+    "Additional diagnoses", "Smoker", "Number of coronary vessels involved",
+    "Infarction date (acute)", "Previous infarction (1) date", "Previous infarction (2) date",
+    "Hemodynamics", "Catheterization date", "Ventriculography", "Chest X-ray",
+    "Peripheral blood Pressure (syst/diast)",
+    "Pulmonary artery pressure (at rest) (syst/diast)",
+    "Pulmonary artery pressure (at rest) (mean)",
+    "Pulmonary capillary wedge pressure (at rest)", "Cardiac output (at rest)",
+    "Cardiac index (at rest)", "Stroke volume index (at rest)",
+    "Pulmonary artery pressure (laod) (syst/diast)", "Pulmonary artery pressure (laod) (mean)",
+    "Pulmonary capillary wedge pressure (load)", "Cardiac output (load)",
+    "Cardiac index (load)", "Stroke volume index (load)", "Aorta (at rest) (syst/diast)",
+    "Aorta (at rest) mean", "Left ventricular enddiastolic pressure",
+    "Left coronary artery stenoses (RIVA)", "Left coronary artery stenoses (RCX)",
+    "Right coronary artery stenoses (RCA)", "Echocardiography", "Therapy",
+    "Infarction date", "Catheterization date", "Admission date", "Medication pre admission",
+    "Start lysis therapy (hh.mm)", "Lytic agent", "Dosage (lytic agent)",
+    "Additional medication", "In hospital medication", "Medication after discharge",
+)
+
+
+def _build_ptbdb(tmp_path: Path) -> Path:
+    """Two patients, three records, with the full 48-line comment block each."""
+    records = {
+        ("patient001", "s0010_re"): {"age": "81", "sex": "female",
+                                     "Reason for admission": "Myocardial infarction"},
+        ("patient002", "s0015lre"): {"age": "58", "sex": "male",
+                                     "Reason for admission": "Healthy control"},
+        ("patient002", "s0016lre"): {"age": "58", "sex": "", "Reason for admission": "n/a"},
+    }
+    for (patient, name), values in records.items():
+        d = tmp_path / patient
+        d.mkdir(exist_ok=True)
+        lines = [f"{name} 15 1000 38400", f"{name}.dat 16 2000 16 0 -489 -19 0 i"]
+        lines += [f"# {key}: {values.get(key, 'n/a')}" for key in _PTBDB_COMMENT_KEYS]
+        (d / f"{name}.hea").write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    return tmp_path
+
+
+def _build_qtdb(tmp_path: Path) -> Path:
+    """A MIT-BIH and a European ST-T excerpt, with manual q1c beats and one .atr."""
+    wfdb = pytest.importorskip("wfdb")
+    headers = {
+        "sel100": (
+            "sel100 2 250/360 225000\n"
+            "sel100.dat 212 200(0) 11 1024 945 -13873 0 MLII\n"
+            "sel100.dat 212 200(0) 11 1024 955 14507 0 V5\n"
+            "# 69 M 1085 1629 x1\n"
+            "# Aldomet, Inderal\n"
+            "#Produced by xform from record 100, beginning at 7:00.000\n"
+        ),
+        "sele0104": (
+            "sele0104 2 250 225000\n"
+            "sele0104.dat 212 200 12 0 -244 2025 0 D3\n"
+            "sele0104.dat 212 200 12 0 -297 -13904 0 D4\n"
+            "#Age: 47  Sex: M\n#Coronary artery disease\n#Coronary angiography\n"
+            "#Myocardial infarction\n#unspecified medication\n"
+            "#Recorder type: ICR model 7200\n"
+            "#Produced by xform from record e0104, beginning at 1:35:00.000\n"
+        ),
+    }
+    (tmp_path / "RECORDS").write_text("\n".join(headers) + "\n", encoding="utf-8")
+    samples, symbols, nums = [], [], []
+    for beat_start in (150000, 150250):
+        for offset, symbol, num in (
+            (0, "(", 0), (10, "p", 0), (20, ")", 0),
+            (40, "(", 1), (50, "N", 1), (62, ")", 1),
+            (80, "(", 2), (100, "t", 2), (144, ")", 2),
+            (160, "u", 3), (170, ")", 3),
+        ):
+            samples.append(beat_start + offset)
+            symbols.append(symbol)
+            nums.append(num)
+    for record, text in headers.items():
+        (tmp_path / f"{record}.hea").write_text(text, encoding="utf-8")
+        # wrann refuses a digit in the extension; rdann reads one happily.
+        wfdb.wrann(
+            record, "qxc", sample=np.array(samples), symbol=symbols, num=np.array(nums),
+            fs=250, write_dir=str(tmp_path),
+        )
+        (tmp_path / f"{record}.qxc").rename(tmp_path / f"{record}.q1c")
+        wfdb.wrann(
+            record, "pu", sample=np.array([150050, 150100, 150300, 150350]),
+            symbol=["N", "t", "N", "t"], num=np.array([0, 0, 0, 1]),
+            fs=250, write_dir=str(tmp_path),
+        )
+    wfdb.wrann(
+        "sel100", "atr",
+        sample=np.array([10, 300, 600, 900, 1200, 100000, 100300]),
+        symbol=["+", "N", "V", "A", '"', "+", "N"],
+        aux_note=["(N", "", "", "", "MISSB", "(AFIB", ""],
+        fs=250, write_dir=str(tmp_path),
+    )
+    return tmp_path
+
+
+def _build_sami_trop(tmp_path: Path) -> Path:
+    """exams.csv with exactly N_RECORDS rows, which the positional join enforces."""
+    from ecgbench.labels.sami_trop import N_RECORDS
+
+    n = N_RECORDS
+    rng = np.random.default_rng(0)
+    pd.DataFrame({
+        "exam_id": np.arange(1, n + 1),
+        "age": rng.integers(26, 98, n),
+        "is_male": rng.integers(0, 2, n).astype(bool),
+        "normal_ecg": np.arange(n) % 6 == 0,
+        "death": np.arange(n) % 16 == 0,
+        "timey": rng.uniform(0.07, 3.39, n).round(3),
+        "nn_predicted_age": rng.uniform(22.6, 95.9, n).round(1),
+    }).to_csv(tmp_path / "exams.csv", index=False)
+    return tmp_path
+
+
+def _build_sddb(tmp_path: Path) -> Path:
+    """Records 30 (both annotators, vfon) and 42 (detector only, no vfon)."""
+    wfdb = pytest.importorskip("wfdb")
+    (tmp_path / "30.hea").write_text(
+        "30 2 250 22099250 12:00:00\n"
+        "30.dat 212 800 12 0 51 -24065 0 ECG\n"
+        "30.dat 212 800 12 0 145 21051 0 ECG\n"
+        "#Produced by xform_new from record 30, beginning at 26:35.000\n"
+        "#vfon: 07:54:33\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "42.hea").write_text(
+        "42 2 250 22622500 12:00:00\n"
+        "42.dat 212 800 12 0 -1129 -2818 0 ECG\n"
+        "42.dat 212 800 12 0 552 -30989 0 ECG\n"
+        "#Produced by xform from record 42, beginning at 18:10.000\n",
+        encoding="utf-8",
+    )
+    for name in ("30", "42"):
+        wfdb.wrann(
+            name, "ari",
+            sample=np.array([100, 250, 500, 750, 800, 900, 1000, 1200, 1250, 1500]),
+            symbol=["?", "N", "r", "N", "+", "s", "N", "s", "N", "E"],
+            subtype=np.zeros(10, dtype=int),
+            aux_note=["", "", "", "", "(AFIB", "(ST0+", "", "ST0+)", "", ""],
+            fs=250, write_dir=str(tmp_path),
+        )
+    wfdb.wrann(
+        "30", "atr",
+        sample=np.array([250, 500, 750, 1000, 1250, 1500, 1750]),
+        symbol=["N", "B", "/", "~", "N", "~", "|"],
+        subtype=np.array([0, 0, 0, 51, 0, 0, 0]),
+        fs=250, write_dir=str(tmp_path),
+    )
+    (tmp_path / "RECORDS").write_text("30\n42\n", encoding="utf-8")
+    return tmp_path
+
+
 #: Dataset -> builder writing a minimal synthetic source tree into tmp_path.
 BUILDERS = {
     "ptbxl": _build_ptbxl,
@@ -967,13 +1215,21 @@ BUILDERS = {
     "ludb": _build_ludb,
     "medalcare_xl": _build_medalcare_xl,
     "mhd_effect_ecg_mri": _build_mhd_effect_ecg_mri,
+    # batch 5
+    "ningbo_iva": _build_ningbo_iva,
+    "norwegian_athlete_ecg": _build_norwegian_athlete_ecg,
+    "nsrdb": _build_nsrdb,
+    "picsdb": _build_picsdb,
+    "ptbdb": _build_ptbdb,
+    "qtdb": _build_qtdb,
+    "sami_trop": _build_sami_trop,
+    "sddb": _build_sddb,
 }
 
 #: Label-bearing datasets whose fields are not declared yet (later Phase 3 batches).
 PENDING = {
-    "ningbo_iva", "norwegian_athlete_ecg", "nsrdb", "picsdb", "ptbdb", "qtdb", "sami_trop",
-    "sddb", "shdb_af", "sph", "staffiii", "stdb", "svdb", "szdb", "tollet", "ucddb",
-    "wctecgdb", "zzu_pecg",
+    "shdb_af", "sph", "staffiii", "stdb", "svdb", "szdb", "tollet", "ucddb", "wctecgdb",
+    "zzu_pecg",
 }
 
 
@@ -1208,7 +1464,7 @@ class TestFieldsInTheMetadataLayer:
         meta = open_store().get("ptbxl")
         assert isinstance(meta.fields[0], FieldMeta)
         assert {f.name for f in meta.fields} == {f.name for f in fields_for(load_config("ptbxl"))}
-        assert open_store().get("qtdb").fields == ()  # pending
+        assert open_store().get("zzu_pecg").fields == ()  # pending
         assert open_store().get("ptb-xl-plus").fields == ()  # catalogue-only
 
     def test_field_text_is_searchable(self):
@@ -1260,11 +1516,11 @@ class TestFieldsCli:
         assert codes["constraints"]["enum"] == ["NORM", "MI", "STTC", "CD", "HYP"]
 
     def test_undeclared_and_unlabelled_datasets_say_so(self, capsys):
-        assert main(["fields", "qtdb"]) == 0
+        assert main(["fields", "zzu_pecg"]) == 0
         assert "not yet declared" in capsys.readouterr().out
         assert main(["fields", "mimic_iv_ecg_demo"]) == 0
         assert "no labels" in capsys.readouterr().out
-        assert main(["fields", "qtdb", "--format", "json"]) == 0
+        assert main(["fields", "zzu_pecg", "--format", "json"]) == 0
         assert json.loads(capsys.readouterr().out) == []
 
     def test_unknown_dataset_exits_nonzero(self, capsys):

@@ -60,6 +60,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -320,3 +322,140 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         len(out), n_critical, overcalled,
     )
     return out
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "sl12_raw",
+        "string",
+        "Interpretation by the GE Marquette SL12 algorithm (header '#SL12:'), verbatim: a "
+        "comma-separated statement list whose last statement is the overall verdict",
+        nullable=False,
+    ),
+    Field(
+        "sl12_findings",
+        "array[string]",
+        "Statements of the GE Marquette SL12 algorithm (header '#SL12:') minus the verdict "
+        "and the asterisk alerts, split on commas except inside the three known "
+        "comma-carrying GE statements (MULTI_COMMA_STATEMENTS)",
+        nullable=False,
+    ),
+    Field(
+        "sl12_verdict",
+        "string",
+        "Normalised overall verdict of the GE Marquette SL12 algorithm (header '#SL12:'); "
+        "ath_010's 'Abnormal EKG' folds into 'Abnormal ECG'",
+        vocabulary=("Normal ECG", "Otherwise normal ECG", "Borderline ECG", "Abnormal ECG"),
+        nullable=False,
+    ),
+    Field(
+        "sl12_verdict_raw",
+        "string",
+        "The verdict as written",
+        nullable=False,
+    ),
+    Field(
+        "sl12_critical_test_result",
+        "string",
+        "Text after '***Critical test result:' (4 SL12 records say STEMI); missing "
+        "otherwise, always missing for the cardiologist",
+    ),
+    Field(
+        "sl12_acute_alert",
+        "string",
+        "The '** ** ACUTE ...** **' alert statement stripped of asterisks; missing "
+        "otherwise",
+    ),
+    Field(
+        "sl12_is_normal",
+        "boolean",
+        "verdict is 'Normal ECG' or 'Otherwise normal ECG' - grouping GE's 'otherwise "
+        "normal' with normal is this column's interpretation",
+        nullable=False,
+    ),
+    Field(
+        "sl12_n_findings",
+        "integer",
+        "Length of the findings list",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_raw",
+        "string",
+        "Interpretation by the athlete-ECG cardiologist (header '#C:'), verbatim: a "
+        "comma-separated statement list whose last statement is the overall verdict",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_findings",
+        "array[string]",
+        "Statements of the athlete-ECG cardiologist (header '#C:') minus the verdict and "
+        "the asterisk alerts, split on commas except inside the three known comma-carrying "
+        "GE statements (MULTI_COMMA_STATEMENTS)",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_verdict",
+        "string",
+        "Normalised overall verdict of the athlete-ECG cardiologist (header '#C:'); "
+        "ath_010's 'Abnormal EKG' folds into 'Abnormal ECG'",
+        vocabulary=("Normal ECG", "Otherwise normal ECG", "Borderline ECG", "Abnormal ECG"),
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_verdict_raw",
+        "string",
+        "The verdict as written",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_critical_test_result",
+        "string",
+        "Text after '***Critical test result:' (4 SL12 records say STEMI); missing "
+        "otherwise, always missing for the cardiologist",
+    ),
+    Field(
+        "cardiologist_acute_alert",
+        "string",
+        "The '** ** ACUTE ...** **' alert statement stripped of asterisks; missing "
+        "otherwise",
+    ),
+    Field(
+        "cardiologist_is_normal",
+        "boolean",
+        "verdict is 'Normal ECG' or 'Otherwise normal ECG' - grouping GE's 'otherwise "
+        "normal' with normal is this column's interpretation",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_n_findings",
+        "integer",
+        "Length of the findings list",
+        nullable=False,
+    ),
+    Field(
+        "cardiologist_primary_rhythm",
+        "string",
+        "The rhythm the cardiologist opens the reading with; every record starts with one "
+        "of three (16 / 7 / 5), the only reasonably balanced ground-truth field and the "
+        "config's label column",
+        vocabulary=("Normal sinus rhythm", "Sinus arrhythmia", "Sinus bradycardia"),
+        nullable=False,
+    ),
+    Field(
+        "verdicts_match",
+        "boolean",
+        "sl12_verdict equals cardiologist_verdict",
+        nullable=False,
+    ),
+    Field(
+        "sl12_overcalls",
+        "boolean",
+        "SL12 read Borderline or Abnormal where the cardiologist read normal",
+        nullable=False,
+    ),
+)

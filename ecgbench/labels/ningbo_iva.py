@@ -67,6 +67,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -182,3 +184,71 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
         df["left_right"].value_counts().to_dict(),
     )
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "left_right",
+        "string",
+        "Outflow tract the arrhythmia was ablated from, proven by a successful catheter "
+        "ablation rather than read off the ECG: RVOT (257) or LVOT (77). The label to use, "
+        "and the config's label column. Shipped as Right/Left.",
+        vocabulary=("RVOT", "LVOT"),
+        nullable=False,
+    ),
+    Field(
+        "sublocation",
+        "string",
+        "Anatomic site within the tract as shipped (LC, LCC, AMC, RVOTOther, ...), 12 "
+        "values with five under ten cases; blank for 40 patients that the paper's Table 2 "
+        "assigns to RVOTOther/NA, left blank here rather than inferred",
+        example="LCC",
+    ),
+    Field(
+        "arrhythmia_type",
+        "string",
+        "Presenting arrhythmia as shipped: PVC 329, VT 5. The paper reports 325/9 and "
+        "cannot be reproduced from the files - do not quote its 9.",
+        vocabulary=("PVC", "VT"),
+        nullable=False,
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex with the release's lower-case spelling (female 230, male 104)",
+        vocabulary=("female", "male"),
+        nullable=False,
+    ),
+    Field(
+        "sex_code",
+        "string",
+        "sex in the F/M form the rest of the catalogue uses",
+        vocabulary=("F", "M"),
+        nullable=False,
+    ),
+    Field(
+        "sampling_rate",
+        "integer",
+        "Constant 2000 Hz (EP-WorkMate); confirmed from RR intervals",
+        unit="Hz",
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "The canonical raw 12-lead CSV, PVCVTRawECGData/<HospitalID>.csv",
+        nullable=False,
+    ),
+    Field(
+        "signal_path_denoised",
+        "string",
+        "The release's wavelet-denoised copy, PVCVTECGData/<HospitalID>.csv. Reference "
+        "only: denoised per lead so Einthoven's relations no longer hold, and 106 of 334 "
+        "files are shorter than their raw counterpart, so a window does not transfer.",
+        nullable=False,
+    ),
+)

@@ -73,6 +73,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from ecgbench.labels._fields import Field
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -418,3 +420,308 @@ def load_labels(data_path: Path | str, config: DatasetConfig) -> pd.DataFrame:
     df = df.set_index("record_name")
     df.index.name = config.record_id_column
     return df
+
+
+# --------------------------------------------------------------------------- fields
+
+#: The columns ``load_labels`` returns, as data — see ``ecgbench.labels._fields``.
+#: Literal on purpose: the metadata build reads it without importing this module.
+FIELDS = (
+    Field(
+        "age",
+        "integer",
+        "Age from the header's single '# <age> <sex>' comment - the whole of the shipped "
+        "metadata; missing if absent",
+        unit="year",
+    ),
+    Field(
+        "sex",
+        "string",
+        "Sex from the header comment; empty if absent",
+        vocabulary=("M", "F", ""),
+        nullable=False,
+    ),
+    Field(
+        "n_samples",
+        "integer",
+        "Samples per record from the header",
+        nullable=False,
+    ),
+    Field(
+        "duration_secs",
+        "number",
+        "n_samples over 128 Hz",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "lead_names",
+        "string",
+        "Header channel names pipe-joined, 'ECG1|ECG2'",
+        nullable=False,
+    ),
+    Field(
+        "start_time",
+        "string",
+        "Header base time; empty when absent",
+        nullable=False,
+    ),
+    Field(
+        "beat_N",
+        "integer",
+        "Reference beats annotated 'N' (normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_L",
+        "integer",
+        "Reference beats annotated 'L' (left bundle branch block); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_R",
+        "integer",
+        "Reference beats annotated 'R' (right bundle branch block); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_V",
+        "integer",
+        "Reference beats annotated 'V' (premature ventricular contraction)",
+        nullable=False,
+    ),
+    Field(
+        "beat_/",
+        "integer",
+        "Reference beats annotated '/' (paced); does not occur in this release, counted so "
+        "a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_A",
+        "integer",
+        "Reference beats annotated 'A' (atrial premature); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_f",
+        "integer",
+        "Reference beats annotated 'f' (fusion of paced and normal); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_F",
+        "integer",
+        "Reference beats annotated 'F' (fusion of ventricular and normal beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_j",
+        "integer",
+        "Reference beats annotated 'j' (junctional escape); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_a",
+        "integer",
+        "Reference beats annotated 'a' (aberrated atrial premature); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_E",
+        "integer",
+        "Reference beats annotated 'E' (ventricular escape); does not occur in this "
+        "release, counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_J",
+        "integer",
+        "Reference beats annotated 'J' (nodal (junctional) premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "beat_Q",
+        "integer",
+        "Reference beats annotated 'Q' (unclassifiable); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_e",
+        "integer",
+        "Reference beats annotated 'e' (atrial escape); does not occur in this release, "
+        "counted so a re-release using it is not silently dropped",
+        nullable=False,
+    ),
+    Field(
+        "beat_S",
+        "integer",
+        "Reference beats annotated 'S' (supraventricular premature beat)",
+        nullable=False,
+    ),
+    Field(
+        "n_isolated_artifacts",
+        "integer",
+        "'|' QRS-like artefact markers; 52 in record 16273, 30,782 in 16773",
+        nullable=False,
+    ),
+    Field(
+        "n_quality_changes",
+        "integer",
+        "'~' signal-quality transitions",
+        nullable=False,
+    ),
+    Field(
+        "clean_secs",
+        "number",
+        "Seconds both channels are annotated clean (~ subtype 0, and the span before the "
+        "first ~, which in all 18 records is a transition into noise); 98.61% of the "
+        "release",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG1_secs",
+        "number",
+        "Seconds ECG1 alone is noisy (~ subtype 1)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_ECG2_secs",
+        "number",
+        "Seconds ECG2 alone is noisy (~ subtype 2)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_both_secs",
+        "number",
+        "Seconds both channels are noisy (~ subtype 3)",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "unreadable_secs",
+        "number",
+        "Seconds annotated unreadable (~ subtype -1); does not occur in this release",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "n_beats",
+        "integer",
+        "Sum of the beat_* counts",
+        nullable=False,
+    ),
+    Field(
+        "n_annotations",
+        "integer",
+        "Every annotation in the .atr",
+        nullable=False,
+    ),
+    Field(
+        "n_ectopic_beats",
+        "integer",
+        "Beats not annotated N: 127 across the release (91 S, 26 V, 8 F, 2 J), none in "
+        "three records - not a usable class",
+        nullable=False,
+    ),
+    Field(
+        "ectopic_per_100k_beats",
+        "number",
+        "n_ectopic_beats per 100,000 beats (7.3 across the release); missing when no beats",
+    ),
+    Field(
+        "annotated_secs",
+        "number",
+        "Span from the first to the last beat annotation",
+        unit="s",
+    ),
+    Field(
+        "unannotated_head_secs",
+        "number",
+        "Seconds before the first beat annotation; 23-34 s in five records",
+        unit="s",
+    ),
+    Field(
+        "unannotated_tail_secs",
+        "number",
+        "Seconds after the last beat annotation: one to five hours per record (3,826 to "
+        "17,822 s), silent - nothing in the files says the recording continues",
+        unit="s",
+    ),
+    Field(
+        "annotated_fraction",
+        "number",
+        "annotated_secs over the record; 79.5% to 95.7%, 12.1% of the release unannotated",
+    ),
+    Field(
+        "noisy_secs",
+        "number",
+        "Seconds any channel is annotated noisy",
+        unit="s",
+        nullable=False,
+    ),
+    Field(
+        "noisy_fraction",
+        "number",
+        "noisy_secs over the record; 0.23% to 9.60%",
+    ),
+    Field(
+        "mean_hr_bpm",
+        "number",
+        "60 over the mean RR of intervals in 0.3-2.0 s, a whole-record summary over ~24 h "
+        "of mixed activity and sleep",
+        unit="bpm",
+    ),
+    Field(
+        "sdnn_ms",
+        "number",
+        "Standard deviation of the kept RR intervals",
+        unit="ms",
+    ),
+    Field(
+        "rmssd_ms",
+        "number",
+        "Root mean square of successive RR differences",
+        unit="ms",
+    ),
+    Field(
+        "n_rr_rejected",
+        "integer",
+        "RR intervals outside 0.3-2.0 s, which is what keeps the multi-hour unannotated "
+        "gaps out of the HRV summaries",
+        nullable=False,
+    ),
+    Field(
+        "cohort_label",
+        "string",
+        "Constant: PhysioNet's assertion that every subject had no significant arrhythmia. "
+        "Not derived from the annotations - there are none for rhythm. The config's label "
+        "column; a normal-sinus reference, not a classification task.",
+        vocabulary=("normal_sinus_rhythm",),
+        nullable=False,
+    ),
+    Field(
+        "signal_path",
+        "string",
+        "WFDB record stem; flat directory",
+        nullable=False,
+        example="16265",
+    ),
+    Field(
+        "stratify_class",
+        "string",
+        "sex, with unknown as U, for fold construction",
+        vocabulary=("M", "F", "U"),
+        nullable=False,
+    ),
+)
