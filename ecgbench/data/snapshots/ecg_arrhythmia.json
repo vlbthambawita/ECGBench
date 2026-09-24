@@ -1,0 +1,39 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ecg_arrhythmia",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.10.1.dev1+g85fdcf542.d20260424",
+  "created": "2026-07-29T14:18:43.518172+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 45152,
+    "clean": 42909
+  },
+  "records_excluded": 2243,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 771
+    },
+    {
+      "check": "corrupt_header",
+      "records_failed": 2
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 1495
+    },
+    {
+      "check": "nan_values",
+      "records_failed": 97
+    }
+  ],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

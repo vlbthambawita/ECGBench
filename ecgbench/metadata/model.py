@@ -20,6 +20,7 @@ package import, so it must cost nothing.
 from __future__ import annotations
 
 import dataclasses
+import re
 from dataclasses import dataclass, field
 
 #: Fact sources, most trustworthy first. A manifest is computed from the files;
@@ -198,6 +199,29 @@ class RelationMeta:
 
 
 @dataclass(frozen=True)
+class ArtefactMeta:
+    """One artefact a split run produced, as recorded in the dataset's snapshot.
+
+    Attributes:
+        kind: ``fold_csv`` (one per version) or ``validation_report``.
+        version: ``original`` or ``clean`` - the partition the artefact describes.
+        sha256: For ``fold_csv``, the ``fold_digest`` over the record-to-fold
+            mapping (not a file hash: the CSV's bytes may differ across pandas
+            versions, the partition may not); ``None`` for the report.
+        n_records: Records in that version.
+        ecgbench_version: The ECGBench that produced it.
+        created: ISO-8601 timestamp of the run (the report's ``validated_at``).
+    """
+
+    kind: str
+    version: str | None
+    sha256: str | None
+    n_records: int | None
+    ecgbench_version: str | None
+    created: str | None
+
+
+@dataclass(frozen=True)
 class DatasetMeta:
     """The unified record for one dataset.
 
@@ -222,9 +246,11 @@ class DatasetMeta:
         origin_institution: Catalogue field.
         origin_country: Catalogue field.
         search_keywords: Catalogue keyword string.
-        records: Record count parsed from the winning ``records`` fact, ``None``
-            when the display string is not a plain integer.
-        patients: Same for patients.
+        records: Record count from the winning ``records`` fact: a snapshot's
+            recomputed count (``manifest`` / ``validation_report`` provenance)
+            when one exists, else the catalogue's display string parsed, ``None``
+            when that is not a plain integer.
+        patients: Same for patients (no snapshot source yet, so always catalogue).
         records_display: The catalogue's own string, kept verbatim.
         patients_display: Same for patients.
         signal: Signal facet, ``None`` for catalogue-only datasets.
@@ -232,6 +258,8 @@ class DatasetMeta:
         split: Split facet, ``None`` for catalogue-only datasets.
         relations: Edges to other datasets, both directions materialised.
         fields: Declared columns of the label table, empty until declared.
+        artefacts: What the canonical split run produced, from the dataset's
+            snapshot; empty when no snapshot is committed.
         facts: Every sourced value with provenance, duplicates included.
         prose: Concatenated page text and config prose, for free-text search only.
     """
@@ -259,6 +287,7 @@ class DatasetMeta:
     split: SplitMeta | None
     relations: tuple[RelationMeta, ...] = ()
     fields: tuple[FieldMeta, ...] = ()
+    artefacts: tuple[ArtefactMeta, ...] = ()
     facts: tuple[Fact, ...] = ()
     prose: str = field(default="", repr=False)
 
@@ -279,7 +308,7 @@ class DatasetMeta:
 
     def facts_for(self, key: str) -> tuple[Fact, ...]:
         """Every fact recorded under ``key``, most trustworthy source first."""
-        return tuple(sorted((f for f in self.facts if f.key == key), key=_fact_rank))
+        return rank_facts(f for f in self.facts if f.key == key)
 
     def fact(self, key: str) -> Fact | None:
         """The winning fact for ``key`` by source precedence, or ``None``."""
@@ -334,6 +363,7 @@ class DatasetMeta:
             split=SplitMeta(**split) if split else None,
             relations=tuple(RelationMeta(**r) for r in data.get("relations", ())),
             fields=tuple(FieldMeta(**f) for f in data.get("fields", ())),
+            artefacts=tuple(ArtefactMeta(**a) for a in data.get("artefacts", ())),
             facts=tuple(
                 Fact(key=f["key"], value=f["value"], provenance=Provenance(**f["provenance"]))
                 for f in data.get("facts", ())
@@ -364,6 +394,11 @@ def _signal_from_dict(data: dict) -> SignalMeta:
     )
 
 
+def rank_facts(facts) -> tuple[Fact, ...]:
+    """``facts`` sorted most trustworthy source first (``SOURCE_PRECEDENCE`` order)."""
+    return tuple(sorted(facts, key=_fact_rank))
+
+
 def _fact_rank(fact: Fact) -> tuple[int, str]:
     source = fact.provenance.source
     known = source in SOURCE_PRECEDENCE
@@ -371,8 +406,21 @@ def _fact_rank(fact: Fact) -> tuple[int, str]:
     return (rank, fact.provenance.source_path)
 
 
+#: A catalogue count as written ("21,799"); the same regex as ``build.parse_count``.
+_PLAIN_COUNT_RE = re.compile(r"^\s*(\d{1,3}(?:,\d{3})+|\d+)\s*$")
+
+
 def _canonical(value: object) -> object:
-    """Hashable form of a fact value, so lists can be compared for disagreement."""
+    """Hashable form of a fact value, so lists can be compared for disagreement.
+
+    A plain-integer string is compared as the integer it spells, so the
+    catalogue's ``"21,799"`` and a snapshot's ``21799`` are one value and not a
+    disagreement; a qualified string (``"25 (23 with signals)"``) stays text and
+    does disagree with a recomputed ``25``.
+    """
+    if isinstance(value, str):
+        match = _PLAIN_COUNT_RE.match(value)
+        return int(match.group(1).replace(",", "")) if match else value
     if isinstance(value, list):
         return tuple(_canonical(v) for v in value)
     return value

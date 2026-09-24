@@ -1,0 +1,33 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ecg_capable_smartwatches",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-13T09:07:13.981806+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 915,
+    "clean": 736
+  },
+  "records_excluded": 179,
+  "quality_checks": [
+    {
+      "check": "nan_values",
+      "records_failed": 179
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "d99253086ea9e7fa62ed24fcf450086fd07c19d7bf4f85f379cb58fc60b5b558",
+    "clean": "ef6838494950add4053161352e5245481c8c1e78a5ba6c2e558b282ecac4c1fa"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "abc7bd47873200e9e0b3abedd1cadc246a28fc12eaa7f1a4cc8a6ffdff475ad1"
+  }
+}

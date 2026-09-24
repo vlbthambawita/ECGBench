@@ -47,6 +47,7 @@ from ecgbench.metadata.model import (
     SCHEMA_VERSION,
     SOURCE_PRECEDENCE,
     AccessMeta,
+    ArtefactMeta,
     DatasetMeta,
     Fact,
     FieldMeta,
@@ -54,6 +55,13 @@ from ecgbench.metadata.model import (
     RelationMeta,
     SignalMeta,
     SplitMeta,
+)
+from ecgbench.metadata.snapshot import (
+    SNAPSHOTS_DIR,
+    SnapshotError,
+    build_snapshot,
+    load_snapshots,
+    write_snapshot,
 )
 from ecgbench.metadata.store import MetadataQueryError, MetadataStore, SearchHit, open_store
 
@@ -91,6 +99,7 @@ __all__ = [
     "SplitMeta",
     "RelationMeta",
     "FieldMeta",
+    "ArtefactMeta",
     "Fact",
     "Provenance",
     "IMPLEMENTATION_STATES",
@@ -125,4 +134,10 @@ __all__ = [
     "MetadataBuildError",
     "DEFAULT_JSON_PATH",
     "SQLITE_PATH",
+    # snapshots
+    "SNAPSHOTS_DIR",
+    "SnapshotError",
+    "build_snapshot",
+    "write_snapshot",
+    "load_snapshots",
 ]

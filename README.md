@@ -1741,6 +1741,18 @@ ecgbench metadata build --check    # exit 1 if metadata.json is stale; prints th
 ecgbench metadata build --output /tmp/meta/
 ```
 
+### `ecgbench metadata snapshot`
+
+The recomputed numbers of a split run — record counts before and after validation, the per-check failure counts, the fold count, the seed and the `fold_digest` over the whole record-to-fold mapping — reach the metadata layer through a **snapshot**, `ecgbench/data/snapshots/<slug>.json`, committed alongside the configs. `snapshot` derives one from the `manifest.json` and `validation_report.json` that `ecgbench splits` leaves in `output/<slug>/`, keeping counts and digests and never a record identifier (the report's `excluded_records` block is the one thing it does not copy, so a snapshot can ship for a dataset whose fold CSVs may not). The build turns each snapshot into facts with `manifest` and `validation_report` provenance, which outrank the catalogue: `ecgbench info <id>` shows the recomputed record count and `info --verbose` lists the catalogue's figure beside it with the run's timestamp.
+
+```bash
+ecgbench splits --dataset mitdb --data-path /path/to/mitdb/
+ecgbench metadata snapshot --dataset mitdb          # output/mitdb/ -> ecgbench/data/snapshots/mitdb.json
+ecgbench metadata snapshot --all                     # every output/*/ tree
+ecgbench metadata snapshot --output-dir /elsewhere/mitdb/ --dest /tmp/mitdb.json
+ecgbench metadata build                              # then rebuild the export
+```
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--check` | flag | off | Verify instead of writing; non-zero exit on drift |

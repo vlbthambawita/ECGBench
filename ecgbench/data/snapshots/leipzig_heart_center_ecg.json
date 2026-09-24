@@ -1,0 +1,33 @@
+{
+  "snapshot_version": 1,
+  "dataset": "leipzig_heart_center_ecg",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-03T10:41:04.101681+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 39,
+    "clean": 38
+  },
+  "records_excluded": 1,
+  "quality_checks": [
+    {
+      "check": "flat_line",
+      "records_failed": 1
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "12e849e1d24017344889b6f522ebe6250f6bc15a331e98e87050f9aa693bd604",
+    "clean": "a208e041dc1e020caf53057d0da0b73062cdf33d369bce6987e4aa6d79a9896d"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "ab03ec31854b86a7d97701aeb0ecf0b2e05ee53430014e48a410f507749fde2f"
+  }
+}

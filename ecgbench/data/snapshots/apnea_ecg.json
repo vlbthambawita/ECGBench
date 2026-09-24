@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "apnea_ecg",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-11T11:08:07.922582+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 70,
+    "clean": 70
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "04e6d3d8cdc5de080ee1d62d2ba8adb86e7d419bffec8c688a493acd00348dab",
+    "clean": "04e6d3d8cdc5de080ee1d62d2ba8adb86e7d419bffec8c688a493acd00348dab"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "8c25cb9a175e95f233eda342a2a3a1a910b4e38ce2293e0aa6cb18c5ce851db7"
+  }
+}

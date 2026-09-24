@@ -1,0 +1,50 @@
+{
+  "snapshot_version": 1,
+  "dataset": "staffiii",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T08:01:19.862576+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 520,
+    "clean": 476
+  },
+  "records_excluded": 44,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 40
+    },
+    {
+      "check": "corrupt_header",
+      "records_failed": 1
+    },
+    {
+      "check": "flat_line",
+      "records_failed": 1
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 1
+    },
+    {
+      "check": "nan_values",
+      "records_failed": 27
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "6150fe8094f8e1e6c2add9fff9fe9f09cf2e63012f496754b50a511c47ea5b5f",
+    "clean": "02c8fef0e388242ffcc112651a1c9c6778040aa666fe35f802faf2b77834aa6d"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "612b80d7d0af376a5f21a86b33631ab7c39c6bacb64f59da174998196afd6b59",
+    "STAFF-III-Database-Annotations.xlsx": "37b89f20830ad73f4ce7d2fdd9d035ccc33a2ec3f0d05c995d6c2cb106de129e"
+  }
+}

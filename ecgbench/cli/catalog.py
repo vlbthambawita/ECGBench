@@ -200,6 +200,22 @@ def format_search(hits: list[SearchHit], fmt: str = "table") -> str:
     return _table(headers, table)
 
 
+def _count_cell(value: int | None, display: str) -> str:
+    """The winning count, with the catalogue's own wording when it says more.
+
+    ``value`` is the resolved count (a snapshot's recomputed one when there is
+    one); ``display`` is the catalogue string, which may carry a qualifier
+    ("21,799 (10 s)") or disagree with the recomputation. The plain number is
+    shown first and the catalogue text after it unless it is the same number.
+    """
+    if value is None:
+        return display
+    formatted = f"{value:,}"
+    if display.strip() in (formatted, str(value)):
+        return formatted
+    return f"{formatted} (catalogue: {display})" if display.strip() else formatted
+
+
 def _info_pairs(meta: DatasetMeta) -> list[tuple[str, object]]:
     disagreeing = set(meta.disagreements())
 
@@ -214,7 +230,7 @@ def _info_pairs(meta: DatasetMeta) -> list[tuple[str, object]]:
         ("status", meta.status),
         ("implementation_state", meta.implementation_state),
         ("version", meta.version),
-        (mark("records"), meta.records_display),
+        (mark("records"), _count_cell(meta.records, meta.records_display)),
         (mark("patients"), meta.patients_display),
         ("origin_institution", meta.origin_institution),
         ("origin_country", meta.origin_country),

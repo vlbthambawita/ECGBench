@@ -1,0 +1,33 @@
+{
+  "snapshot_version": 1,
+  "dataset": "tollet",
+  "dataset_version": "1.0.1",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-11T22:27:07.900257+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 580,
+    "clean": 342
+  },
+  "records_excluded": 238,
+  "quality_checks": [
+    {
+      "check": "flat_line",
+      "records_failed": 238
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "bf30246039bbfad09e9fdadb728b8d6018257334d5f4c435270a0728a2d27bf5",
+    "clean": "a31dfdb5f9508c818c3a1c180894b2c1c98096a45253fe4ace72313c5ad1b2a4"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "624b044c91691b00e12e2f118e4efe87c9c549cf3beaed6b56d04a772c60598b"
+  }
+}

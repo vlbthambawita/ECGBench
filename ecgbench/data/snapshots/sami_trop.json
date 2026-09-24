@@ -1,0 +1,38 @@
+{
+  "snapshot_version": 1,
+  "dataset": "sami_trop",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T14:55:40.761663+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 1631,
+    "clean": 1615
+  },
+  "records_excluded": 16,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 14
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 2
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "16e3e86e9e897b9c8464904e72c5d74320d7f04fd8cc5218e2d297d3769e0a41",
+    "clean": "a64905df32b44d0ae290486cbfc357eab8633f82aab8cbfcea497cc505f2e9eb"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "8b2b91f82d8e97940dd283553e08e4d2520f6659744e3c097576bfb0eefe4bab",
+    "exams.csv": "70de270a9f1d2fffe7407635798a27c27a4e22969b382331fa9bd30513fdcfdc"
+  }
+}

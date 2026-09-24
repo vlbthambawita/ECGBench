@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "mhd_effect_ecg_mri",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-03T14:29:08.668368+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 53,
+    "clean": 53
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "347257c213802a33013625568de04f2be09f9feb798bcd54fb3c7b4e829c561e",
+    "clean": "347257c213802a33013625568de04f2be09f9feb798bcd54fb3c7b4e829c561e"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "70933db790e569dc4699befda4660bb72c2da309a14cc326d77615efe61d31aa"
+  }
+}

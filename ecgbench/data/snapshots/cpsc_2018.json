@@ -1,0 +1,37 @@
+{
+  "snapshot_version": 1,
+  "dataset": "cpsc_2018",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T08:35:15.774555+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 6877,
+    "clean": 6760
+  },
+  "records_excluded": 117,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 99
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 18
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "48c9273869525edd5b6cce543869ceeaa8c5affae81fea4db8ebecb82e105f71",
+    "clean": "76971edb0ba1e573133bf5b35123a0dd8766415aeab187b55569208a06edc7fc"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "4799911587e02951d4c9fbb2351507293b9630513b61844f4b7c0c3a2269bdbd"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ludb",
+  "dataset_version": "1.0.1",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-07-30T19:20:43.355232+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 200,
+    "clean": 200
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

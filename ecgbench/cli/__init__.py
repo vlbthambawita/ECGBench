@@ -15,7 +15,11 @@ Exposes:
 from ecgbench.cli._main import main
 from ecgbench.cli.catalog import run_fields, run_info, run_list, run_related, run_search
 from ecgbench.cli.croissant import run_croissant
-from ecgbench.cli.metadata import run_metadata_build, run_metadata_check
+from ecgbench.cli.metadata import (
+    run_metadata_build,
+    run_metadata_check,
+    run_metadata_snapshot,
+)
 from ecgbench.cli.splits import run_splits
 from ecgbench.cli.upload import run_upload
 
@@ -31,4 +35,5 @@ __all__ = [
     "run_fields",
     "run_metadata_build",
     "run_metadata_check",
+    "run_metadata_snapshot",
 ]

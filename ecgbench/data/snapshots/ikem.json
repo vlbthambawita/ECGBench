@@ -1,0 +1,38 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ikem",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T14:57:15.043580+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 98130,
+    "clean": 96096
+  },
+  "records_excluded": 2034,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 1879
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 190
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "e7274f2270a4eef7c80ccdca0202f0b84622e3a93aea84a1c5b38d3518e103c3",
+    "clean": "7787f0ec1a6310cf72908d2a8f45c08da314ca5b9aa4f7a64386de549cfa536b"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "75c4880075564d435861e8fe868d1fad8e5b9f80131f9ec0fcad24abc40d1b24",
+    "exams.csv": "dc9063dbf3b3a394395d4cefe787fdc3d2b0f2e68d8f86f33544ef44102791ef"
+  }
+}

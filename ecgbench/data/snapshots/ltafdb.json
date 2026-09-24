@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ltafdb",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-08T07:17:37.471742+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 84,
+    "clean": 84
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "fec7552961e4a1b5269d5d6114a4d933f74b7aa00a71d4a1a3e5d8915baff8ab",
+    "clean": "fec7552961e4a1b5269d5d6114a4d933f74b7aa00a71d4a1a3e5d8915baff8ab"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "db0939f5114382cbd92dfaf4c7b977783cc7c0fdbe37f9674e8205fb39a671df"
+  }
+}

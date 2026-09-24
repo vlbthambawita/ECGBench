@@ -1,0 +1,34 @@
+{
+  "snapshot_version": 1,
+  "dataset": "zzu_pecg",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T15:03:00.934959+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 14190,
+    "clean": 12190
+  },
+  "records_excluded": 2000,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 2000
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "011b2acc2dda889318af843632150308bb8d062b557d312909324b0c1cb84515",
+    "clean": "daf09115b771f9f40301000cf6cf74051c7d6566cd9bf58d657f085bbf5f242b"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "42c698738c60e290fc89fc9a89c4cc24d60fdd364498992b8fa94afe8ccaa8b1",
+    "AttributesDictionary.csv": "cb7338fd440529b22a52b7c4a4010c5f0511655be2a67b16fa21e316b433d7ad"
+  }
+}

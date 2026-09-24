@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "norwegian_athlete_ecg",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-03T13:33:44.659681+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 28,
+    "clean": 28
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "c61f8e4ddb2087abd5563e5c9992c81ba88b5d71b0409444d3b0c509f51f1fb9",
+    "clean": "c61f8e4ddb2087abd5563e5c9992c81ba88b5d71b0409444d3b0c509f51f1fb9"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "6dafbf7882c390f6e424e63ae0ee64f420e258f6a40c5eb9051203466d0cde8e"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "snapshot_version": 1,
+  "dataset": "brugada_huca",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-02T20:12:30.503963+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 363,
+    "clean": 363
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "2b866149bfe23c54802d88f329c1e8e9f3c7ebb1f66ea4899699dbdad81fe5c5",
+    "clean": "2b866149bfe23c54802d88f329c1e8e9f3c7ebb1f66ea4899699dbdad81fe5c5"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "315f807513733a64f9a4c1b4dae83b6081a62a55fa0e92486670c61dc5c614be",
+    "metadata.csv": "2ae5e0c11e86f1675ebc3e1efb5a7a9ff6b6abdce75796a4013020fe46b11ef8"
+  }
+}

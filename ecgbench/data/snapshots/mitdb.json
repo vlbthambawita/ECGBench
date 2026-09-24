@@ -1,0 +1,33 @@
+{
+  "snapshot_version": 1,
+  "dataset": "mitdb",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-07T05:42:53.836211+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 48,
+    "clean": 45
+  },
+  "records_excluded": 3,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 3
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "fa75c941434d030865a02b81ff7f7d26679ceb92f0a4bace67b3de727b2386b4",
+    "clean": "0ed427ce0d73314449cd84e8ee8374377225d1168bc1ac41a8c2832b96d01ad6"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "103efd1044f8ad42678fa141db9bead0d3b853e4b6c3ce99443091c48c544f3b"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ningbo_iva",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T09:32:07.163556+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 334,
+    "clean": 334
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "bb92c7fd9789e0a5e814e6932ddcb2f86f42b1000093df5f7b695ef200ad4468",
+    "clean": "bb92c7fd9789e0a5e814e6932ddcb2f86f42b1000093df5f7b695ef200ad4468"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "714019bd8a94744f136640a9ccdc2462fcf7969855e7188cd9eeb07d35dad132"
+  }
+}

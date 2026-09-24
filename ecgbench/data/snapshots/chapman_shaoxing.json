@@ -1,0 +1,31 @@
+{
+  "snapshot_version": 1,
+  "dataset": "chapman_shaoxing",
+  "dataset_version": "2",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-07-30T14:33:00.750173+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 10646,
+    "clean": 10607
+  },
+  "records_excluded": 39,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 22
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 17
+    }
+  ],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

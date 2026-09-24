@@ -1,0 +1,46 @@
+{
+  "snapshot_version": 1,
+  "dataset": "mimic_iv_ecg",
+  "dataset_version": "1.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-07-31T12:21:24.975276+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 800035,
+    "clean": 786699
+  },
+  "records_excluded": 13336,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 989
+    },
+    {
+      "check": "flat_line",
+      "records_failed": 9
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 1951
+    },
+    {
+      "check": "nan_values",
+      "records_failed": 10554
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "81d4d96e035bdef2fdb375a252d040ea3be801f6ad62487c7bb3ff6a77087979",
+    "clean": "2e2621b27332e623548ae7afb134c300ff088f2330900c82fa7154b88d372e64"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "record_list.csv": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b",
+    "machine_measurements.csv": "56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "snapshot_version": 1,
+  "dataset": "mimic_iv_ecg_demo",
+  "dataset_version": "0.1",
+  "ecgbench_version": "0.15.0",
+  "created": "2026-07-30T08:16:41.051505+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 659,
+    "clean": 645
+  },
+  "records_excluded": 14,
+  "quality_checks": [
+    {
+      "check": "missing_leads",
+      "records_failed": 2
+    },
+    {
+      "check": "nan_values",
+      "records_failed": 12
+    }
+  ],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

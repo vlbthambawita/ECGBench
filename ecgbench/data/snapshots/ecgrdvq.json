@@ -1,0 +1,34 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ecgrdvq",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-04T13:16:12.393107+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 5232,
+    "clean": 5230
+  },
+  "records_excluded": 2,
+  "quality_checks": [
+    {
+      "check": "flat_line",
+      "records_failed": 2
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "34c11aad4c8aa430a6ce7db8a52935d2869c05ec85ed58e26fcafd69c0020f52",
+    "clean": "bece1a669522ac2cbd19b214b235005f9ed2d04f4cadb891b788413f96d4f8db"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "7532a9dbb37104f8dec56a76382537aa7595e49f73596d70d9257ef61247fb50",
+    "SCR-002.Clinical.Data.csv": "821e378357a19b96094854f2cbd3be626fdc30960537f2879d332c62f6b7554c"
+  }
+}

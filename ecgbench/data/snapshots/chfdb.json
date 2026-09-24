@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "chfdb",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.54.0",
+  "created": "2026-08-10T07:37:20.467551+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 15,
+    "clean": 15
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "c07bf4be48d0e1181992217215452c33039e385454b29767f7b2b6ada8a03a13",
+    "clean": "c07bf4be48d0e1181992217215452c33039e385454b29767f7b2b6ada8a03a13"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "c58155f3552c7754f2877234a500b614551fdaaacf25d6f946b251fb648293a1"
+  }
+}

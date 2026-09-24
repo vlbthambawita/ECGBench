@@ -1,0 +1,27 @@
+{
+  "snapshot_version": 1,
+  "dataset": "incartdb",
+  "dataset_version": "1.0.0",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-07-31T07:49:46.479150+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 75,
+    "clean": 70
+  },
+  "records_excluded": 5,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 5
+    }
+  ],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

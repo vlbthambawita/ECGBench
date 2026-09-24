@@ -156,7 +156,12 @@ class TestBuildOverShippedSources:
         for m in model:
             for f in m.facts:
                 assert f.provenance.source in SOURCE_PRECEDENCE, (m.dataset_id, f)
-                assert f.provenance.source_path.endswith((".md", ".yaml")), f
+                if f.provenance.source in ("manifest", "validation_report"):
+                    assert f.provenance.source_path.startswith("ecgbench/data/snapshots/"), f
+                    assert f.provenance.observed_at, f  # the run's timestamp
+                else:
+                    assert f.provenance.source_path.endswith((".md", ".yaml")), f
+                    assert f.provenance.observed_at is None, f
 
     def test_config_facts_are_present_only_with_a_config(self, model):
         for m in model:
@@ -180,9 +185,18 @@ class TestBuildOverShippedSources:
         assert by_id["ptbxl"].records == 21799
         assert by_id["ptbxl"].patients == 18869
         assert by_id["mitdb"].records == 48 and by_id["mitdb"].patients == 47
-        # qualified strings stay text
-        assert by_id["afdb"].records is None
+        # A qualified catalogue string is not parsed, but a snapshot's recomputed
+        # count outranks it (Phase 4): afdb keeps its display text and gains 25.
         assert by_id["afdb"].records_display == "25 (23 with signals)"
+        assert by_id["afdb"].records == 25
+        assert by_id["afdb"].fact("records").provenance.source == "manifest"
+        # Without a snapshot the qualified string still yields None.
+        unsnapshotted = [
+            m for m in by_id.values()
+            if not m.artefacts and m.records_display and parse_count(m.records_display) is None
+        ]
+        assert unsnapshotted, "expected a catalogue-only dataset with a qualified count"
+        assert all(m.records is None for m in unsnapshotted)
 
     def test_name_is_the_catalogue_display_name_and_config_name_is_an_alias(self, by_id):
         m = by_id["chapman_shaoxing"]
@@ -272,7 +286,15 @@ class TestStoreSearchOverShippedSources:
         small = store.search(max_records=50)
         assert all(m.records is not None and m.records <= 50 for m in small)
         assert "mitdb" in {m.dataset_id for m in small}
-        assert "afdb" not in {m.dataset_id for m in small}
+        # afdb's catalogue string is qualified, but its snapshot resolves it to 25.
+        assert "afdb" in {m.dataset_id for m in small}
+        # A dataset whose only count is an unparsed catalogue string is excluded.
+        unparsed = [
+            m.dataset_id for m in store.all()
+            if m.records is None and m.records_display
+        ]
+        assert unparsed
+        assert not set(unparsed) & {m.dataset_id for m in small}
 
     def test_bad_state_is_rejected(self, store):
         with pytest.raises(ValueError, match="state must be one of"):
@@ -642,7 +664,9 @@ class TestSqliteIndex:
         n_fields = sum(len(m.fields) for m in model)
         assert n_fields > 0  # Phase 3 declarations
         assert conn.execute("SELECT count(*) FROM field").fetchone()[0] == n_fields
-        assert conn.execute("SELECT count(*) FROM artefact").fetchone()[0] == 0  # Phase 4
+        n_artefacts = sum(len(m.artefacts) for m in model)
+        assert n_artefacts > 0  # Phase 4 snapshots
+        assert conn.execute("SELECT count(*) FROM artefact").fetchone()[0] == n_artefacts
         n_facts = sum(len(m.facts) for m in model)
         assert conn.execute("SELECT count(*) FROM fact").fetchone()[0] == n_facts
         meta = dict(conn.execute("SELECT key, value FROM meta"))
@@ -809,6 +833,9 @@ class TestStaleness:
         assert sum(k.endswith(".md") for k in fp) == 64
         assert sum(k.endswith(".yaml") for k in fp) == len(list_available_configs())
         assert any(k.endswith("labels/mitdb.py") for k in fp)
+        n_snapshots = len(list(build_module.SNAPSHOTS_DIR.glob("*.json")))
+        assert n_snapshots > 0
+        assert sum(k.startswith("ecgbench/data/snapshots/") for k in fp) == n_snapshots
         assert all(isinstance(v, list) and len(v) == 2 for v in fp.values())
 
     def test_sources_changed_semantics(self, tmp_path: Path):

@@ -1,0 +1,41 @@
+{
+  "snapshot_version": 1,
+  "dataset": "challenge2020",
+  "dataset_version": "1.0.2",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-06T06:25:30.079966+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 43101,
+    "clean": 42815
+  },
+  "records_excluded": 286,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 250
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 36
+    },
+    {
+      "check": "nan_values",
+      "records_failed": 8
+    }
+  ],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": false,
+  "fold_digest": {
+    "original": "cff73e3c27788fa215e81624d57e07bac276be4c0849206c293d35b894bb303f",
+    "clean": "413adcba04a3c05346c7d3a524f12662dac6b14f88333fa6d99215086356fa62"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "093d8d1e4796ec2f73844bb9f80c40c5a8676ded1241db09165b59c8b0450c2a"
+  }
+}

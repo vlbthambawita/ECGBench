@@ -1,0 +1,35 @@
+{
+  "snapshot_version": 1,
+  "dataset": "ptbxl",
+  "dataset_version": "1.0.3",
+  "ecgbench_version": "0.5.0",
+  "created": "2026-04-16T11:48:37.378930+00:00",
+  "sources": [
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 21799,
+    "clean": 21750
+  },
+  "records_excluded": 49,
+  "quality_checks": [
+    {
+      "check": "amplitude_outlier",
+      "records_failed": 47
+    },
+    {
+      "check": "corrupt_header",
+      "records_failed": 1
+    },
+    {
+      "check": "missing_leads",
+      "records_failed": 1
+    }
+  ],
+  "n_folds": null,
+  "random_state": null,
+  "grouped_by_patient": null,
+  "fold_digest": null,
+  "digest_version": null,
+  "inputs": {}
+}

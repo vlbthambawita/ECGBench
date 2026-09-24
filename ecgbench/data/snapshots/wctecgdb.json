@@ -1,0 +1,28 @@
+{
+  "snapshot_version": 1,
+  "dataset": "wctecgdb",
+  "dataset_version": "1.0.1",
+  "ecgbench_version": "0.20.0",
+  "created": "2026-08-04T08:56:29.374564+00:00",
+  "sources": [
+    "manifest.json",
+    "validation_report.json"
+  ],
+  "records": {
+    "original": 540,
+    "clean": 540
+  },
+  "records_excluded": 0,
+  "quality_checks": [],
+  "n_folds": 10,
+  "random_state": 42,
+  "grouped_by_patient": true,
+  "fold_digest": {
+    "original": "61e5254f4194e1726016ba28746f55af06878b69045ea86c0b1a48fe22f58438",
+    "clean": "61e5254f4194e1726016ba28746f55af06878b69045ea86c0b1a48fe22f58438"
+  },
+  "digest_version": 1,
+  "inputs": {
+    "ecgbench_metadata.csv": "716af08e903b69851b7506191b6b80ff5fe955bc2636cfd038b39b378cfeb9a4"
+  }
+}

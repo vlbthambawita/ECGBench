@@ -48,6 +48,7 @@ from ecgbench.metadata.model import (
     IMPLEMENTATION_STATES,
     SCHEMA_VERSION,
     AccessMeta,
+    ArtefactMeta,
     DatasetMeta,
     Fact,
     FieldMeta,
@@ -55,7 +56,9 @@ from ecgbench.metadata.model import (
     RelationMeta,
     SignalMeta,
     SplitMeta,
+    rank_facts,
 )
+from ecgbench.metadata.snapshot import SNAPSHOTS_DIR, load_snapshots
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +244,95 @@ def _config_facts(config: DatasetConfig) -> list[Fact]:
     return [Fact(key, value, prov) for key, value in pairs if value not in (None, "")]
 
 
+#: Sources whose ``records`` fact is a recomputed count and may override the catalogue.
+_COMPUTED_SOURCES = ("manifest", "validation_report")
+
+
+def _snapshot_source_path(slug: str) -> str:
+    return f"ecgbench/data/snapshots/{slug}.json"
+
+
+def _snapshot_facts(slug: str, snapshot: dict) -> list[Fact]:
+    """Facts from a committed snapshot, split by which of its two sources they came from.
+
+    The manifest half (fold digests, seed, fold count) is ``manifest`` provenance,
+    the report half (excluded records, per-check failures) ``validation_report``;
+    both carry the run's timestamp as ``observed_at`` and both state ``records``,
+    so ``info --verbose`` shows the two agreeing (they must - the snapshot refuses
+    a tree where they do not).
+    """
+    path = _snapshot_source_path(slug)
+    created = snapshot.get("created")
+    records = snapshot["records"]
+    facts: list[Fact] = []
+    if snapshot.get("fold_digest"):
+        prov = Provenance(source="manifest", source_path=path, observed_at=created)
+        pairs: list[tuple[str, object]] = [
+            ("records", records["original"]),
+            ("records_clean", records["clean"]),
+            ("n_folds", snapshot.get("n_folds")),
+            ("random_state", snapshot.get("random_state")),
+            ("fold_digest_original", snapshot["fold_digest"].get("original")),
+            ("fold_digest_clean", snapshot["fold_digest"].get("clean")),
+            ("ecgbench_version", snapshot.get("ecgbench_version")),
+        ]
+        facts += [Fact(key, value, prov) for key, value in pairs if value not in (None, "")]
+    prov = Provenance(source="validation_report", source_path=path, observed_at=created)
+    pairs = [
+        ("records", records["original"]),
+        ("records_clean", records["clean"]),
+        ("records_excluded", snapshot.get("records_excluded")),
+        ("ecgbench_version", snapshot.get("ecgbench_version")),
+    ]
+    pairs += [
+        (f"quality_check:{q['check']}", q["records_failed"])
+        for q in snapshot.get("quality_checks", ())
+    ]
+    facts += [Fact(key, value, prov) for key, value in pairs if value not in (None, "")]
+    return facts
+
+
+def _artefact_metas(snapshot: dict) -> tuple[ArtefactMeta, ...]:
+    records = snapshot["records"]
+    version = snapshot.get("ecgbench_version")
+    created = snapshot.get("created")
+    out: list[ArtefactMeta] = []
+    digests = snapshot.get("fold_digest") or {}
+    for partition in ("original", "clean"):
+        if partition in digests:
+            out.append(
+                ArtefactMeta(
+                    kind="fold_csv",
+                    version=partition,
+                    sha256=digests[partition],
+                    n_records=records.get(partition),
+                    ecgbench_version=version,
+                    created=created,
+                )
+            )
+    out.append(
+        ArtefactMeta(
+            kind="validation_report",
+            version="original",
+            sha256=None,
+            n_records=records.get("original"),
+            ecgbench_version=version,
+            created=created,
+        )
+    )
+    return tuple(out)
+
+
+def _resolve_count(facts: list[Fact], key: str, fallback: int | None) -> int | None:
+    """A recomputed count wins over the catalogue's parsed display string."""
+    ranked = rank_facts(f for f in facts if f.key == key)
+    if ranked and ranked[0].provenance.source in _COMPUTED_SOURCES:
+        value = ranked[0].value
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return fallback
+
+
 def _signal_meta(config: DatasetConfig) -> SignalMeta:
     return SignalMeta(
         format=config.signal_format,
@@ -410,12 +502,22 @@ def build_model() -> tuple[DatasetMeta, ...]:
         for entry in entries
     }
 
+    snapshots = load_snapshots()
+    for slug in sorted(set(snapshots) - set(configs)):
+        problems.append(
+            f"snapshot {slug!r} in {SNAPSHOTS_DIR.name}/ names no config; a snapshot is the "
+            "summary of a split run, and only a configured dataset can be split"
+        )
+
     counts = _CountParser()
     model: list[DatasetMeta] = []
     for entry in entries:
         config = configs.get(entry.config_slug) if entry.config_slug else None
         dataset_id = dataset_ids[entry.slug]
+        snapshot = snapshots.get(dataset_id) if config else None
         facts = _catalogue_facts(entry) + (_config_facts(config) if config else [])
+        if snapshot is not None:
+            facts += _snapshot_facts(dataset_id, snapshot)
         state = _implementation_state(config)
         assert state in IMPLEMENTATION_STATES
         relations = tuple(
@@ -445,7 +547,9 @@ def build_model() -> tuple[DatasetMeta, ...]:
                 origin_institution=entry.origin_institution,
                 origin_country=entry.origin_country,
                 search_keywords=entry.search_keywords or "",
-                records=counts(dataset_id, "records", entry.records),
+                records=_resolve_count(
+                    facts, "records", counts(dataset_id, "records", entry.records)
+                ),
                 patients=counts(dataset_id, "patients", entry.patients),
                 records_display=entry.records,
                 patients_display=entry.patients,
@@ -454,6 +558,7 @@ def build_model() -> tuple[DatasetMeta, ...]:
                 split=_split_meta(config) if config else None,
                 relations=relations,
                 fields=_field_metas(config) if config else (),
+                artefacts=_artefact_metas(snapshot) if snapshot is not None else (),
                 facts=tuple(facts),
                 prose=_prose(entry, config),
             )
@@ -837,6 +942,22 @@ def write_sqlite(
                 for r in m.relations
             ],
         )
+        conn.executemany(
+            "INSERT INTO artefact VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    m.dataset_id,
+                    a.kind,
+                    a.version,
+                    a.sha256,
+                    a.n_records,
+                    a.ecgbench_version,
+                    a.created,
+                )
+                for m in ordered
+                for a in m.artefacts
+            ],
+        )
         if fts == "fts5":
             conn.executemany(
                 "INSERT INTO dataset_fts VALUES (" + ",".join("?" * (len(FTS_COLUMNS) + 1)) + ")",
@@ -895,15 +1016,17 @@ def is_source_checkout() -> bool:
 def source_fingerprint() -> dict[str, list[int]]:
     """``{relative path: [mtime_ns, size]}`` for every file the build reads.
 
-    Catalogue Markdown, config YAML and the label modules whose presence sets
-    ``implementation_state``. Cheap (one ``stat`` per file) and sufficient to
-    notice an edit; a rebuild it triggers is a no-op on the JSON when the
-    content digest has not changed.
+    Catalogue Markdown, config YAML, the label modules whose presence sets
+    ``implementation_state`` (and whose ``FIELDS`` are read) and the committed
+    snapshots. Cheap (one ``stat`` per file) and sufficient to notice an edit; a
+    rebuild it triggers is a no-op on the JSON when the content digest has not
+    changed.
     """
     files: list[Path] = []
     files += sorted(catalogue._datasets_dir().glob("*.md"))
     files += sorted(p for p in _CONFIGS_DIR.glob("*.yaml") if not p.stem.startswith("_"))
     files += sorted(p for p in _LABELS_DIR.glob("*.py") if not p.stem.startswith("_"))
+    files += sorted(SNAPSHOTS_DIR.glob("*.json"))
     out: dict[str, list[int]] = {}
     for path in files:
         try:
