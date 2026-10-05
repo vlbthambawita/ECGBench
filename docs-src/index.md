@@ -3,9 +3,11 @@
 Reproducible ECG benchmark datasets with standardised splits, validation, and
 Croissant metadata.
 
-ECGBench is two things at once: a **catalogue** of 64 publicly available ECG
-datasets, and a **config-driven pipeline** that turns 52 of them into validated,
-deterministic 10-fold splits behind a single PyTorch `Dataset` class.
+ECGBench is three things at once: a **catalogue** of 64 publicly available ECG
+datasets, a **config-driven pipeline** that turns 51 of them into validated,
+deterministic 10-fold splits behind a single PyTorch `Dataset` class, and a
+**searchable metadata layer** over both that the CLI, the Python API, this
+site and an MCP server for agents all read.
 
 <div class="grid cards" markdown>
 
@@ -36,11 +38,21 @@ deterministic 10-fold splits behind a single PyTorch `Dataset` class.
 
     [:octicons-arrow-right-24: The checklist](guides/adding-a-dataset.md)
 
+-   :material-magnify: **Finding datasets & agents**
+
+    ---
+
+    Full-text search over every dataset, the records behind one with SQL, and
+    the same store served to agents over MCP.
+
+    [:octicons-arrow-right-24: The metadata layer](guides/metadata-layer.md)
+
 -   :material-console: **CLI**
 
     ---
 
-    `ecgbench splits`, `croissant` and `upload`, and the Python API behind each.
+    `ecgbench splits`, `croissant` and `upload` for building; `search`, `info`,
+    `records` and `mcp` for asking; and the Python API behind each.
 
     [:octicons-arrow-right-24: Command reference](reference/cli.md)
 

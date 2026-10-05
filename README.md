@@ -9,7 +9,7 @@
 
 Reproducible ECG benchmark datasets with standardised splits, validation, and Croissant metadata.
 
-ECGBench provides a curated catalogue of 64 publicly available ECG datasets, a config-driven pipeline for generating validated fold splits, and a unified PyTorch `Dataset` class for loading any supported dataset.
+ECGBench provides a curated catalogue of 64 publicly available ECG datasets, a config-driven pipeline for generating validated fold splits, and a unified PyTorch `Dataset` class for loading any supported dataset. Over all of that sits a searchable **metadata layer**: one record per dataset merged from the catalogue and the config, full-text search with structured filters (`ecgbench search holter --leads 2`), the declared label columns and leakage relations, the records behind a dataset with SQL (`ecgbench records`), schema.org and Croissant exports, and an **MCP server** (`ecgbench mcp`) that hands the same store to agents.
 
 | | |
 |---|---|
@@ -123,7 +123,7 @@ for batch in loader:
 
 ## Dataset Catalogue
 
-Query the curated index of 64 ECG datasets:
+Query the curated index of 64 ECG datasets. The functions below read the catalogue front matter alone; for the merged, searchable view — any alias, structured filters, declared fields, relations, recomputed counts — use the metadata layer (`ecgbench.get_metadata`, `search_metadata`, `related_metadata`, and the [`ecgbench list` / `search` / `info` / `fields` / `related` / `records` / `mcp`](#cli) commands).
 
 ```python
 import ecgbench

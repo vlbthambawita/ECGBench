@@ -137,6 +137,7 @@ nav:
   - Guides:
       - Adding a dataset: guides/adding-a-dataset.md
       - Distribution policy: guides/distribution-policy.md
+      - Finding datasets & agents: guides/metadata-layer.md
   - Reference:
       - CLI: reference/cli.md
       - API:

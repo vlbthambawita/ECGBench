@@ -12,11 +12,14 @@ subsystem's internal call flow.
 
 ---
 
-## 1. System Overview — the four subsystems
+## 1. System Overview — the five subsystems
 
 ECGBench is config-driven: one YAML file per dataset feeds every subsystem.
 There are two distinct user journeys — **building** a benchmark (`ecgbench
-splits`) and **consuming** one (`ECGDataset` in a training loop).
+splits`) and **consuming** one (`ECGDataset` in a training loop) — plus a third
+that touches no waveform at all: **querying** what exists through the metadata
+layer (§11), which the CLI, the Python API, the website and an MCP server for
+agents all read.
 
 ```mermaid
 flowchart TB
@@ -46,8 +49,15 @@ flowchart TB
         ECGDataset["dataset.py<br/>ECGDataset + ecg_collate_fn"]
     end
 
+    subgraph META["QUERY — metadata/ (§11)"]
+        build_model["build.py<br/>build_model()"]
+        store["store.py<br/>MetadataStore (JSON + SQLite FTS5)"]
+        views["cli/catalog.py · export.py ·<br/>records.py · mcp_server.py"]
+    end
+
     HF[("HuggingFace Hub<br/>vlbthambawita/ECGBench")]
     OUT["output/&lt;slug&gt;/<br/>{original,clean}/ + reports"]
+    SNAP["data/snapshots/&lt;slug&gt;.json<br/>(id-free counts + digests)"]
 
     YAML --> load_config --> DatasetConfig
     MD --> list_datasets
@@ -59,6 +69,11 @@ flowchart TB
 
     DatasetConfig --> ECGDataset
     HF -. "metadata_source='hf'" .-> ECGDataset
+
+    YAML --> build_model
+    MD --> build_model
+    OUT -- "ecgbench metadata snapshot" --> SNAP --> build_model
+    build_model --> store --> views
     OUT -. "metadata_source='local'" .-> ECGDataset
     ECGDataset --> Batch["batch dict<br/>signal + metadata tensors"]
 ```
@@ -558,12 +573,143 @@ flowchart LR
     sub -- splits --> sp["run_splits()<br/>§2 full pipeline"]
     sub -- croissant --> cr["run_croissant()<br/>standalone §7"]
     sub -- upload --> up["run_upload()<br/>→ HuggingFace Hub"]
+    sub -- "list / search / info /<br/>fields / related" --> cat["cli/catalog.py<br/>run_list … run_related<br/>§11 views over MetadataStore"]
+    sub -- "metadata build /<br/>snapshot / export" --> mb["cli/metadata.py<br/>run_metadata_build / _snapshot / _export"]
+    sub -- records --> rec["cli/records.py<br/>run_records() §11.4"]
+    sub -- mcp --> mcp["cli/mcp.py<br/>run_mcp() §11.5"]
 ```
 
 `run_upload()` walks `output/<slug>/{original,clean}/**.csv` plus
 `validation_report.json` / `croissant.json`, resolves an HF token
 (arg → `HF_TOKEN` → `HUGGINGFACE_HUB_TOKEN` → `.env`), and pushes each file via
 `HfApi.upload_file` (or lists them under `--dry-run`).
+
+---
+
+## 11. Metadata layer — `MetadataStore`, exports, records, MCP
+
+The metadata layer is the **query** journey: one typed record per dataset,
+`DatasetMeta`, merged from the catalogue front matter and the YAML config,
+searchable by any alias, and read by every surface that answers "what exists?".
+It is standard-library only (`import ecgbench` loads it in ~14 ms, and the
+JSON is parsed on first use); pandas appears only in `records.py`, which is
+imported on demand.
+
+### 11.1 Build — `build_model()` → `metadata.json` + `metadata.sqlite`
+
+```mermaid
+flowchart TB
+    MD["docs/_datasets/&lt;slug&gt;.md<br/>front matter (config_slug:, status, …)"]
+    YAML["data/configs/&lt;slug&gt;.yaml"]
+    FIELDS["labels/&lt;slug&gt;.py FIELDS<br/>or labels.fields: in YAML"]
+    SNAP["data/snapshots/&lt;slug&gt;.json"]
+
+    subgraph BUILD["metadata/build.py"]
+        bm["build_model()"]
+        dfs["declared_fields_from_source()<br/>(reads FIELDS with ast — no pandas)"]
+        merge["merge per dataset:<br/>SOURCE_PRECEDENCE config &gt; catalogue,<br/>except name; every value also a Fact"]
+        state["implementation_state derived:<br/>catalogue_only / config / config_labels / published"]
+        tj["to_json() + content_digest()"]
+        ws["write_sqlite()<br/>dataset · alias · fact · relation · field · artefact<br/>+ dataset_fts (FTS5 porter unicode61)"]
+    end
+
+    subgraph SNAPB["metadata/snapshot.py"]
+        bs["build_snapshot()<br/>manifest.json + validation_report.json<br/>→ counts, fold_digest, SHA-256s"]
+        cif["check_id_free()<br/>refuses anything that looks like a record list"]
+    end
+
+    OUT["output/&lt;slug&gt;/"] --> bs --> cif --> SNAP
+    MD --> bm
+    YAML --> bm
+    FIELDS --> dfs --> bm
+    SNAP --> bm
+    bm --> merge --> state --> tj
+    tj --> JSON["ecgbench/data/metadata.json<br/>(committed)"]
+    tj --> ws --> SQL["ecgbench/data/metadata.sqlite<br/>(generated, gitignored,<br/>shipped via hatch artifacts)"]
+    tj --> WEB["docs/_data/metadata.json<br/>(committed website copy)"]
+```
+
+The sqlite file is rebuilt in three places: by `hatch_build.py` into every
+wheel, by `open_store()` when it is missing or its digest differs from the
+JSON's, and in a source checkout whenever the mtime+size fingerprint of the
+sources changes. `ecgbench metadata build --check` and
+`tests/test_metadata.py` fail on drift; the snapshot step is
+`ecgbench metadata snapshot --dataset <slug>` after a split run.
+
+### 11.2 Read — `MetadataStore` and the views over it
+
+```mermaid
+flowchart LR
+    JSON["metadata.json"] --> os["open_store()"]
+    SQL["metadata.sqlite"] -. attach_index .-> os
+    os --> store["MetadataStore"]
+
+    store --> get["get(key) / resolve(key)<br/>AliasIndex: ptbxl = ptb-xl = PTB-XL"]
+    store --> search["search(query, **filters)<br/>bm25() × BM25_WEIGHTS + STATE_PENALTY;<br/>substring fallback without FTS5"]
+    store --> related["related(key)<br/>leakage edges, both directions"]
+
+    subgraph VIEWS["Views"]
+        cli["ecgbench list / search / info /<br/>fields / related  (cli/catalog.py)"]
+        py["ecgbench.get_metadata /<br/>search_metadata / related_metadata"]
+        exp["metadata/export.py<br/>to_schema_org · to_croissant(_collection) · to_website"]
+        rec["metadata/records.py<br/>load_records · query_records  §11.4"]
+        mcp["metadata/mcp_server.py<br/>ToolFunctions  §11.5"]
+    end
+
+    get --> cli & py & exp & rec & mcp
+    search --> cli & py & mcp
+    related --> cli & py & mcp
+```
+
+### 11.3 Exports — `metadata/export.py`
+
+Three deterministic views over the same model, written by
+`ecgbench metadata export`: a `schema.org/Dataset` block per dataset (embedded
+as JSON-LD in `docs/_layouts/dataset.html` from the committed website copy), a
+Croissant 1.1 `DataCatalog` whose `distribution` names the published fold CSVs
+with the snapshot's SHA-256 and whose withheld datasets carry an ODRL
+prohibition instead, and the website JSON keyed by catalogue slug.
+`validate_croissant` runs `mlcroissant` over every member — as
+`mlc.Dataset`, since `mlc.Metadata` alone never reports an error.
+
+### 11.4 Records — `metadata/records.py` (`ecgbench records`)
+
+The one per-record surface. It also owns the fold-table readers `ECGDataset`
+delegates to, so the two cannot disagree about the Hub layout or the
+identifier dtypes.
+
+```mermaid
+flowchart TB
+    key["dataset id / alias / DatasetConfig"] --> rc["resolve_config()<br/>(catalogue-only → RecordsUnavailableError)"]
+    rc --> lft["load_fold_table(source=…)"]
+    lft -- hf --> hub["fetch_hub_fold_table()<br/>SplitsNotPublishedError before any download"]
+    lft -- local --> loc["load_local_fold_table(splits_dir)<br/>output/&lt;slug&gt;/ or the data dir"]
+    hub --> rfc["read_fold_csv()<br/>identifier_dtypes() keeps afdb's 00735"]
+    loc --> rfc
+    rfc --> fft["filter_fold_table(split, fold_numbers)"]
+    fft --> jl["join_labels()<br/>left join on record id; fold columns win"]
+    ll["labels.load_labels()"] --> jl
+    jl --> df["pandas DataFrame"]
+    df --> qr["query_records(df, sql)<br/>DuckDB view `records`,<br/>external access off, config locked"]
+    df --> fmt["cli/records.py<br/>table · json · csv · parquet"]
+    ECG["ECGDataset._load_from_hf /<br/>_load_from_local"] -. delegate .-> hub & loc
+```
+
+### 11.5 MCP server — `metadata/mcp_server.py` (`ecgbench mcp`)
+
+```mermaid
+flowchart LR
+    agent(("MCP client<br/>e.g. Claude Code")) <-- "stdio JSON-RPC" --> srv["build_mcp_server()<br/>MCPServer (mcp 2.x) / FastMCP (1.x)"]
+    srv --> tf["ToolFunctions(store)"]
+    tf --> t1["search_datasets"] & t2["list_datasets"] & t3["get_dataset"] & t4["list_fields"] & t5["related_datasets"]
+    t1 & t2 & t3 & t4 & t5 --> store["MetadataStore"]
+    tf -. "errors as the SDK's ToolError,<br/>message intact" .-> agent
+```
+
+The tools are plain methods returning JSON-ready dicts, registered on the SDK
+server by name, so they run and are tested without the SDK; the schema comes
+from their type hints and docstrings. The server reads the bundled index and
+nothing else — no records, signals or network.
 
 ---
 
@@ -583,6 +729,14 @@ flowchart LR
 | Splitting | `strategies/` | `PTBXLSplitter`, `ChapmanSplitter`, `GenericSplitter`, `_get_superclass`, `_parse_scp_codes` |
 | Splitting | `splitting/export.py` | `export_splits`, `_minimal_columns`, `_select_columns`, `_build_split_column`, `_write_split_csvs` |
 | Croissant | `croissant.py` | `generate_croissant`, `save_croissant`, `validate_croissant`, `_build_manual_jsonld`, `_discover_csv_files`, `_sha256`, `_infer_field_type` |
-| Dataset | `dataset.py` | `ECGDataset` (`_load_metadata`, `_load_from_hf`, `_load_from_local`, `_read_fold_csvs`, `_filter_master`, `__getitem__`), `ecg_collate_fn`, `_load_signal`, `_resolve_window`, `_resolve_leads`, `_resolve_units`, `WindowOutOfRangeError`, `_parse_dict_string` |
-| Pipelines / CLI | `cli/` | `run_splits`, `run_croissant`, `run_upload`, `main`, `_build_parser` |
-| Public API | `__init__.py` | eager catalogue+config; lazy `__getattr__` for everything else |
+| Dataset | `dataset.py` | `ECGDataset` (`_load_metadata`, `_load_from_hf`, `_load_from_local` — both delegate to `metadata/records.py`, `__getitem__`), `ecg_collate_fn`, `_load_signal`, `_resolve_window`, `_resolve_leads`, `_resolve_units`, `WindowOutOfRangeError`, `_parse_dict_string` |
+| Metadata | `metadata/model.py` | `DatasetMeta`, `Fact`, `FieldMeta`, `RelationMeta`, `ArtefactMeta`, `SOURCE_PRECEDENCE`, `IMPLEMENTATION_STATES` |
+| Metadata | `metadata/build.py` | `build_model`, `build_all`, `to_json`, `write_sqlite`, `content_digest`, `diff_exports`, `declared_fields_from_source`, `is_source_checkout` |
+| Metadata | `metadata/store.py` | `MetadataStore` (`get`, `resolve`, `search`, `search_ranked`, `related`, `all`), `open_store`, `SearchHit`, `MetadataQueryError`, `BM25_WEIGHTS`, `STATE_PENALTY` |
+| Metadata | `metadata/identity.py` | `AliasIndex`, `resolve`, `UnknownDatasetError` |
+| Metadata | `metadata/snapshot.py` | `build_snapshot`, `write_snapshot`, `load_snapshots`, `check_id_free` |
+| Metadata | `metadata/export.py` | `to_schema_org`, `to_croissant`, `to_croissant_collection`, `to_website`, `write_website_json`, `validate_croissant` |
+| Metadata | `metadata/records.py` | `load_records`, `query_records`, `query_hub`, `load_fold_table`, `fetch_hub_fold_table`, `load_local_fold_table`, `read_fold_csv`, `filter_fold_table`, `join_labels`, `SplitsNotPublishedError`, `RecordsUnavailableError`, `RecordsQueryError` |
+| Metadata | `metadata/mcp_server.py` | `ToolFunctions` (`search_datasets`, `list_datasets`, `get_dataset`, `list_fields`, `related_datasets`), `build_mcp_server`, `run_server` |
+| Pipelines / CLI | `cli/` | `run_splits`, `run_croissant`, `run_upload`, `run_list`, `run_search`, `run_info`, `run_fields`, `run_related`, `run_metadata_build`, `run_metadata_check`, `run_metadata_snapshot`, `run_metadata_export`, `run_records`, `run_mcp`, `main`, `_build_parser` |
+| Public API | `__init__.py` | eager catalogue+config+metadata (all standard-library); lazy `__getattr__` for everything else |

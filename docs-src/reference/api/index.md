@@ -45,5 +45,7 @@ Two things about that top level are worth knowing before you read the rest.
 | Describing a new dataset | [`DatasetConfig`](config.md) |
 | Running the whole pipeline | [`run_splits`](pipelines.md) |
 | Checking a split is the canonical one | [`verify_splits`](manifest.md) |
+| The records behind a dataset, with SQL | [`load_records` / `query_records`](metadata.md#records) |
+| Serving the catalogue to an agent | [`build_mcp_server`](metadata.md#mcp-server) |
 
   [mkdocstrings]: https://mkdocstrings.github.io/
