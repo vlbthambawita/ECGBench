@@ -34,5 +34,9 @@
   "inputs": {
     "ecgbench_metadata.csv": "8b2b91f82d8e97940dd283553e08e4d2520f6659744e3c097576bfb0eefe4bab",
     "exams.csv": "70de270a9f1d2fffe7407635798a27c27a4e22969b382331fa9bd30513fdcfdc"
+  },
+  "files": {
+    "original/folds.csv": "d516dee00af65325a72a2ef7da965f3dc939f01092f80d82cccabacaed68e09f",
+    "clean/folds.csv": "c59d421da5fb70cf14105a581a3fcf2cb494c54da9c804630828ebb12e4bff97"
   }
 }

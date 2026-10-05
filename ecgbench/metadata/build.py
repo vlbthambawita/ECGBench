@@ -298,8 +298,10 @@ def _artefact_metas(snapshot: dict) -> tuple[ArtefactMeta, ...]:
     created = snapshot.get("created")
     out: list[ArtefactMeta] = []
     digests = snapshot.get("fold_digest") or {}
+    files = snapshot.get("files") or {}
     for partition in ("original", "clean"):
         if partition in digests:
+            name = f"{partition}/folds.csv"
             out.append(
                 ArtefactMeta(
                     kind="fold_csv",
@@ -308,6 +310,8 @@ def _artefact_metas(snapshot: dict) -> tuple[ArtefactMeta, ...]:
                     n_records=records.get(partition),
                     ecgbench_version=version,
                     created=created,
+                    name=name,
+                    file_sha256=files.get(name),
                 )
             )
     out.append(
@@ -320,6 +324,18 @@ def _artefact_metas(snapshot: dict) -> tuple[ArtefactMeta, ...]:
             created=created,
         )
     )
+    for name, sha256 in sorted((snapshot.get("inputs") or {}).items()):
+        out.append(
+            ArtefactMeta(
+                kind="input",
+                version=None,
+                sha256=sha256,
+                n_records=None,
+                ecgbench_version=version,
+                created=created,
+                name=name,
+            )
+        )
     return tuple(out)
 
 
@@ -747,14 +763,16 @@ CREATE TABLE relation (
     note           TEXT NOT NULL,
     derived        INTEGER NOT NULL
 );
-CREATE TABLE artefact (             -- populated from Phase 4 (snapshots)
+CREATE TABLE artefact (             -- from the committed snapshots (Phase 4)
     dataset_id       TEXT NOT NULL REFERENCES dataset(dataset_id),
-    kind             TEXT NOT NULL,
-    version          TEXT,
-    sha256           TEXT,
+    kind             TEXT NOT NULL,  -- fold_csv | validation_report | input
+    version          TEXT,           -- original | clean
+    sha256           TEXT,           -- fold digest (fold_csv) or file hash (input)
     n_records        INTEGER,
     ecgbench_version TEXT,
-    created          TEXT
+    created          TEXT,
+    name             TEXT,           -- clean/folds.csv, ecgbench_metadata.csv, ...
+    file_sha256      TEXT            -- SHA-256 of the written fold CSV
 );
 """
 
@@ -943,7 +961,7 @@ def write_sqlite(
             ],
         )
         conn.executemany(
-            "INSERT INTO artefact VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO artefact VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     m.dataset_id,
@@ -953,6 +971,8 @@ def write_sqlite(
                     a.n_records,
                     a.ecgbench_version,
                     a.created,
+                    a.name,
+                    a.file_sha256,
                 )
                 for m in ordered
                 for a in m.artefacts
@@ -1105,6 +1125,13 @@ def build_all(
     written = write_json(json_path, model)
     fts = write_sqlite(model, sqlite_path)
     write_sources(sources_path)
+    if output_dir is None and is_source_checkout():
+        # The website's committed copy (docs/_data/metadata.json) is a view over
+        # the same model; refreshing it here keeps one command for both.
+        from ecgbench.metadata.export import WEBSITE_JSON_PATH, write_website_json
+
+        if write_website_json(model, WEBSITE_JSON_PATH):
+            logger.info("wrote %s", WEBSITE_JSON_PATH)
     return BuildResult(
         json_path=json_path,
         sqlite_path=sqlite_path,

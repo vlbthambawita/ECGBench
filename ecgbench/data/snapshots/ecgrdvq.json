@@ -30,5 +30,9 @@
   "inputs": {
     "ecgbench_metadata.csv": "7532a9dbb37104f8dec56a76382537aa7595e49f73596d70d9257ef61247fb50",
     "SCR-002.Clinical.Data.csv": "821e378357a19b96094854f2cbd3be626fdc30960537f2879d332c62f6b7554c"
+  },
+  "files": {
+    "original/folds.csv": "4321177a296ef8d9ba797cf3e846aaac007568c33b126db79494413972814755",
+    "clean/folds.csv": "271e76d3ef559850109ac4f8551cdc79c6adf12ad09c9c628f9c2591e97e7535"
   }
 }

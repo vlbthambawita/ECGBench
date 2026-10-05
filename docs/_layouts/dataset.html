@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ page.name }} &mdash; ECGBench</title>
   <link rel="stylesheet" href="{{ '/assets/dataset.css' | relative_url }}">
+  {%- assign meta = site.data.metadata[page.slug] -%}
+  {%- if meta and meta.schema_org %}
+  <script type="application/ld+json">{{ meta.schema_org | jsonify }}</script>
+  {%- endif %}
 </head>
 <body>
   {% assign status = site.data.statuses[page.status] %}

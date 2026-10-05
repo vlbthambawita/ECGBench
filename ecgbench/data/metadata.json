@@ -1,6 +1,6 @@
 {
- "built_at": "2026-09-24T12:33:01+00:00",
- "content_digest": "sha256:5e21b07b5d5ec4daba77ecdf89d286b55cf0a8dafb624ab891cbb7a0db221fab",
+ "built_at": "2026-09-24T12:51:26+00:00",
+ "content_digest": "sha256:6104d4888a95ac89e9fb014433a2235602df97c0830caaa7f71d95899556f81c",
  "datasets": [
   {
    "access": {
@@ -21,26 +21,42 @@
     {
      "created": "2026-08-07T18:04:02.478194+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "39ada1df592c0b5849da89e7b6819aea5acfc34f6e32f67689d4e29dc15217cf",
      "kind": "fold_csv",
      "n_records": 25,
+     "name": "original/folds.csv",
      "sha256": "9e795a8f57984563c2c18889c9a9687ef385374c2e6e8a774069bab588d3f04b",
      "version": "original"
     },
     {
      "created": "2026-08-07T18:04:02.478194+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "e5cc0011bc6859c817cce572b3a1541653b266b98a4fd2c5e987de7ed9ad2be6",
      "kind": "fold_csv",
      "n_records": 23,
+     "name": "clean/folds.csv",
      "sha256": "2bbf41fe33197498d996baa55adf3dcf698327709099f3d5b98a326d8385e14e",
      "version": "clean"
     },
     {
      "created": "2026-08-07T18:04:02.478194+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 25,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-07T18:04:02.478194+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "7b699ad5a276d601fe43a120243773266f0ec620e8f88e393d83165bcbc95f66",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -848,26 +864,42 @@
     {
      "created": "2026-08-11T11:08:07.922582+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "a04cf97257ad374c72fe8e2a4e250be7ed5269d46d9502dafb6ccf90cee61825",
      "kind": "fold_csv",
      "n_records": 70,
+     "name": "original/folds.csv",
      "sha256": "04e6d3d8cdc5de080ee1d62d2ba8adb86e7d419bffec8c688a493acd00348dab",
      "version": "original"
     },
     {
      "created": "2026-08-11T11:08:07.922582+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "901610081f5bfd2252796d0cdfb7392f40de3462e472c01915d077a9fcbceb8a",
      "kind": "fold_csv",
      "n_records": 70,
+     "name": "clean/folds.csv",
      "sha256": "04e6d3d8cdc5de080ee1d62d2ba8adb86e7d419bffec8c688a493acd00348dab",
      "version": "clean"
     },
     {
      "created": "2026-08-11T11:08:07.922582+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 70,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-11T11:08:07.922582+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "8c25cb9a175e95f233eda342a2a3a1a910b4e38ce2293e0aa6cb18c5ce851db7",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -1744,26 +1776,52 @@
     {
      "created": "2026-08-02T20:12:30.503963+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "d6fe37f420679fac77c376aacc36f0266acc48c9e173c5a4a65fefe89b206552",
      "kind": "fold_csv",
      "n_records": 363,
+     "name": "original/folds.csv",
      "sha256": "2b866149bfe23c54802d88f329c1e8e9f3c7ebb1f66ea4899699dbdad81fe5c5",
      "version": "original"
     },
     {
      "created": "2026-08-02T20:12:30.503963+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "ad65d8d3d6a4afc45b4ccc426e335a63bf1070a2fd104dd3968ceaec54916052",
      "kind": "fold_csv",
      "n_records": 363,
+     "name": "clean/folds.csv",
      "sha256": "2b866149bfe23c54802d88f329c1e8e9f3c7ebb1f66ea4899699dbdad81fe5c5",
      "version": "clean"
     },
     {
      "created": "2026-08-02T20:12:30.503963+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 363,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-02T20:12:30.503963+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "315f807513733a64f9a4c1b4dae83b6081a62a55fa0e92486670c61dc5c614be",
+     "version": null
+    },
+    {
+     "created": "2026-08-02T20:12:30.503963+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "metadata.csv",
+     "sha256": "2ae5e0c11e86f1675ebc3e1efb5a7a9ff6b6abdce75796a4013020fe46b11ef8",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -2290,26 +2348,42 @@
     {
      "created": "2026-08-12T11:54:05.976764+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "0571d41b254087fd9fa8f91766101a77ea63b74bab31abd74529e9443990c6ea",
      "kind": "fold_csv",
      "n_records": 18,
+     "name": "original/folds.csv",
      "sha256": "898095e9f90588a71bab0ec5f9765b72027caab5be5cbc0e47a9d122d1c35ef4",
      "version": "original"
     },
     {
      "created": "2026-08-12T11:54:05.976764+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "ef7246cc019cfd3e9fac669bba1402a1c680ab2a507477b8218005139e204f3d",
      "kind": "fold_csv",
      "n_records": 18,
+     "name": "clean/folds.csv",
      "sha256": "898095e9f90588a71bab0ec5f9765b72027caab5be5cbc0e47a9d122d1c35ef4",
      "version": "clean"
     },
     {
      "created": "2026-08-12T11:54:05.976764+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 18,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-12T11:54:05.976764+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "bcbaadfe0d2438782714a6992ce42b55e3f81b7a311c8d945fcbd13553d84e8e",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -3285,26 +3359,42 @@
     {
      "created": "2026-08-08T11:07:55.680888+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "bdd1e5f1c1187315342b4bdb4e4f5095468a1e375e59c7f3eb27af11a29c0bc9",
      "kind": "fold_csv",
      "n_records": 8528,
+     "name": "original/folds.csv",
      "sha256": "c05508932fb874e8d1f408def6b95a4300678c2c8a490585c2abea43622a637f",
      "version": "original"
     },
     {
      "created": "2026-08-08T11:07:55.680888+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "0117d7792bafcbb40a3479d1ef2331e7d6b1710aed0e20f260cf3ebe6a14822f",
      "kind": "fold_csv",
      "n_records": 8527,
+     "name": "clean/folds.csv",
      "sha256": "367aa150d897492ee01c269f8e6a7a8ff3980ab8af5a99b8294dec98240245f3",
      "version": "clean"
     },
     {
      "created": "2026-08-08T11:07:55.680888+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 8528,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-08T11:07:55.680888+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "48bbedd6c2748e174f3b7d3b8ef6d5ccd306077fb21d6b7e98a22bbecf28e08e",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -4044,26 +4134,42 @@
     {
      "created": "2026-08-06T06:25:30.079966+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "e5b2932e8c12799b942e880010adb760c2b94d0933f5daf70f0c6b2118ab83c2",
      "kind": "fold_csv",
      "n_records": 43101,
+     "name": "original/folds.csv",
      "sha256": "cff73e3c27788fa215e81624d57e07bac276be4c0849206c293d35b894bb303f",
      "version": "original"
     },
     {
      "created": "2026-08-06T06:25:30.079966+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "a8a873933f914eaa14fd11566004a7dab1258c3b37d96f4a06d34c6fc1d74fc7",
      "kind": "fold_csv",
      "n_records": 42815,
+     "name": "clean/folds.csv",
      "sha256": "413adcba04a3c05346c7d3a524f12662dac6b14f88333fa6d99215086356fa62",
      "version": "clean"
     },
     {
      "created": "2026-08-06T06:25:30.079966+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 43101,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T06:25:30.079966+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "093d8d1e4796ec2f73844bb9f80c40c5a8676ded1241db09165b59c8b0450c2a",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -4775,8 +4881,10 @@
     {
      "created": "2026-07-30T19:58:55.448164+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 88253,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -5437,8 +5545,10 @@
     {
      "created": "2026-07-30T14:33:00.750173+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 10646,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -6044,26 +6154,42 @@
     {
      "created": "2026-08-10T07:37:20.467551+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "3d937d32ecbee4c114431b53065dde630fc31508ec3b08ecd146bb82d64a8794",
      "kind": "fold_csv",
      "n_records": 15,
+     "name": "original/folds.csv",
      "sha256": "c07bf4be48d0e1181992217215452c33039e385454b29767f7b2b6ada8a03a13",
      "version": "original"
     },
     {
      "created": "2026-08-10T07:37:20.467551+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "2fb290b15070fbee1a7b5ac5b0c8df0f3adabcccc646dc7635d21e950a2c2430",
      "kind": "fold_csv",
      "n_records": 15,
+     "name": "clean/folds.csv",
      "sha256": "c07bf4be48d0e1181992217215452c33039e385454b29767f7b2b6ada8a03a13",
      "version": "clean"
     },
     {
      "created": "2026-08-10T07:37:20.467551+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 15,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T07:37:20.467551+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "c58155f3552c7754f2877234a500b614551fdaaacf25d6f946b251fb648293a1",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -7222,26 +7348,42 @@
     {
      "created": "2026-08-06T11:46:27.242567+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "21b1cc69a7522f8a5d47d1ea1a19e1ff87878fe8f0a1e4baa51467513b153f46",
      "kind": "fold_csv",
      "n_records": 345779,
+     "name": "original/folds.csv",
      "sha256": "95a594ae19cfa7a094b59cbe1fa0acc5963d449ca9ad83760a08fe3b90b8559d",
      "version": "original"
     },
     {
      "created": "2026-08-06T11:46:27.242567+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "04f10f78f0b6217970f4c430a003f2a6230be1d1895d2cda4ac6b87a2759ceb9",
      "kind": "fold_csv",
      "n_records": 337238,
+     "name": "clean/folds.csv",
      "sha256": "01b4e2836122fe80a96a1a6add58595e3c9a60fceb7753b07e6d0dce02d01f83",
      "version": "clean"
     },
     {
      "created": "2026-08-06T11:46:27.242567+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 345779,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T11:46:27.242567+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "53686743e0b586d9a07fbaa3d90bf881668ae022fbdfbd95d00ada72b196903b",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -8021,26 +8163,42 @@
     {
      "created": "2026-08-06T11:33:41.676554+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "9b797060b6d1150f81e81534cf04c08cf163ae6d821c47334ae6f365ca7cc167",
      "kind": "fold_csv",
      "n_records": 827,
+     "name": "original/folds.csv",
      "sha256": "ea6c74659f5fe311ee8642aeb704322db5d5b9f9842e6d817edfe48c2bc351cf",
      "version": "original"
     },
     {
      "created": "2026-08-06T11:33:41.676554+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "1dc3a17af5b3e30f8a4cf0b308b1654ba2efd1cbcc69f284cb6aa9e8455bf0ba",
      "kind": "fold_csv",
      "n_records": 808,
+     "name": "clean/folds.csv",
      "sha256": "297b601058c4230e1fc6ec194c1c7ae59007c3a392ce5eb8fe5ff1265afd3d2a",
      "version": "clean"
     },
     {
      "created": "2026-08-06T11:33:41.676554+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 827,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T11:33:41.676554+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "143520f17ee1a291a1c7bc064bee6e81141c13799acee7fc9ec52d957bbe1506",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -9273,26 +9431,42 @@
     {
      "created": "2026-08-06T08:35:15.774555+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "f073952533ce60500a840c2f86843bff56435040f2e77d6523e169f7f14d8d58",
      "kind": "fold_csv",
      "n_records": 6877,
+     "name": "original/folds.csv",
      "sha256": "48c9273869525edd5b6cce543869ceeaa8c5affae81fea4db8ebecb82e105f71",
      "version": "original"
     },
     {
      "created": "2026-08-06T08:35:15.774555+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "0a9f03ea6d42195ec711873d8107be1d1fea596bf2e8d17b845afb2099bad9f7",
      "kind": "fold_csv",
      "n_records": 6760,
+     "name": "clean/folds.csv",
      "sha256": "76971edb0ba1e573133bf5b35123a0dd8766415aeab187b55569208a06edc7fc",
      "version": "clean"
     },
     {
      "created": "2026-08-06T08:35:15.774555+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 6877,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T08:35:15.774555+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "4799911587e02951d4c9fbb2351507293b9630513b61844f4b7c0c3a2269bdbd",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -9978,8 +10152,10 @@
     {
      "created": "2026-07-29T14:18:43.518172+00:00",
      "ecgbench_version": "0.10.1.dev1+g85fdcf542.d20260424",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 45152,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -10530,26 +10706,42 @@
     {
      "created": "2026-08-13T09:07:13.981806+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "d28140af1a5ece17903cb1f23f948a116f55a778525aaaa7dfd03ddd856d1e6d",
      "kind": "fold_csv",
      "n_records": 915,
+     "name": "original/folds.csv",
      "sha256": "d99253086ea9e7fa62ed24fcf450086fd07c19d7bf4f85f379cb58fc60b5b558",
      "version": "original"
     },
     {
      "created": "2026-08-13T09:07:13.981806+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "14f484149b14e464cdc8bce27cb57c79f98b68e5f00b1f778a7d1966c91bf2a7",
      "kind": "fold_csv",
      "n_records": 736,
+     "name": "clean/folds.csv",
      "sha256": "ef6838494950add4053161352e5245481c8c1e78a5ba6c2e558b282ecac4c1fa",
      "version": "clean"
     },
     {
      "created": "2026-08-13T09:07:13.981806+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 915,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-13T09:07:13.981806+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "abc7bd47873200e9e0b3abedd1cadc246a28fc12eaa7f1a4cc8a6ffdff475ad1",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -11365,26 +11557,52 @@
     {
      "created": "2026-08-04T10:01:39.667967+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "4340c105168d7227b07d214a9d73b45367b0e5cf7bcc1f8b004af0c0404622ab",
      "kind": "fold_csv",
      "n_records": 5749,
+     "name": "original/folds.csv",
      "sha256": "b6bc9fd96b989bbd95edb24d5856e4497a3ec32b21c51d35ddbdb2d66395ec20",
      "version": "original"
     },
     {
      "created": "2026-08-04T10:01:39.667967+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "fde216cfcbd75c9d565f418eb33f7580bdf8df57eee18528cd7a2329dd95e115",
      "kind": "fold_csv",
      "n_records": 5747,
+     "name": "clean/folds.csv",
      "sha256": "1eec5e772ff4f830af32fb5a47f35271de0ccd41ac5cd9675d27861d6051a650",
      "version": "clean"
     },
     {
      "created": "2026-08-04T10:01:39.667967+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 5749,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-04T10:01:39.667967+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "adeg.csv",
+     "sha256": "3ab7b3cde5e9a9a3103ecf9be5fe1a2ba4a1ae0f08c69dec0c24626361794f2f",
+     "version": null
+    },
+    {
+     "created": "2026-08-04T10:01:39.667967+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "b4e002c8e439d37683f999ac3cea60ea3e7bc5ae398b5e4091a93d22a98acde2",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -12409,26 +12627,52 @@
     {
      "created": "2026-08-04T10:37:17.926879+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "bdab793e863648d3e99069545f267b428daa6b854093ff7f151c1f2adf1d6523",
      "kind": "fold_csv",
      "n_records": 4211,
+     "name": "original/folds.csv",
      "sha256": "f012bafdd0be231bf613d85438734d18743bddbe3a582808f2141642638d05ea",
      "version": "original"
     },
     {
      "created": "2026-08-04T10:37:17.926879+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "58f24ce99df21f5ee090a39c3bd85c1e936b28bab5b39a3aa8331f1a99ab566e",
      "kind": "fold_csv",
      "n_records": 4209,
+     "name": "clean/folds.csv",
      "sha256": "5c6714d9bebfed2a7caa7f96aac673a199f144d14e9386fa4c874aa8b807303e",
      "version": "clean"
     },
     {
      "created": "2026-08-04T10:37:17.926879+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 4211,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-04T10:37:17.926879+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "SCR-003.Clinical.Data.csv",
+     "sha256": "9451c8f5fa80d49732db26e0808ab5691c133af7b261170c804accf91c2701bf",
+     "version": null
+    },
+    {
+     "created": "2026-08-04T10:37:17.926879+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "fa39217df50c741d7046b85c39e203123988618a04348117674622e9822658a2",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -13339,26 +13583,42 @@
     {
      "created": "2026-08-11T20:07:57.682819+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "13821449bca4e708b2e1624aba7e2be3f94055a821e6948caeb776995770c763",
      "kind": "fold_csv",
      "n_records": 310,
+     "name": "original/folds.csv",
      "sha256": "0e2bd104e84228c48256d5b311d70ec1e8305ea795284d2a315b8290cb8068a2",
      "version": "original"
     },
     {
      "created": "2026-08-11T20:07:57.682819+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "6fe35ff4ec1e1c387620454f1e716d1074e6b39b0928694bc22b8d71fdbcc19c",
      "kind": "fold_csv",
      "n_records": 307,
+     "name": "clean/folds.csv",
      "sha256": "2b7a6f21002888dd828d37eed4755fec3a3006e4ab0903268632747f3afa0022",
      "version": "clean"
     },
     {
      "created": "2026-08-11T20:07:57.682819+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 310,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-11T20:07:57.682819+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "5aaca15f717438f76f4956620a5ea026fb3cb5d73e150dfe4a341b335601e3d3",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -14236,26 +14496,52 @@
     {
      "created": "2026-08-04T13:16:12.393107+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "4321177a296ef8d9ba797cf3e846aaac007568c33b126db79494413972814755",
      "kind": "fold_csv",
      "n_records": 5232,
+     "name": "original/folds.csv",
      "sha256": "34c11aad4c8aa430a6ce7db8a52935d2869c05ec85ed58e26fcafd69c0020f52",
      "version": "original"
     },
     {
      "created": "2026-08-04T13:16:12.393107+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "271e76d3ef559850109ac4f8551cdc79c6adf12ad09c9c628f9c2591e97e7535",
      "kind": "fold_csv",
      "n_records": 5230,
+     "name": "clean/folds.csv",
      "sha256": "bece1a669522ac2cbd19b214b235005f9ed2d04f4cadb891b788413f96d4f8db",
      "version": "clean"
     },
     {
      "created": "2026-08-04T13:16:12.393107+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 5232,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-04T13:16:12.393107+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "SCR-002.Clinical.Data.csv",
+     "sha256": "821e378357a19b96094854f2cbd3be626fdc30960537f2879d332c62f6b7554c",
+     "version": null
+    },
+    {
+     "created": "2026-08-04T13:16:12.393107+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "7532a9dbb37104f8dec56a76382537aa7595e49f73596d70d9257ef61247fb50",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -15185,26 +15471,52 @@
     {
      "created": "2026-08-05T15:05:43.421393+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "80f3c968923e59d90dbc52a113d9411cb68cb0ff83e38105a5924172c729ba60",
      "kind": "fold_csv",
      "n_records": 82543,
+     "name": "original/folds.csv",
      "sha256": "1364daf541bb5ee540989c360c68bf6661d44a04dc802cddaeea6f0fd320c605",
      "version": "original"
     },
     {
      "created": "2026-08-05T15:05:43.421393+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "4d4a805101b41b9b51a6fc50859d4306fb682877086a4f12ddf12093c065a04a",
      "kind": "fold_csv",
      "n_records": 82539,
+     "name": "clean/folds.csv",
      "sha256": "f2b6b3b4edbb67589472990b4ddb73b893aa2fd27e65e09b24ecd3f0dcc5a0b6",
      "version": "clean"
     },
     {
      "created": "2026-08-05T15:05:43.421393+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 82543,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-05T15:05:43.421393+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "c32ebad0444658483e92d7f297095782271d372bbb2974b2a8a52bc888867f7e",
+     "version": null
+    },
+    {
+     "created": "2026-08-05T15:05:43.421393+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "echonext_metadata_100k.csv",
+     "sha256": "a1fb9f1a4d5fa2ea7238fe70247a2b8ad8a13d7b3ed9ee3685dd40871fac3c1f",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -16266,26 +16578,42 @@
     {
      "created": "2026-08-10T06:44:08.868837+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "3ec6c877e86d419367f1bcfbcf604a0bf86a9c2ccb78a26c1ac1d86052ff14bb",
      "kind": "fold_csv",
      "n_records": 90,
+     "name": "original/folds.csv",
      "sha256": "8a72ef35e31c81c232e3fcebd3508174b6f1085e9fe77416bfaa6b1ebcec0e92",
      "version": "original"
     },
     {
      "created": "2026-08-10T06:44:08.868837+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "126ebe310505d1ecfa4cc4f0418d0f79484dcd37e5ee9dd551f11927145a2f3f",
      "kind": "fold_csv",
      "n_records": 90,
+     "name": "clean/folds.csv",
      "sha256": "8a72ef35e31c81c232e3fcebd3508174b6f1085e9fe77416bfaa6b1ebcec0e92",
      "version": "clean"
     },
     {
      "created": "2026-08-10T06:44:08.868837+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 90,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T06:44:08.868837+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "4e417ce828fe3f890e88847d3524a4d30d92b654309f8068de3d0ba3c91bc926",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -17794,26 +18122,42 @@
     {
      "created": "2026-08-15T12:56:03.537526+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "91edce3da41b73396fb5c31a4a641861d3696a048f95479caf13dc346fb75ad0",
      "kind": "fold_csv",
      "n_records": 2943,
+     "name": "original/folds.csv",
      "sha256": "fad8e18ccc04a18e71f4b32d7a5488525618cb8fdd741c0ff5e11e51eb3e3fca",
      "version": "original"
     },
     {
      "created": "2026-08-15T12:56:03.537526+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "b5eef0977edf33520ca99e602030f5f488086bf84a22aafe9d546eb69a0eae71",
      "kind": "fold_csv",
      "n_records": 2936,
+     "name": "clean/folds.csv",
      "sha256": "bb60117ad71fffbe8d02ad5ba35c716716eea9e29ec22a796a423e6acc095a2b",
      "version": "clean"
     },
     {
      "created": "2026-08-15T12:56:03.537526+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 2943,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-15T12:56:03.537526+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "3cbfe922a57d325f1ba51c0fc4efb3a93164da024b244c1e724d4f97fa182d38",
+     "version": null
     }
    ],
    "category": "bspm",
@@ -19401,26 +19745,52 @@
     {
      "created": "2026-08-06T14:57:15.043580+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "da9a7b2a68388dd578d1ea6c48cb238c6c8066ecc7a30f2f11089ca88d98b8ae",
      "kind": "fold_csv",
      "n_records": 98130,
+     "name": "original/folds.csv",
      "sha256": "e7274f2270a4eef7c80ccdca0202f0b84622e3a93aea84a1c5b38d3518e103c3",
      "version": "original"
     },
     {
      "created": "2026-08-06T14:57:15.043580+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "2e2ec762e6203210d1bbb3475bca4cdf05b20264769f8dd069301076d6166321",
      "kind": "fold_csv",
      "n_records": 96096,
+     "name": "clean/folds.csv",
      "sha256": "7787f0ec1a6310cf72908d2a8f45c08da314ca5b9aa4f7a64386de549cfa536b",
      "version": "clean"
     },
     {
      "created": "2026-08-06T14:57:15.043580+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 98130,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T14:57:15.043580+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "75c4880075564d435861e8fe868d1fad8e5b9f80131f9ec0fcad24abc40d1b24",
+     "version": null
+    },
+    {
+     "created": "2026-08-06T14:57:15.043580+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "exams.csv",
+     "sha256": "dc9063dbf3b3a394395d4cefe787fdc3d2b0f2e68d8f86f33544ef44102791ef",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -20127,8 +20497,10 @@
     {
      "created": "2026-07-31T07:49:46.479150+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 75,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -20976,26 +21348,42 @@
     {
      "created": "2026-08-03T10:41:04.101681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "2ee9500089f2869baabadcdbf6453bf5473dc76007dbce7068369f254f250f3f",
      "kind": "fold_csv",
      "n_records": 39,
+     "name": "original/folds.csv",
      "sha256": "12e849e1d24017344889b6f522ebe6250f6bc15a331e98e87050f9aa693bd604",
      "version": "original"
     },
     {
      "created": "2026-08-03T10:41:04.101681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "3de7a554c4b37cd25b71d1824df1df20a39073a4bf65e7696afca917145014d6",
      "kind": "fold_csv",
      "n_records": 38,
+     "name": "clean/folds.csv",
      "sha256": "a208e041dc1e020caf53057d0da0b73062cdf33d369bce6987e4aa6d79a9896d",
      "version": "clean"
     },
     {
      "created": "2026-08-03T10:41:04.101681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 39,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-03T10:41:04.101681+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "ab03ec31854b86a7d97701aeb0ecf0b2e05ee53430014e48a410f507749fde2f",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -22169,26 +22557,42 @@
     {
      "created": "2026-08-08T07:17:37.471742+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "26cf828180a8669827a4e74d6d605c271172e7d2a75e4214aa74d6839f165f01",
      "kind": "fold_csv",
      "n_records": 84,
+     "name": "original/folds.csv",
      "sha256": "fec7552961e4a1b5269d5d6114a4d933f74b7aa00a71d4a1a3e5d8915baff8ab",
      "version": "original"
     },
     {
      "created": "2026-08-08T07:17:37.471742+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "17931c13b2915b75aededbf23ee17e390ac01d59355fe453317b6179d5820632",
      "kind": "fold_csv",
      "n_records": 84,
+     "name": "clean/folds.csv",
      "sha256": "fec7552961e4a1b5269d5d6114a4d933f74b7aa00a71d4a1a3e5d8915baff8ab",
      "version": "clean"
     },
     {
      "created": "2026-08-08T07:17:37.471742+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 84,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-08T07:17:37.471742+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "db0939f5114382cbd92dfaf4c7b977783cc7c0fdbe37f9674e8205fb39a671df",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -23205,26 +23609,42 @@
     {
      "created": "2026-08-11T09:51:42.887417+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "25cc322621137427dba477282ffa394cd35fa9ea47b92e6d661bb5e4c0d7ed57",
      "kind": "fold_csv",
      "n_records": 86,
+     "name": "original/folds.csv",
      "sha256": "35f7db4bcaaac760bce9c2e45beb52cfd3f60db44c3d9330de6dfecd91fbc6cc",
      "version": "original"
     },
     {
      "created": "2026-08-11T09:51:42.887417+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "26b83298ea7bea08cac4036a01c90e37abc5bf7d31eb5f0547ed0cb1ced47176",
      "kind": "fold_csv",
      "n_records": 86,
+     "name": "clean/folds.csv",
      "sha256": "35f7db4bcaaac760bce9c2e45beb52cfd3f60db44c3d9330de6dfecd91fbc6cc",
      "version": "clean"
     },
     {
      "created": "2026-08-11T09:51:42.887417+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 86,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-11T09:51:42.887417+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "474c463d4799a851becd11f4b4de7d50c4a8d2b746770ccc3c8c05306d1d95a9",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -25035,8 +25455,10 @@
     {
      "created": "2026-07-30T19:20:43.355232+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 200,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -25595,26 +26017,42 @@
     {
      "created": "2026-08-06T20:34:50.260792+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "7a0f7cf3b3861a425e7c00cb680f507064005f200091db3692c6972836fdb0fc",
      "kind": "fold_csv",
      "n_records": 16842,
+     "name": "original/folds.csv",
      "sha256": "169b152cbcce512198f9debf7dc503c20ac6433de9fa08de9053b8e08d823a81",
      "version": "original"
     },
     {
      "created": "2026-08-06T20:34:50.260792+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "1dd5e734d6ba39563900aa71d2a8ea994a0f2e0766daafb60c070b34794166b9",
      "kind": "fold_csv",
      "n_records": 16810,
+     "name": "clean/folds.csv",
      "sha256": "c754dcb700fb5f18212df21ebee82b423456f66fbd7eba86b6fa18596a67aad1",
      "version": "clean"
     },
     {
      "created": "2026-08-06T20:34:50.260792+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 16842,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T20:34:50.260792+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "b5059d44eb58f5b331eb7dd9a448d30268615d4473f56a13d5c191867e8c79a9",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -26293,26 +26731,42 @@
     {
      "created": "2026-08-03T14:29:08.668368+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "323a9549bd86eb703d0c2303e6be7be7372ae58d93c8eb8076d2e1daa6aaeaee",
      "kind": "fold_csv",
      "n_records": 53,
+     "name": "original/folds.csv",
      "sha256": "347257c213802a33013625568de04f2be09f9feb798bcd54fb3c7b4e829c561e",
      "version": "original"
     },
     {
      "created": "2026-08-03T14:29:08.668368+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "84319bd0529ba428659517f153704def90281dd3987fc991b5ece98d3cc1a525",
      "kind": "fold_csv",
      "n_records": 53,
+     "name": "clean/folds.csv",
      "sha256": "347257c213802a33013625568de04f2be09f9feb798bcd54fb3c7b4e829c561e",
      "version": "clean"
     },
     {
      "created": "2026-08-03T14:29:08.668368+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 53,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-03T14:29:08.668368+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "70933db790e569dc4699befda4660bb72c2da309a14cc326d77615efe61d31aa",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -27557,26 +28011,52 @@
     {
      "created": "2026-07-31T12:21:24.975276+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "9842cdbc052d5e439c2052c8f241a364e6ae81d20e9e465a25cf62091b93080b",
      "kind": "fold_csv",
      "n_records": 800035,
+     "name": "original/folds.csv",
      "sha256": "81d4d96e035bdef2fdb375a252d040ea3be801f6ad62487c7bb3ff6a77087979",
      "version": "original"
     },
     {
      "created": "2026-07-31T12:21:24.975276+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "9efe2e0de22f5860502c8001e0651967eec1d515991cbaec12a8887f785c02ff",
      "kind": "fold_csv",
      "n_records": 786699,
+     "name": "clean/folds.csv",
      "sha256": "2e2621b27332e623548ae7afb134c300ff088f2330900c82fa7154b88d372e64",
      "version": "clean"
     },
     {
      "created": "2026-07-31T12:21:24.975276+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 800035,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-07-31T12:21:24.975276+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "machine_measurements.csv",
+     "sha256": "56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6",
+     "version": null
+    },
+    {
+     "created": "2026-07-31T12:21:24.975276+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "record_list.csv",
+     "sha256": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -28483,8 +28963,10 @@
     {
      "created": "2026-07-30T08:16:41.051505+00:00",
      "ecgbench_version": "0.15.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 659,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -28953,26 +29435,42 @@
     {
      "created": "2026-08-07T05:42:53.836211+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "785d7b79209bb666f56385554a3693e1a77e9b32545ac2f431f2605c74c2c867",
      "kind": "fold_csv",
      "n_records": 48,
+     "name": "original/folds.csv",
      "sha256": "fa75c941434d030865a02b81ff7f7d26679ceb92f0a4bace67b3de727b2386b4",
      "version": "original"
     },
     {
      "created": "2026-08-07T05:42:53.836211+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "949b3c17f8f9edd47537c653cc4af6b33fd3fc3c9e47e5d813d7b1b4935facfc",
      "kind": "fold_csv",
      "n_records": 45,
+     "name": "clean/folds.csv",
      "sha256": "0ed427ce0d73314449cd84e8ee8374377225d1168bc1ac41a8c2832b96d01ad6",
      "version": "clean"
     },
     {
      "created": "2026-08-07T05:42:53.836211+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 48,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-07T05:42:53.836211+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "103efd1044f8ad42678fa141db9bead0d3b853e4b6c3ce99443091c48c544f3b",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -30475,26 +30973,42 @@
     {
      "created": "2026-08-06T09:32:07.163556+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "9c7223ac54e842f25a46a33404f1f919a17369ce4f1fd4188d890c90a37610df",
      "kind": "fold_csv",
      "n_records": 334,
+     "name": "original/folds.csv",
      "sha256": "bb92c7fd9789e0a5e814e6932ddcb2f86f42b1000093df5f7b695ef200ad4468",
      "version": "original"
     },
     {
      "created": "2026-08-06T09:32:07.163556+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "c751c32afc1f479f38c66cf642f4d715d4c8fb076d08dbc157cd41fb809a097b",
      "kind": "fold_csv",
      "n_records": 334,
+     "name": "clean/folds.csv",
      "sha256": "bb92c7fd9789e0a5e814e6932ddcb2f86f42b1000093df5f7b695ef200ad4468",
      "version": "clean"
     },
     {
      "created": "2026-08-06T09:32:07.163556+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 334,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T09:32:07.163556+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "714019bd8a94744f136640a9ccdc2462fcf7969855e7188cd9eeb07d35dad132",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -31082,26 +31596,42 @@
     {
      "created": "2026-08-03T13:33:44.659681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "bd6b47d2c54e5c05d75e76219875e315edee699e29c6364057165c8f93b0f90a",
      "kind": "fold_csv",
      "n_records": 28,
+     "name": "original/folds.csv",
      "sha256": "c61f8e4ddb2087abd5563e5c9992c81ba88b5d71b0409444d3b0c509f51f1fb9",
      "version": "original"
     },
     {
      "created": "2026-08-03T13:33:44.659681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "d76d7beb4ac36c7f9539cc4c23e6d7a35272fc60a00cbd901e0443af6f90ebb9",
      "kind": "fold_csv",
      "n_records": 28,
+     "name": "clean/folds.csv",
      "sha256": "c61f8e4ddb2087abd5563e5c9992c81ba88b5d71b0409444d3b0c509f51f1fb9",
      "version": "clean"
     },
     {
      "created": "2026-08-03T13:33:44.659681+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 28,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-03T13:33:44.659681+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "6dafbf7882c390f6e424e63ae0ee64f420e258f6a40c5eb9051203466d0cde8e",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -31792,26 +32322,42 @@
     {
      "created": "2026-08-09T10:18:27.785470+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "e5df23dd59839dca571d6af13c8786728cd7edc79ed34f369334981db81017e8",
      "kind": "fold_csv",
      "n_records": 18,
+     "name": "original/folds.csv",
      "sha256": "aab7ebc6fedc9fe992ac8f264089d295ad5ba23fc6585b84999c9fec94221578",
      "version": "original"
     },
     {
      "created": "2026-08-09T10:18:27.785470+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "8c3bb81479b3e3235cf617235576f4cf7f7d91ca61b407163bd9df5f600668c0",
      "kind": "fold_csv",
      "n_records": 18,
+     "name": "clean/folds.csv",
      "sha256": "aab7ebc6fedc9fe992ac8f264089d295ad5ba23fc6585b84999c9fec94221578",
      "version": "clean"
     },
     {
      "created": "2026-08-09T10:18:27.785470+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 18,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-09T10:18:27.785470+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "8f8b90c30876ebfe1e3811dbc5d4e409c5fa25bf80eb15795540fda4b21f4d20",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -32758,26 +33304,42 @@
     {
      "created": "2026-08-13T08:07:46.130103+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "bd8fce24da056ce306151bded55cd95c4342b17a967a7c1b0e0a2faf6cd6f8db",
      "kind": "fold_csv",
      "n_records": 10,
+     "name": "original/folds.csv",
      "sha256": "025c1a4e431da6cd02c19b5718dac6b7c2f8784907621d1d26b70a0fd449b1c6",
      "version": "original"
     },
     {
      "created": "2026-08-13T08:07:46.130103+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "bec217776071030e1e250e0050ea49599670ca9cf3851502bbc42681fb732b5a",
      "kind": "fold_csv",
      "n_records": 10,
+     "name": "clean/folds.csv",
      "sha256": "025c1a4e431da6cd02c19b5718dac6b7c2f8784907621d1d26b70a0fd449b1c6",
      "version": "clean"
     },
     {
      "created": "2026-08-13T08:07:46.130103+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 10,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-13T08:07:46.130103+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "c73fe3746a50486a85aa4aecbd532804e46c71dec1eebdf1a08fa71f809d9396",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -33904,8 +34466,10 @@
     {
      "created": "2026-07-30T19:20:59.123621+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 549,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -34909,8 +35473,10 @@
     {
      "created": "2026-04-16T11:48:37.378930+00:00",
      "ecgbench_version": "0.5.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 21799,
+     "name": null,
      "sha256": null,
      "version": "original"
     }
@@ -35613,26 +36179,42 @@
     {
      "created": "2026-08-10T13:59:18.688905+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "0ab4b380e3b16a0e872e322a6bd89e6311141529e795e950015053ea026b544e",
      "kind": "fold_csv",
      "n_records": 105,
+     "name": "original/folds.csv",
      "sha256": "cf99012e83abe05857d67a67c31837cb9ddf0b05852100d9b542148e532cf91c",
      "version": "original"
     },
     {
      "created": "2026-08-10T13:59:18.688905+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "69581bbd4ef1d22a73d80e9cfe114bb3834938fd73f538b2ba677fba3e40cbfd",
      "kind": "fold_csv",
      "n_records": 105,
+     "name": "clean/folds.csv",
      "sha256": "cf99012e83abe05857d67a67c31837cb9ddf0b05852100d9b542148e532cf91c",
      "version": "clean"
     },
     {
      "created": "2026-08-10T13:59:18.688905+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 105,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T13:59:18.688905+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "aed6c2e4b64a446853194ebbc3c0bdf2bd9ed61cb0857037af151b89189c1bbf",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -37106,26 +37688,52 @@
     {
      "created": "2026-08-06T14:55:40.761663+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "d516dee00af65325a72a2ef7da965f3dc939f01092f80d82cccabacaed68e09f",
      "kind": "fold_csv",
      "n_records": 1631,
+     "name": "original/folds.csv",
      "sha256": "16e3e86e9e897b9c8464904e72c5d74320d7f04fd8cc5218e2d297d3769e0a41",
      "version": "original"
     },
     {
      "created": "2026-08-06T14:55:40.761663+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "c59d421da5fb70cf14105a581a3fcf2cb494c54da9c804630828ebb12e4bff97",
      "kind": "fold_csv",
      "n_records": 1615,
+     "name": "clean/folds.csv",
      "sha256": "a64905df32b44d0ae290486cbfc357eab8633f82aab8cbfcea497cc505f2e9eb",
      "version": "clean"
     },
     {
      "created": "2026-08-06T14:55:40.761663+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 1631,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T14:55:40.761663+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "8b2b91f82d8e97940dd283553e08e4d2520f6659744e3c097576bfb0eefe4bab",
+     "version": null
+    },
+    {
+     "created": "2026-08-06T14:55:40.761663+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "exams.csv",
+     "sha256": "70de270a9f1d2fffe7407635798a27c27a4e22969b382331fa9bd30513fdcfdc",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -37766,26 +38374,42 @@
     {
      "created": "2026-08-10T09:03:20.920056+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "deb56127814fc624ec5acd6bec7691882f08a926d222e14d9674a2b33c784f34",
      "kind": "fold_csv",
      "n_records": 23,
+     "name": "original/folds.csv",
      "sha256": "cf54332bea32a283f296dcfc4a9e1dd1cf07b413d110a24b07b0b5cfdf68c9cc",
      "version": "original"
     },
     {
      "created": "2026-08-10T09:03:20.920056+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "142704e3ce7d84dc047d5fa8f278b7434f78d6da8b7e84083e51fc6d2b42126e",
      "kind": "fold_csv",
      "n_records": 3,
+     "name": "clean/folds.csv",
      "sha256": "e63a937ec062851425e47afabb0e48782bb1591ce35061007ffe036787da472a",
      "version": "clean"
     },
     {
      "created": "2026-08-10T09:03:20.920056+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 23,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T09:03:20.920056+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "8d00a16ceeea1aca9ecbd8cc9eeb505a74f8397156ab01dd78e3991a013bc463",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -39536,26 +40160,52 @@
     {
      "created": "2026-08-10T15:57:19.784533+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "41586f73de2ccbde5011f60abe2ed066ca068b50bec9caafb6fe411b7a76c146",
      "kind": "fold_csv",
      "n_records": 128,
+     "name": "original/folds.csv",
      "sha256": "be380ed3f2098314eb29e367ffd9a16d2719ae460d68cbd100e20f3ab787b41a",
      "version": "original"
     },
     {
      "created": "2026-08-10T15:57:19.784533+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "40d805748ea7abdad4315be0b3529f7030f088bf17ab48e315996b6537e3d953",
      "kind": "fold_csv",
      "n_records": 128,
+     "name": "clean/folds.csv",
      "sha256": "be380ed3f2098314eb29e367ffd9a16d2719ae460d68cbd100e20f3ab787b41a",
      "version": "clean"
     },
     {
      "created": "2026-08-10T15:57:19.784533+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 128,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T15:57:19.784533+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "AdditionalData.csv",
+     "sha256": "ccf3efa688865fed8563539fca2561e4f598fb7c03aa61d72202a24337353191",
+     "version": null
+    },
+    {
+     "created": "2026-08-10T15:57:19.784533+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "5daf5c2bae143ca3fb970d725e06df8aa2953ace892cdfe08d78df91fe3957ac",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -41049,26 +41699,42 @@
     {
      "created": "2026-08-06T09:32:53.363599+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "bb9fa2ef8ae7d06c3531048ca944968cb8e1e952ac4213b9f7451dc1bb8997cf",
      "kind": "fold_csv",
      "n_records": 25770,
+     "name": "original/folds.csv",
      "sha256": "1cc525cc68095613efdc14d2320c38386d925ccc79bd29985c7b606226c22189",
      "version": "original"
     },
     {
      "created": "2026-08-06T09:32:53.363599+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "7a355f82d2925fbc5353a1380b4df148b86f405f0b3bec0779b81920c3502c30",
      "kind": "fold_csv",
      "n_records": 25447,
+     "name": "clean/folds.csv",
      "sha256": "d2575987132448189873e873da82de2e16b6dd7735b0b72c5b4c1585dba9c5bc",
      "version": "clean"
     },
     {
      "created": "2026-08-06T09:32:53.363599+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 25770,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T09:32:53.363599+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "b242b28c0027ec2da666c62d140589fbd8344779855de68819201e3ee0ee22cb",
+     "version": null
     }
    ],
    "category": "12-lead-other",
@@ -41786,26 +42452,52 @@
     {
      "created": "2026-08-06T08:01:19.862576+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "81dedcd71c52862caf724c7f976a5c370d4d5a3338134400deb6deac4aa7feb9",
      "kind": "fold_csv",
      "n_records": 520,
+     "name": "original/folds.csv",
      "sha256": "6150fe8094f8e1e6c2add9fff9fe9f09cf2e63012f496754b50a511c47ea5b5f",
      "version": "original"
     },
     {
      "created": "2026-08-06T08:01:19.862576+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "e4d141ea4246a8eca81da59358a7b506d3de6983cd6de1c9b47484f2b6646946",
      "kind": "fold_csv",
      "n_records": 476,
+     "name": "clean/folds.csv",
      "sha256": "02c8fef0e388242ffcc112651a1c9c6778040aa666fe35f802faf2b77834aa6d",
      "version": "clean"
     },
     {
      "created": "2026-08-06T08:01:19.862576+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 520,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T08:01:19.862576+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "STAFF-III-Database-Annotations.xlsx",
+     "sha256": "37b89f20830ad73f4ce7d2fdd9d035ccc33a2ec3f0d05c995d6c2cb106de129e",
+     "version": null
+    },
+    {
+     "created": "2026-08-06T08:01:19.862576+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "612b80d7d0af376a5f21a86b33631ab7c39c6bacb64f59da174998196afd6b59",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -42645,26 +43337,42 @@
     {
      "created": "2026-08-10T16:41:38.873978+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "9fe5e005d6a60663795ca3afa69bf30690171c93cdee6be0838051b50f1a1efc",
      "kind": "fold_csv",
      "n_records": 28,
+     "name": "original/folds.csv",
      "sha256": "01490da4766584fddf390c73b14a9659c09bc7ac1e11ba9d73c43bd305bfb401",
      "version": "original"
     },
     {
      "created": "2026-08-10T16:41:38.873978+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "da0da9290119255dba7aee3c30b291e577b30091378c54832dcacc63f36c8913",
      "kind": "fold_csv",
      "n_records": 28,
+     "name": "clean/folds.csv",
      "sha256": "01490da4766584fddf390c73b14a9659c09bc7ac1e11ba9d73c43bd305bfb401",
      "version": "clean"
     },
     {
      "created": "2026-08-10T16:41:38.873978+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 28,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-10T16:41:38.873978+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "886dae2f28cf88ddaed860c8fecbb1fd3e388b008043ccadf930f281e47affe8",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -43790,26 +44498,42 @@
     {
      "created": "2026-08-09T11:22:39.359208+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "2baa3582b831f1b54b3c78228f50cc53f6663ca38fb10c74f9b2a1a5990ecee8",
      "kind": "fold_csv",
      "n_records": 78,
+     "name": "original/folds.csv",
      "sha256": "cea9915ab93a78f3a9109e71cc5914021533d1566c39186f5c05f3b6099f7988",
      "version": "original"
     },
     {
      "created": "2026-08-09T11:22:39.359208+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "2d8733699297832b9e2738759724c55115e84309dad5844d2fbf8bb001d8756f",
      "kind": "fold_csv",
      "n_records": 78,
+     "name": "clean/folds.csv",
      "sha256": "cea9915ab93a78f3a9109e71cc5914021533d1566c39186f5c05f3b6099f7988",
      "version": "clean"
     },
     {
      "created": "2026-08-09T11:22:39.359208+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 78,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-09T11:22:39.359208+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "38dc4df953000fa079e572a1bd06ff4cbae2b0fcd5018e5b72c738fc263c1517",
+     "version": null
     }
    ],
    "category": "two-lead",
@@ -44995,26 +45719,42 @@
     {
      "created": "2026-08-11T21:19:41.316853+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "d44107258b9fb03d4378c13e93f99ec5f55dea4320c6484dc79c25caf4d58d55",
      "kind": "fold_csv",
      "n_records": 7,
+     "name": "original/folds.csv",
      "sha256": "5a7627afa2e176ed61b7b4f80625a77986ac5793f37ebb4caac293fb7c1c9522",
      "version": "original"
     },
     {
      "created": "2026-08-11T21:19:41.316853+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "e8e302fb6830f469da56b5277fc3a8e5a48b0ad0d01b3ae4da61eddba0f12756",
      "kind": "fold_csv",
      "n_records": 7,
+     "name": "clean/folds.csv",
      "sha256": "5a7627afa2e176ed61b7b4f80625a77986ac5793f37ebb4caac293fb7c1c9522",
      "version": "clean"
     },
     {
      "created": "2026-08-11T21:19:41.316853+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 7,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-11T21:19:41.316853+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "6b69793a16b94c893368ef5518bc8242d5db68e02d778bbfaa68385f57b0aa6e",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -46160,26 +46900,42 @@
     {
      "created": "2026-08-11T22:27:07.900257+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "577ce56cd28468a2e8f4f1724aaa45d5a16762871505494a57a8acb58d3311b2",
      "kind": "fold_csv",
      "n_records": 580,
+     "name": "original/folds.csv",
      "sha256": "bf30246039bbfad09e9fdadb728b8d6018257334d5f4c435270a0728a2d27bf5",
      "version": "original"
     },
     {
      "created": "2026-08-11T22:27:07.900257+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "ff7f5213ddac58d563ef8ed14c7f0ace362dbc824904419c20f5e748c1b24b06",
      "kind": "fold_csv",
      "n_records": 342,
+     "name": "clean/folds.csv",
      "sha256": "a31dfdb5f9508c818c3a1c180894b2c1c98096a45253fe4ace72313c5ad1b2a4",
      "version": "clean"
     },
     {
      "created": "2026-08-11T22:27:07.900257+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 580,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-11T22:27:07.900257+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "624b044c91691b00e12e2f118e4efe87c9c549cf3beaed6b56d04a772c60598b",
+     "version": null
     }
    ],
    "category": "one-lead",
@@ -46932,26 +47688,42 @@
     {
      "created": "2026-08-14T07:51:42.876809+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "6c476fa842195bcf071013cfd487e8ad0083e6f30b8e04e094a760d7522fd09f",
      "kind": "fold_csv",
      "n_records": 25,
+     "name": "original/folds.csv",
      "sha256": "58f7bba588d6a624625124522c2f82fa53329cb8a773ac3db56ff0fda608d33e",
      "version": "original"
     },
     {
      "created": "2026-08-14T07:51:42.876809+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": "c14f4b6904eb84be8d33ae586cfab8c27af0051cde71f76908359c4adaf73db2",
      "kind": "fold_csv",
      "n_records": 25,
+     "name": "clean/folds.csv",
      "sha256": "58f7bba588d6a624625124522c2f82fa53329cb8a773ac3db56ff0fda608d33e",
      "version": "clean"
     },
     {
      "created": "2026-08-14T07:51:42.876809+00:00",
      "ecgbench_version": "0.54.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 25,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-14T07:51:42.876809+00:00",
+     "ecgbench_version": "0.54.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "60346afba83b3458271e9f16c03487e7d6ce6bb65540249f06d0e1c5e5bb3d86",
+     "version": null
     }
    ],
    "category": "three-lead",
@@ -48204,26 +48976,42 @@
     {
      "created": "2026-08-04T08:56:29.374564+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "9a79c8d2d2850ac2df6c8eaf94969ab72cf8f6fb61cad2db14cd7b5879f4e4fa",
      "kind": "fold_csv",
      "n_records": 540,
+     "name": "original/folds.csv",
      "sha256": "61e5254f4194e1726016ba28746f55af06878b69045ea86c0b1a48fe22f58438",
      "version": "original"
     },
     {
      "created": "2026-08-04T08:56:29.374564+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "bda388c302c6a930cbed647ad00319866d749a0f9b98f5e9f9a5d979370a6393",
      "kind": "fold_csv",
      "n_records": 540,
+     "name": "clean/folds.csv",
      "sha256": "61e5254f4194e1726016ba28746f55af06878b69045ea86c0b1a48fe22f58438",
      "version": "clean"
     },
     {
      "created": "2026-08-04T08:56:29.374564+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 540,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-04T08:56:29.374564+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "716af08e903b69851b7506191b6b80ff5fe955bc2636cfd038b39b378cfeb9a4",
+     "version": null
     }
    ],
    "category": "12-lead-physionet",
@@ -48897,26 +49685,52 @@
     {
      "created": "2026-08-06T15:03:00.934959+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "46953a75f85b1ab455b4e4b0c104e91e5eb5bf9b4e554450ffd140d3ef97c723",
      "kind": "fold_csv",
      "n_records": 14190,
+     "name": "original/folds.csv",
      "sha256": "011b2acc2dda889318af843632150308bb8d062b557d312909324b0c1cb84515",
      "version": "original"
     },
     {
      "created": "2026-08-06T15:03:00.934959+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": "b733a955f831442c23c6fbb1fe62110161c23bf83a0d855dd2ac996b73942037",
      "kind": "fold_csv",
      "n_records": 12190,
+     "name": "clean/folds.csv",
      "sha256": "daf09115b771f9f40301000cf6cf74051c7d6566cd9bf58d657f085bbf5f242b",
      "version": "clean"
     },
     {
      "created": "2026-08-06T15:03:00.934959+00:00",
      "ecgbench_version": "0.20.0",
+     "file_sha256": null,
      "kind": "validation_report",
      "n_records": 14190,
+     "name": null,
      "sha256": null,
      "version": "original"
+    },
+    {
+     "created": "2026-08-06T15:03:00.934959+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "AttributesDictionary.csv",
+     "sha256": "cb7338fd440529b22a52b7c4a4010c5f0511655be2a67b16fa21e316b433d7ad",
+     "version": null
+    },
+    {
+     "created": "2026-08-06T15:03:00.934959+00:00",
+     "ecgbench_version": "0.20.0",
+     "file_sha256": null,
+     "kind": "input",
+     "n_records": null,
+     "name": "ecgbench_metadata.csv",
+     "sha256": "42c698738c60e290fc89fc9a89c4cc24d60fdd364498992b8fa94afe8ccaa8b1",
+     "version": null
     }
    ],
    "category": "12-lead-other",

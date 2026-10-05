@@ -146,15 +146,20 @@
     "artefact": {
       "description": "One artefact of the canonical split run, from the dataset's snapshot.",
       "type": "object",
-      "required": ["kind", "version", "sha256", "n_records", "ecgbench_version", "created"],
+      "required": [
+        "kind", "version", "sha256", "n_records", "ecgbench_version", "created", "name",
+        "file_sha256"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": {"type": "string", "enum": ["fold_csv", "validation_report"]},
+        "kind": {"type": "string", "enum": ["fold_csv", "validation_report", "input"]},
         "version": {"enum": ["original", "clean", null]},
         "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "n_records": {"type": ["integer", "null"], "minimum": 0},
         "ecgbench_version": {"$ref": "#/$defs/nullableString"},
-        "created": {"$ref": "#/$defs/nullableString"}
+        "created": {"$ref": "#/$defs/nullableString"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "file_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
       }
     },
     "snapshot": {
@@ -163,7 +168,7 @@
       "required": [
         "snapshot_version", "dataset", "dataset_version", "ecgbench_version", "created", "sources",
         "records", "records_excluded", "quality_checks", "n_folds", "random_state",
-        "grouped_by_patient", "fold_digest", "digest_version", "inputs"
+        "grouped_by_patient", "fold_digest", "digest_version", "inputs", "files"
       ],
       "additionalProperties": false,
       "properties": {
@@ -214,6 +219,12 @@
         "inputs": {
           "description": "Input file name -> SHA-256; never record content",
           "type": "object",
+          "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "files": {
+          "description": "<version>/folds.csv -> SHA-256 of the written file",
+          "type": "object",
+          "propertyNames": {"enum": ["original/folds.csv", "clean/folds.csv"]},
           "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
         }
       }

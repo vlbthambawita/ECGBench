@@ -45,3 +45,7 @@ The same views are available on the command line as `ecgbench list`,
 ## Artefact snapshots
 
 ::: ecgbench.metadata.snapshot
+
+## Exports
+
+::: ecgbench.metadata.export

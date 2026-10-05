@@ -333,9 +333,14 @@ class TestSnapshotsInTheModel:
         meta = open_store().get("mitdb")
         kinds = {(a.kind, a.version) for a in meta.artefacts}
         assert kinds == {("fold_csv", "original"), ("fold_csv", "clean"),
-                         ("validation_report", "original")}
+                         ("validation_report", "original"), ("input", None)}
         fold = next(a for a in meta.artefacts if a.version == "clean" and a.kind == "fold_csv")
         assert fold.n_records == 45 and len(fold.sha256) == 64
+        assert fold.name == "clean/folds.csv" and len(fold.file_sha256) == 64
+        assert fold.file_sha256 != fold.sha256  # file hash, not the partition digest
+        inputs = [a for a in meta.artefacts if a.kind == "input"]
+        assert [a.name for a in inputs] == ["ecgbench_metadata.csv"]
+        assert len(inputs[0].sha256) == 64 and inputs[0].n_records is None
         assert open_store().get("ptb-xl-plus").artefacts == ()  # catalogue-only
 
     def test_a_dataset_without_a_snapshot_has_no_computed_facts(self):

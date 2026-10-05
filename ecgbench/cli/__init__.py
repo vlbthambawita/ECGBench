@@ -18,6 +18,8 @@ from ecgbench.cli.croissant import run_croissant
 from ecgbench.cli.metadata import (
     run_metadata_build,
     run_metadata_check,
+    run_metadata_export,
+    run_metadata_export_check,
     run_metadata_snapshot,
 )
 from ecgbench.cli.splits import run_splits
@@ -35,5 +37,7 @@ __all__ = [
     "run_fields",
     "run_metadata_build",
     "run_metadata_check",
+    "run_metadata_export",
+    "run_metadata_export_check",
     "run_metadata_snapshot",
 ]

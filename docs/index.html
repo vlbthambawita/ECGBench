@@ -741,7 +741,7 @@ held_out = <span class="func">ECGDataset</span>(
           <tr class="dataset-row"
               data-access="{{ row.access }}"
               data-leads="{{ row.leads | default: '12' }}"
-              data-text="{{ row.search_keywords }}"
+              data-text="{{ row.search_keywords }} {{ site.data.metadata[row.slug].search_text }}"
               data-status="{{ row.status }}">
             {% for col_id in table.columns %}
               {% include cells/{{ col_id }}.html row=row status=status idx=row_idx %}

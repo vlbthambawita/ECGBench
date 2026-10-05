@@ -28,6 +28,7 @@ therefore never imported here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -46,6 +47,17 @@ _MANIFESTS_DIR = Path(__file__).resolve().parent.parent / "data" / "manifests"
 
 MANIFEST_NAME = "manifest.json"
 REPORT_NAME = "validation_report.json"
+
+#: The published artefacts whose file hashes a snapshot records, relative to the tree.
+FOLD_FILES = ("original/folds.csv", "clean/folds.csv")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 #: Keys that name records rather than count them. None may appear in a snapshot.
 RECORD_LIST_KEYS: frozenset[str] = frozenset(
@@ -71,7 +83,9 @@ def build_snapshot(output_dir: Path | str) -> dict[str, Any]:
     ``validation_report.json`` is required; ``manifest.json`` is used when present
     (runs before ECGBench 0.20 wrote none), and without it the split half -
     ``fold_digest``, ``n_folds``, ``random_state``, ``inputs`` - is ``None`` or
-    empty and ``sources`` says so.
+    empty and ``sources`` says so. ``files`` holds the SHA-256 of each
+    ``<version>/folds.csv`` present, the bytes a Croissant ``FileObject`` can
+    name; the ``fold_digest`` is a hash of the partition, not of any file.
 
     Args:
         output_dir: The directory ``ecgbench splits`` wrote into.
@@ -148,6 +162,11 @@ def build_snapshot(output_dir: Path | str) -> dict[str, Any]:
             if manifest
             else {}
         ),
+        "files": {
+            name: _file_sha256(output_dir / name)
+            for name in FOLD_FILES
+            if (output_dir / name).is_file()
+        },
     }
     check_id_free(snapshot)
     return snapshot

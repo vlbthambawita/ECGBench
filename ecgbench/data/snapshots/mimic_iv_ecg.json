@@ -42,5 +42,9 @@
   "inputs": {
     "record_list.csv": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b",
     "machine_measurements.csv": "56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6"
+  },
+  "files": {
+    "original/folds.csv": "9842cdbc052d5e439c2052c8f241a364e6ae81d20e9e465a25cf62091b93080b",
+    "clean/folds.csv": "9efe2e0de22f5860502c8001e0651967eec1d515991cbaec12a8887f785c02ff"
   }
 }

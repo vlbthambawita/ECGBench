@@ -1753,6 +1753,17 @@ ecgbench metadata snapshot --output-dir /elsewhere/mitdb/ --dest /tmp/mitdb.json
 ecgbench metadata build                              # then rebuild the export
 ```
 
+### `ecgbench metadata export`
+
+Three views over the same model. `--croissant PATH` writes one JSON-LD `DataCatalog` holding an [MLCommons Croissant 1.1](https://mlcommons.org/croissant/) `Dataset` per configured dataset: `distribution` names the published fold CSVs on the Hub with the SHA-256 the snapshot recorded, a `RecordSet` per version types the fold table's guaranteed columns, the declared label fields appear as `variableMeasured`, the run's input files as PROV-O `wasDerivedFrom`, and a dataset whose fold CSVs are withheld carries `conditionsOfAccess` and an ODRL prohibition on distribution instead of a `distribution`. `--validate` runs `mlcroissant` over every member and exits 1 on an error. `--schema-org DIR` writes one `schema.org/Dataset` block per dataset, and `--website -` writes `docs/_data/metadata.json`, the committed copy the dataset pages embed as JSON-LD and the catalogue search box reads field names from; `ecgbench metadata build` refreshes that copy too in a source checkout, and `export --check` (like `build --check`) exits 1 when it is stale.
+
+```bash
+ecgbench metadata export --croissant ecgbench-croissant.jsonld --validate
+ecgbench metadata export --schema-org /tmp/schema-org/
+ecgbench metadata export --website -          # docs/_data/metadata.json
+ecgbench metadata export --check
+```
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--check` | flag | off | Verify instead of writing; non-zero exit on drift |

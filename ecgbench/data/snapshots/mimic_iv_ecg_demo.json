@@ -27,5 +27,9 @@
   "grouped_by_patient": null,
   "fold_digest": null,
   "digest_version": null,
-  "inputs": {}
+  "inputs": {},
+  "files": {
+    "original/folds.csv": "f5d7be805ec38221d280a95ffc7090c878cfb96436469da6677efda1b1aba524",
+    "clean/folds.csv": "fa19e17b0656f639b6efc6594223d9ffa19d7ad70c360fe905af78b017700948"
+  }
 }

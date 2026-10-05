@@ -203,14 +203,21 @@ class ArtefactMeta:
     """One artefact a split run produced, as recorded in the dataset's snapshot.
 
     Attributes:
-        kind: ``fold_csv`` (one per version) or ``validation_report``.
-        version: ``original`` or ``clean`` - the partition the artefact describes.
+        kind: ``fold_csv`` (one per version), ``validation_report``, or ``input``
+            (a source file the run read, from the manifest's ``inputs``).
+        version: ``original`` or ``clean`` - the partition the artefact describes;
+            ``None`` for an input.
         sha256: For ``fold_csv``, the ``fold_digest`` over the record-to-fold
             mapping (not a file hash: the CSV's bytes may differ across pandas
-            versions, the partition may not); ``None`` for the report.
-        n_records: Records in that version.
+            versions, the partition may not); for ``input``, the file's SHA-256;
+            ``None`` for the report.
+        n_records: Records in that version; ``None`` for an input.
         ecgbench_version: The ECGBench that produced it.
         created: ISO-8601 timestamp of the run (the report's ``validated_at``).
+        name: The file, relative to the output tree (``clean/folds.csv``) or to
+            the data path (``ecgbench_metadata.csv``); ``None`` for the report.
+        file_sha256: For ``fold_csv``, the SHA-256 of the CSV as written by the
+            run - what a Croissant ``FileObject`` names; ``None`` when unknown.
     """
 
     kind: str
@@ -219,6 +226,8 @@ class ArtefactMeta:
     n_records: int | None
     ecgbench_version: str | None
     created: str | None
+    name: str | None = None
+    file_sha256: str | None = None
 
 
 @dataclass(frozen=True)

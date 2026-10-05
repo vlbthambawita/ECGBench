@@ -46,5 +46,9 @@
   "inputs": {
     "ecgbench_metadata.csv": "612b80d7d0af376a5f21a86b33631ab7c39c6bacb64f59da174998196afd6b59",
     "STAFF-III-Database-Annotations.xlsx": "37b89f20830ad73f4ce7d2fdd9d035ccc33a2ec3f0d05c995d6c2cb106de129e"
+  },
+  "files": {
+    "original/folds.csv": "81dedcd71c52862caf724c7f976a5c370d4d5a3338134400deb6deac4aa7feb9",
+    "clean/folds.csv": "e4d141ea4246a8eca81da59358a7b506d3de6983cd6de1c9b47484f2b6646946"
   }
 }

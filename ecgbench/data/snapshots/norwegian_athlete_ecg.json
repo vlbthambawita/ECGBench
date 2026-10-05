@@ -24,5 +24,9 @@
   "digest_version": 1,
   "inputs": {
     "ecgbench_metadata.csv": "6dafbf7882c390f6e424e63ae0ee64f420e258f6a40c5eb9051203466d0cde8e"
+  },
+  "files": {
+    "original/folds.csv": "bd6b47d2c54e5c05d75e76219875e315edee699e29c6364057165c8f93b0f90a",
+    "clean/folds.csv": "d76d7beb4ac36c7f9539cc4c23e6d7a35272fc60a00cbd901e0443af6f90ebb9"
   }
 }
