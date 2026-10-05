@@ -16,6 +16,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from ecgbench.metadata.records import HF_REPO_ID, fetch_hub_fold_table, load_local_fold_table
+from ecgbench.metadata.records import SplitsNotPublishedError as SplitsNotPublishedError
+
 if TYPE_CHECKING:
     from ecgbench.config import DatasetConfig
 
@@ -54,15 +57,6 @@ class UnitConversionError(ValueError):
     Raised for sources whose publisher standardised the waveforms — see
     ``DatasetConfig.signal_units``. Scaling them by 1000 would produce a number
     that looks like microvolts and means nothing.
-    """
-
-
-class SplitsNotPublishedError(RuntimeError):
-    """The dataset's splits are deliberately not on the Hub.
-
-    Raised instead of a bare 404 for credentialed or restricted sources, whose
-    identifiers ECGBench will not republish. The message carries the command
-    that regenerates the identical split locally.
     """
 
 
@@ -1362,131 +1356,21 @@ class ECGDataset(_TorchDataset):
             )
 
     def _load_from_hf(self, fold_numbers: list[int] | None) -> pd.DataFrame:
-        """Download fold CSVs from HuggingFace Hub."""
-        try:
-            from huggingface_hub import hf_hub_download
-        except ImportError:
-            raise ImportError(
-                "huggingface_hub is required for HF metadata. "
-                "Install with: pip install ecgbench[hf]"
-            )
+        """Download fold CSVs from HuggingFace Hub.
 
-        repo_id = "vlbthambawita/ECGBench"
-
-        if not self.config.publish_fold_csvs:
-            raise SplitsNotPublishedError(
-                f"ECGBench does not publish fold CSVs for '{self.config.slug}'.\n"
-                f"{self.config.no_publish_reason.strip()}\n"
-                f"Then load with metadata_source=\"local\", pointing data_path at the "
-                "directory holding the generated original/ and clean/ trees."
-            )
-
-        # split=None means "by fold, ignoring the default split", which only the
-        # master folds.csv can answer.
-        if fold_numbers is None or self.split is None:
-            master_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=f"{self.config.slug}/{self.version}/folds.csv",
-                repo_type="dataset",
-            )
-            return self._filter_master(self._read_csv(master_path), fold_numbers)
-
-        files_to_load = [
-            f"{self.config.slug}/{self.version}/{self.split}/fold_{n}.csv" for n in fold_numbers
-        ]
-
-        dfs = []
-        for file_path in files_to_load:
-            local_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=file_path,
-                repo_type="dataset",
-            )
-            dfs.append(self._read_csv(local_path))
-
-        return pd.concat(dfs, ignore_index=True)
-
-    def _read_csv(self, path: str | Path) -> pd.DataFrame:
-        """Read a fold CSV, keeping identifier columns as strings.
-
-        The one place every fold-CSV read goes through, so the HF and local paths
-        cannot disagree about a record's id. Without the dtype, pandas turns a
-        zero-padded record id such as ``afdb``'s ``00735`` into 735 and
-        ``__getitem__`` then looks for a record named "735".
+        The fetch itself lives in ``ecgbench.metadata.records`` so that
+        ``load_records`` and this class share one copy of the Hub layout, the
+        identifier dtypes and the fold-selection rules.
         """
-        return pd.read_csv(path, dtype=self.config.identifier_dtypes())
-
-    def _filter_master(self, df: pd.DataFrame, fold_numbers: list[int] | None) -> pd.DataFrame:
-        """Filter the master folds.csv by split and/or fold.
-
-        Shared by the HF and local paths so the two cannot drift. With
-        ``split=None`` the ``default_split`` filter is skipped, which is what
-        makes cross-split fold selection possible.
-        """
-        if self.split is not None:
-            df = df[df["default_split"] == self.split]
-        if fold_numbers is not None:
-            known = {int(n) for n in df["fold"].unique()}
-            unknown = [n for n in fold_numbers if int(n) not in known]
-            if unknown:
-                raise ValueError(
-                    f"Fold(s) {unknown} hold no records"
-                    + (f" in split '{self.split}'" if self.split else "")
-                    + f". Available: {sorted(known)}."
-                )
-            df = df[df["fold"].isin(fold_numbers)]
-        return df.reset_index(drop=True)
-
-    def _load_from_local(self, fold_numbers: list[int] | None) -> pd.DataFrame:
-        """Load fold CSVs from local disk."""
-        # Look for fold CSVs in the data_path following standard structure
-        splits_base = self.data_path
-
-        # Per-split fold files are the fast path, but they cannot answer
-        # split=None — fold N lives in exactly one split's directory.
-        if self.split is not None:
-            for candidate in [
-                splits_base / self.version / self.split,
-                splits_base / self.split,
-            ]:
-                if candidate.exists():
-                    return self._read_fold_csvs(candidate, fold_numbers)
-
-        # Fallback: the master folds.csv, which also serves split=None
-        for candidate in [
-            splits_base / self.version / "folds.csv",
-            splits_base / "folds.csv",
-        ]:
-            if candidate.exists():
-                return self._filter_master(self._read_csv(candidate), fold_numbers)
-
-        raise FileNotFoundError(
-            f"Could not find fold CSVs for split '{self.split}' "
-            f"in {splits_base}. Run the split pipeline first or use metadata_source='hf'."
+        return fetch_hub_fold_table(
+            self.config, self.version, self.split, fold_numbers, repo_id=HF_REPO_ID
         )
 
-    def _read_fold_csvs(
-        self, split_dir: Path, fold_numbers: list[int] | None
-    ) -> pd.DataFrame:
-        """Read fold CSV files from a split directory."""
-        if fold_numbers is not None:
-            files = [split_dir / f"fold_{n}.csv" for n in fold_numbers]
-            missing = [f for f in files if not f.exists()]
-            if missing:
-                present = sorted(int(p.stem.split("_")[1]) for p in split_dir.glob("fold_*.csv"))
-                raise FileNotFoundError(
-                    f"Fold(s) {[int(f.stem.split('_')[1]) for f in missing]} are not in "
-                    f"split '{self.split}' (it holds folds {present}). Each fold belongs "
-                    "to exactly one split, so to take folds across split boundaries — "
-                    "for custom cross-validation — pass split=None with fold_numbers."
-                )
-        else:
-            files = sorted(split_dir.glob("fold_*.csv"))
-            if not files:
-                raise FileNotFoundError(f"No fold_*.csv files in {split_dir}")
-
-        dfs = [self._read_csv(f) for f in files]
-        return pd.concat(dfs, ignore_index=True)
+    def _load_from_local(self, fold_numbers: list[int] | None) -> pd.DataFrame:
+        """Load fold CSVs from ``data_path`` (see ``load_local_fold_table``)."""
+        return load_local_fold_table(
+            self.data_path, self.config, self.version, self.split, fold_numbers
+        )
 
     def _load_labels(self) -> pd.DataFrame:
         """Load per-record labels, reindexed to this split's records in order.

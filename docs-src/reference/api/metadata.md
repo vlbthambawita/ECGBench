@@ -26,6 +26,12 @@ metadata.related("ptbxl")   # leakage edges, both directions
 The same views are available on the command line as `ecgbench list`,
 `ecgbench info` and `ecgbench related` — see [CLI](../cli.md).
 
+`ecgbench.metadata.records` is the one module here that returns *records*
+rather than dataset descriptions: `load_records` joins a dataset's fold table
+with its labels, `query_records` runs DuckDB SQL over the result. It needs
+pandas and is not imported with the package; reach it as
+`ecgbench.load_records` / `ecgbench.query_records` or `ecgbench records`.
+
 ## Model
 
 ::: ecgbench.metadata.model
@@ -49,3 +55,7 @@ The same views are available on the command line as `ecgbench list`,
 ## Exports
 
 ::: ecgbench.metadata.export
+
+## Records
+
+::: ecgbench.metadata.records

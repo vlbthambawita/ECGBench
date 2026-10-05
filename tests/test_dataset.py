@@ -2071,10 +2071,12 @@ class TestPerRecordLeadLayouts:
 class TestZeroPaddedRecordIds:
     """Fold CSVs must round-trip identifiers as strings, or afdb silently breaks.
 
-    ``ECGDataset._read_csv`` is the single place every fold-CSV read goes through
-    for exactly this reason. Read with pandas' default inference, afdb's record
-    ``00735`` comes back as 735, ``__getitem__`` builds ``data_path / "735"``, and
-    the failure surfaces as a file-not-found naming a record that does not exist.
+    ``ecgbench.metadata.records.read_fold_csv`` is the single place every
+    fold-CSV read goes through — ``ECGDataset``'s Hub and local paths and
+    ``load_records`` alike — for exactly this reason. Read with pandas' default
+    inference, afdb's record ``00735`` comes back as 735, ``__getitem__`` builds
+    ``data_path / "735"``, and the failure surfaces as a file-not-found naming a
+    record that does not exist.
     """
 
     def _folds_csv(self, path):
@@ -2087,17 +2089,14 @@ class TestZeroPaddedRecordIds:
         )
         return path
 
-    def test_read_csv_keeps_leading_zeros(self, tmp_path):
+    def test_read_fold_csv_keeps_leading_zeros(self, tmp_path):
         from ecgbench.config import load_config
-        from ecgbench.dataset import ECGDataset
+        from ecgbench.metadata.records import read_fold_csv
 
-        ds = ECGDataset.__new__(ECGDataset)
-        ds.config = load_config("afdb")
-
-        df = ds._read_csv(self._folds_csv(tmp_path / "folds.csv"))
+        df = read_fold_csv(self._folds_csv(tmp_path / "folds.csv"), load_config("afdb"))
         assert list(df["record_name"]) == ["00735", "03665", "04015"]
         assert list(df["signal_path"]) == ["00735", "03665", "04015"]
-        # fold stays numeric, so _filter_master's int comparison still works.
+        # fold stays numeric, so filter_fold_table's int comparison still works.
         assert df["fold"].tolist() == [5, 1, 9]
 
     def test_the_local_fold_reader_uses_it_too(self, tmp_path):
@@ -2111,9 +2110,11 @@ class TestZeroPaddedRecordIds:
 
         ds = ECGDataset.__new__(ECGDataset)
         ds.config = load_config("afdb")
+        ds.data_path = tmp_path
+        ds.version = "clean"
         ds.split = "train"
 
-        df = ds._read_fold_csvs(split_dir, [5])
+        df = ds._load_from_local([5])
         assert list(df["record_name"]) == ["00735", "03665", "04015"]
 
     def test_an_opted_in_config_protects_every_identifier_column(self):

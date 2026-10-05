@@ -10,6 +10,8 @@ Exposes:
   ``search``, ``fields``).
 - ``run_metadata_build`` / ``run_metadata_check`` — rebuild or verify the
   derived metadata files (``ecgbench metadata build [--check]``).
+- ``run_records`` — a dataset's records (fold table + labels) as a DataFrame,
+  optionally through DuckDB SQL (``ecgbench records``).
 """
 
 from ecgbench.cli._main import main
@@ -22,6 +24,7 @@ from ecgbench.cli.metadata import (
     run_metadata_export_check,
     run_metadata_snapshot,
 )
+from ecgbench.cli.records import run_records
 from ecgbench.cli.splits import run_splits
 from ecgbench.cli.upload import run_upload
 
@@ -40,4 +43,5 @@ __all__ = [
     "run_metadata_export",
     "run_metadata_export_check",
     "run_metadata_snapshot",
+    "run_records",
 ]

@@ -67,6 +67,16 @@ pip install ecgbench[xls]
 (Converting the file once to `SubjectDetails.csv` beside it works too — the label
 loader prefers the CSV when it is there.)
 
+### With SQL over records
+
+`ecgbench records --sql` and `query_records()` run [DuckDB](https://duckdb.org/)
+over a dataset's fold table joined with its labels, and `--format parquet`
+writes through it. It is imported only inside those functions:
+
+```bash
+pip install ecgbench[analytics]
+```
+
 ### With everything
 
 ```bash
@@ -1731,6 +1741,44 @@ ecgbench.run_fields("ptbxl")     # tuple[FieldMeta, ...]
 ecgbench.run_related("ptbxl")
 ```
 
+### `ecgbench records`
+
+One row per record: the fold table ECGBench published for a dataset, joined with the labels `load_labels()` reads from the source dataset under `--data-path`. Fold CSVs come from the Hub by default; `--splits-dir output/<slug>/` reads the tree `ecgbench splits` wrote instead, which is the only way for a [withheld dataset](#distribution-policy--not-every-datasets-splits-are-published). `--sql` runs DuckDB over the view `records` with file-system access disabled, so a query can read the view and nothing else; `--hub` queries a published `folds.csv` in place on the Hub through DuckDB's `httpfs` (identifiers only — labels never leave the source dataset).
+
+```bash
+ecgbench records ptbxl --data-path /data/ptb-xl --split val --format csv
+ecgbench records ptbxl --data-path /data/ptb-xl \
+    --sql "select sex, count(*) as n from records where fold = 9 group by 1"
+ecgbench records mimic_iv_ecg --splits-dir output/mimic_iv_ecg --no-labels --format parquet --output mimic.parquet
+ecgbench records ptbxl --hub --sql "select fold, count(*) from records group by 1 order by 1"
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `dataset` | str | *required* | Dataset id or any alias |
+| `--data-path` | path | auto-resolve | Local copy of the source dataset, where the labels live |
+| `--splits-dir` | path | — | Local fold tree (`output/<slug>/`); implies `--source local` |
+| `--source` | `hf`&vert;`local` | `hf` (`local` with `--splits-dir`) | Where the fold CSVs come from |
+| `--version` | `clean`&vert;`original` | `clean` | Dataset version |
+| `--split` | `train`&vert;`val`&vert;`test` | all | Restrict to one split |
+| `--fold` | int… | all | Restrict to these folds; with `--split` they must belong to it |
+| `--no-labels` | flag | off | Fold table only |
+| `--sql` | str | — | DuckDB SQL over the view `records` (needs `ecgbench[analytics]`) |
+| `--hub` | flag | off | Query the published `folds.csv` on the Hub in place; no labels |
+| `--format` | `table`&vert;`json`&vert;`csv`&vert;`parquet` | `table` | Output format (`parquet` needs `--output`) |
+| `--output` | path | stdout | Write here instead of printing |
+| `--limit` | int | 20 for `table`, all otherwise | Rows to print; `0` = all |
+
+Python equivalents:
+
+```python
+import ecgbench
+
+df = ecgbench.load_records("ptbxl", data_path="/data/ptb-xl", split="val")   # pandas DataFrame
+ecgbench.query_records(df, "select sex, count(*) as n from records group by 1")
+ecgbench.run_records("ptbxl", data_path="/data/ptb-xl", sql="select count(*) from records")
+```
+
 ### `ecgbench metadata build`
 
 Maintenance of the derived metadata files. `ecgbench/data/metadata.json` is committed and `metadata.sqlite` (the FTS5 index) is generated; both are compiled from the catalogue front matter and the YAML configs, and the packaging hook rebuilds them into every wheel. Run `build` after editing any `docs/_datasets/*.md` or config, and `build --check` in CI: it exits 1 and names the added, removed and changed dataset ids when the committed export no longer matches a fresh build.
@@ -1806,6 +1854,11 @@ In a source checkout the index is also refreshed automatically: `open_store()` f
 - `save_croissant(config, splits_dir)` -- save to file
 - `validate_croissant(path)` -- validate JSON-LD
 
+### Records
+- `load_records(dataset, data_path, version, split, fold_numbers, source, splits_dir, labels)` -- fold table joined with labels, as a DataFrame
+- `query_records(df, sql)` -- DuckDB SQL over it, file access disabled (`ecgbench[analytics]`)
+- `RecordsUnavailableError` / `RecordsQueryError` -- catalogue-only dataset / rejected SQL
+
 ### Download
 - `download_dataset(config)` -- download from source
 - `resolve_data_path(path, config)` -- resolve or download
@@ -1814,6 +1867,7 @@ In a source checkout the index is also refreshed automatically: `open_store()` f
 - `run_splits(dataset, ...)` -- full validate + split + Croissant pipeline (same as `ecgbench splits`)
 - `run_croissant(dataset, splits_dir, ...)` -- standalone Croissant generation (same as `ecgbench croissant`)
 - `run_upload(data_dir, datasets, ...)` -- HuggingFace Hub upload (same as `ecgbench upload`)
+- `run_records(dataset, data_path, ..., sql)` -- records as a DataFrame, optionally through SQL (same as `ecgbench records`)
 
 ## Development
 

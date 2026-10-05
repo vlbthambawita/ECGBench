@@ -48,7 +48,10 @@ xls = ["xlrd>=2.0.1"]
 # _load_signal and the edgar splitter need it, so it stays out of the base
 # install.
 mat = ["scipy>=1.8.0"]
-all = ["ecgbench[torch,croissant,download,hf,hdf5,xls,mat]"]
+# SQL over a dataset's records (`ecgbench records --sql`, `query_records`) and
+# Parquet output. DuckDB is imported only inside those functions.
+analytics = ["duckdb>=1.1.0"]
+all = ["ecgbench[torch,croissant,download,hf,hdf5,xls,mat,analytics]"]
 dev = [
     "ecgbench[all]",
     "pytest>=7.0.0",

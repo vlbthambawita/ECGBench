@@ -52,6 +52,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "verify_splits": ".manifest",
     # Labels
     "load_labels": ".labels",
+    # Records (fold table + labels; pandas, DuckDB behind the analytics extra)
+    "load_records": ".metadata.records",
+    "query_records": ".metadata.records",
+    "RecordsUnavailableError": ".metadata.records",
+    "RecordsQueryError": ".metadata.records",
     # Download
     "download_dataset": ".download",
     "resolve_data_path": ".download",
@@ -66,6 +71,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "run_fields": ".cli",
     "run_metadata_build": ".cli",
     "run_metadata_check": ".cli",
+    "run_records": ".cli",
 }
 
 
@@ -119,6 +125,10 @@ __all__ = [
     "verify_splits",
     # Labels
     "load_labels",
+    "load_records",
+    "query_records",
+    "RecordsUnavailableError",
+    "RecordsQueryError",
     # Download
     "download_dataset",
     "resolve_data_path",
@@ -133,4 +143,5 @@ __all__ = [
     "run_fields",
     "run_metadata_build",
     "run_metadata_check",
+    "run_records",
 ]
