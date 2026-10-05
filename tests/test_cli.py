@@ -32,7 +32,7 @@ def test_top_level_help_lists_subcommands(capsys):
     out = capsys.readouterr().out
     for sub in (
         "splits", "croissant", "upload", "list", "search", "info", "fields", "related",
-        "metadata", "records",
+        "metadata", "records", "mcp",
     ):
         assert sub in out
 
@@ -48,6 +48,7 @@ _SUBCOMMAND_FLAG = {
     "related": "--format",
     "metadata": "build",
     "records": "--sql",
+    "mcp": "--transport",
 }
 
 

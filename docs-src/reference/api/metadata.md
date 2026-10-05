@@ -26,6 +26,10 @@ metadata.related("ptbxl")   # leakage edges, both directions
 The same views are available on the command line as `ecgbench list`,
 `ecgbench info` and `ecgbench related` — see [CLI](../cli.md).
 
+`ecgbench.metadata.mcp_server` exposes the same store to agents as five
+Model Context Protocol tools (`ecgbench mcp`); the tool functions are plain
+Python on `ToolFunctions`, the SDK is needed only to serve them.
+
 `ecgbench.metadata.records` is the one module here that returns *records*
 rather than dataset descriptions: `load_records` joins a dataset's fold table
 with its labels, `query_records` runs DuckDB SQL over the result. It needs
@@ -59,3 +63,7 @@ pandas and is not imported with the package; reach it as
 ## Records
 
 ::: ecgbench.metadata.records
+
+## MCP server
+
+::: ecgbench.metadata.mcp_server

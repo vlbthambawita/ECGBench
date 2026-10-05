@@ -6,7 +6,7 @@ import argparse
 import logging
 from typing import Sequence
 
-from ecgbench.cli import catalog, croissant, metadata, records, splits, upload
+from ecgbench.cli import catalog, croissant, mcp, metadata, records, splits, upload
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -36,6 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
     catalog.add_subparser(subparsers)
     metadata.add_subparser(subparsers)
     records.add_subparser(subparsers)
+    mcp.add_subparser(subparsers)
 
     return parser
 

@@ -72,6 +72,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "run_metadata_build": ".cli",
     "run_metadata_check": ".cli",
     "run_records": ".cli",
+    "run_mcp": ".cli",
+    # MCP server (mcp SDK behind the mcp extra; the tool functions need only the store)
+    "build_mcp_server": ".metadata.mcp_server",
 }
 
 
@@ -144,4 +147,6 @@ __all__ = [
     "run_metadata_build",
     "run_metadata_check",
     "run_records",
+    "run_mcp",
+    "build_mcp_server",
 ]

@@ -12,11 +12,13 @@ Exposes:
   derived metadata files (``ecgbench metadata build [--check]``).
 - ``run_records`` — a dataset's records (fold table + labels) as a DataFrame,
   optionally through DuckDB SQL (``ecgbench records``).
+- ``run_mcp`` — serve the metadata layer to agents over MCP (``ecgbench mcp``).
 """
 
 from ecgbench.cli._main import main
 from ecgbench.cli.catalog import run_fields, run_info, run_list, run_related, run_search
 from ecgbench.cli.croissant import run_croissant
+from ecgbench.cli.mcp import run_mcp
 from ecgbench.cli.metadata import (
     run_metadata_build,
     run_metadata_check,
@@ -44,4 +46,5 @@ __all__ = [
     "run_metadata_export_check",
     "run_metadata_snapshot",
     "run_records",
+    "run_mcp",
 ]

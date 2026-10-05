@@ -77,6 +77,18 @@ writes through it. It is imported only inside those functions:
 pip install ecgbench[analytics]
 ```
 
+### For agents (MCP)
+
+`ecgbench mcp` serves the metadata layer to agents over the
+[Model Context Protocol](https://modelcontextprotocol.io/): five tools that read
+the bundled index and nothing else. It needs the `mcp` SDK, which is not part of
+`all` because it is about hosting an agent, not loading data:
+
+```bash
+pip install ecgbench[mcp]
+claude mcp add ecgbench -- ecgbench mcp     # register with Claude Code
+```
+
 ### With everything
 
 ```bash
@@ -1779,6 +1791,34 @@ ecgbench.query_records(df, "select sex, count(*) as n from records group by 1")
 ecgbench.run_records("ptbxl", data_path="/data/ptb-xl", sql="select count(*) from records")
 ```
 
+### `ecgbench mcp`
+
+An [MCP](https://modelcontextprotocol.io/) server over the metadata layer, for agents. Five tools, each a thin wrapper on the same store the CLI reads: `search_datasets` (an FTS5 query plus the filters of `ecgbench search`: `leads`, `fs`, `signal_format`, `access`, `license`, `category`, `state`, `min_records`, `max_records`, `has_labels`, `has_patient_id`, `published`), `list_datasets`, `get_dataset` (the full record by any id, slug or display name), `list_fields` (the declared label columns) and `related_datasets` (the leakage edges). The server reads the bundled `metadata.json` / `metadata.sqlite` only — no records, signals or network — so it can be given to any agent without a data path. A bad query or an unknown dataset comes back as a tool error carrying the same message the CLI prints, close matches included.
+
+```bash
+pip install ecgbench[mcp]
+ecgbench mcp                                 # stdio, what MCP clients spawn
+claude mcp add ecgbench -- ecgbench mcp      # Claude Code
+```
+
+Any other client registers the command `ecgbench` with arguments `["mcp"]` over stdio. Asked for "two-lead Holter datasets", an agent calls `search_datasets` with `query="holter"` and `leads=2` and gets the ten MIT-BIH-family long-term sets back, best match first.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--transport` | `stdio`&vert;`sse`&vert;`streamable-http` | `stdio` | Transport to serve on |
+
+Python equivalents:
+
+```python
+import ecgbench
+
+server = ecgbench.build_mcp_server()          # an MCPServer / FastMCP with the five tools
+ecgbench.run_mcp(transport="stdio")           # same as `ecgbench mcp`
+
+from ecgbench.metadata.mcp_server import ToolFunctions
+ToolFunctions().search_datasets("holter", leads=2)   # the tools, without the SDK
+```
+
 ### `ecgbench metadata build`
 
 Maintenance of the derived metadata files. `ecgbench/data/metadata.json` is committed and `metadata.sqlite` (the FTS5 index) is generated; both are compiled from the catalogue front matter and the YAML configs, and the packaging hook rebuilds them into every wheel. Run `build` after editing any `docs/_datasets/*.md` or config, and `build --check` in CI: it exits 1 and names the added, removed and changed dataset ids when the committed export no longer matches a fresh build.
@@ -1868,6 +1908,7 @@ In a source checkout the index is also refreshed automatically: `open_store()` f
 - `run_croissant(dataset, splits_dir, ...)` -- standalone Croissant generation (same as `ecgbench croissant`)
 - `run_upload(data_dir, datasets, ...)` -- HuggingFace Hub upload (same as `ecgbench upload`)
 - `run_records(dataset, data_path, ..., sql)` -- records as a DataFrame, optionally through SQL (same as `ecgbench records`)
+- `run_mcp(transport)` / `build_mcp_server()` -- the metadata layer as MCP tools for agents (same as `ecgbench mcp`)
 
 ## Development
 
