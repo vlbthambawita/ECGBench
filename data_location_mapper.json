@@ -1,0 +1,1093 @@
+{
+  "_about": {
+    "generated": "2026-10-19",
+    "purpose": "Maps every ECGBench dataset id to the directory to pass as --data-path / data_path.",
+    "requested_root": "/work/vajira/DL2026/data",
+    "search_tree": "/global/D1/homes/vajira/data/SEARCH",
+    "how_located": "A dataset root is the directory holding the file named in the config's metadata_csv (ecgbench_metadata.csv, ptbxl_database.csv or record_list.csv); mitdb has no such file and is the WFDB directory itself. 'verified' means that file's row count equals the record count in output/<slug>/manifest.json (or the validation report).",
+    "key": "metadata dataset_id: the config slug where a config exists, else the catalogue slug",
+    "counts": {
+      "datasets": 64,
+      "with_config": 51,
+      "located": 55,
+      "in_requested_root": 17,
+      "verified": 51,
+      "catalogue_only": 13
+    }
+  },
+  "datasets": {
+    "afdb": {
+      "name": "MIT-BIH Atrial Fibrillation Database",
+      "catalogue_slug": "mit-bih-atrial-fibrillation-database",
+      "config_slug": "afdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/afdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 25,
+        "expected_records": 25,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "apnea_ecg": {
+      "name": "Apnea-ECG Database",
+      "catalogue_slug": "apnea-ecg-database",
+      "config_slug": "apnea_ecg",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/apnea-ecg/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 70,
+        "expected_records": 70,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "brugada_huca": {
+      "name": "Brugada-HUCA",
+      "catalogue_slug": "brugada-huca",
+      "config_slug": "brugada_huca",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/brugada-huca/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 363,
+        "expected_records": 363,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "butqdb": {
+      "name": "Brno University of Technology ECG Quality Database (BUT QDB)",
+      "catalogue_slug": "brno-university-of-technology-ecg-quality-database-but-qdb",
+      "config_slug": "butqdb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/butqdb/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 18,
+        "expected_records": 18,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "challenge2017": {
+      "name": "PhysioNet/CinC Challenge 2017 (AF Classification)",
+      "catalogue_slug": "physionet-cinc-challenge-2017-af-classification",
+      "config_slug": "challenge2017",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/challenge-2017/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 8528,
+        "expected_records": 8528,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "challenge2020": {
+      "name": "PhysioNet/CinC Challenge 2020",
+      "catalogue_slug": "physionet-cinc-challenge-2020",
+      "config_slug": "challenge2020",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/challenge-2020/1.0.2",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 43101,
+        "expected_records": 43101,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "challenge2021": {
+      "name": "PhysioNet/CinC Challenge 2021",
+      "catalogue_slug": "physionet-cinc-challenge-2021",
+      "config_slug": "challenge2021",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/challenge-2021/1.0.3",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 88253,
+        "expected_records": 88253,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "chapman_shaoxing": {
+      "name": "Chapman-Shaoxing ECG Database (10,646 patients)",
+      "catalogue_slug": "chapman-shaoxing-ecg-database-10-646-patients",
+      "config_slug": "chapman_shaoxing",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/Chapman-Shaoxing ECG Database_figshare",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 10646,
+        "expected_records": 10646,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "chfdb": {
+      "name": "BIDMC Congestive Heart Failure Database",
+      "catalogue_slug": "bidmc-congestive-heart-failure-database",
+      "config_slug": "chfdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/chfdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 15,
+        "expected_records": 15,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "code-full-dataset-2-3m-records": {
+      "name": "CODE (Full Dataset, ~2.3M records)",
+      "catalogue_slug": "code-full-dataset-2-3m-records",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "code15": {
+      "name": "CODE-15% (Telehealth Network of Minas Gerais, 15% subset)",
+      "catalogue_slug": "code-15-pct-telehealth-network-of-minas-gerais-15-pct-subset",
+      "config_slug": "code15",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/ode-15-pct-telehealth-network-of-minas-gerais-15-pct-subset",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 345779,
+        "expected_records": 345779,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "code_test": {
+      "name": "CODE-test (827-record hold-out test set)",
+      "catalogue_slug": "code-test-827-record-hold-out-test-set",
+      "config_slug": "code_test",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/code-test-827/data",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 827,
+        "expected_records": 827,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "cpsc_2018": {
+      "name": "CPSC 2018 (China Physiological Signal Challenge 2018)",
+      "catalogue_slug": "cpsc-2018-china-physiological-signal-challenge-2018",
+      "config_slug": "cpsc_2018",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/CPSC_2018",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 6877,
+        "expected_records": 6877,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ecg_arrhythmia": {
+      "name": "Chapman-Shaoxing (Arrhythmia)",
+      "catalogue_slug": "chapman-shaoxing-arrhythmia",
+      "config_slug": "ecg_arrhythmia",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ecg-arrhythmia/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 45152,
+        "expected_records": 45152,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ecg_capable_smartwatches": {
+      "name": "ECG-Capable Smartwatches Dataset",
+      "catalogue_slug": "ecg-capable-smartwatches-dataset",
+      "config_slug": "ecg_capable_smartwatches",
+      "implementation_state": "config_labels",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/ecg-capable-smartwatches/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 915,
+        "expected_records": 915,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ecgcipa": {
+      "name": "CiPA ECG Validation Study",
+      "catalogue_slug": "cipa-ecg-validation-study",
+      "config_slug": "ecgcipa",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ecgcipa/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 5749,
+        "expected_records": 5749,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": [
+        {
+          "path": "/work/vajira/DL2026/data/cipa-ecg-validation-study-1.0.0",
+          "tree": "requested_root",
+          "has_marker": false
+        }
+      ]
+    },
+    "ecgdmmld": {
+      "name": "ECG Effects of Dofetilide, Moxifloxacin and Combinations (ECGDMMLD)",
+      "catalogue_slug": "ecg-effects-of-dofetilide-moxifloxacin-and-combinations-ecgdmmld",
+      "config_slug": "ecgdmmld",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ecgdmmld/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 4211,
+        "expected_records": 4211,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ecgiddb": {
+      "name": "ECG-ID Database",
+      "catalogue_slug": "ecg-id-database",
+      "config_slug": "ecgiddb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/ecgiddb/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 310,
+        "expected_records": 310,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ecgrdvq": {
+      "name": "ECG Effects of Ranolazine, Dofetilide, Verapamil, Quinidine (ECGRDVQ)",
+      "catalogue_slug": "ecg-effects-of-ranolazine-dofetilide-verapamil-quinidine-ecgrdvq",
+      "config_slug": "ecgrdvq",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ecgrdvq/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 5232,
+        "expected_records": 5232,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "echonext": {
+      "name": "EchoNext",
+      "catalogue_slug": "echonext",
+      "config_slug": "echonext",
+      "implementation_state": "config_labels",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/echonext/1.1.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 82543,
+        "expected_records": 82543,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "edb": {
+      "name": "European ST-T Database (EDB)",
+      "catalogue_slug": "european-st-t-database-edb",
+      "config_slug": "edb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/edb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 90,
+        "expected_records": 90,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "edgar": {
+      "name": "EDGAR (Experimental Data & Geometric Analysis Repository)",
+      "catalogue_slug": "edgar-experimental-data-and-geometric-analysis-repository",
+      "config_slug": "edgar",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/other_ecg_datasets/EDGAR",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 2943,
+        "expected_records": 2943,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "eye-tracking-dataset-for-12-lead-ecg-interpretation": {
+      "name": "Eye Tracking Dataset for 12-Lead ECG Interpretation",
+      "catalogue_slug": "eye-tracking-dataset-for-12-lead-ecg-interpretation",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "gu-ecg-gazi-university-ptca-induced-ischaemia": {
+      "name": "GU-ECG (Gazi University, PTCA-induced Ischaemia)",
+      "catalogue_slug": "gu-ecg-gazi-university-ptca-induced-ischaemia",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "harvard-emory-ecg-database-heedb": {
+      "name": "Harvard-Emory ECG Database (HEEDB)",
+      "catalogue_slug": "harvard-emory-ecg-database-heedb",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": "/work/vajira/DL2026/data/HEEDB",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "status": "no_config",
+        "marker_file": null
+      },
+      "other_copies": []
+    },
+    "icentia11k-single-lead-continuous-ecg": {
+      "name": "Icentia11k Single Lead Continuous ECG",
+      "catalogue_slug": "icentia11k-single-lead-continuous-ecg",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/icentia11k-continuous-ecg/1.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "status": "no_config",
+        "marker_file": null
+      },
+      "other_copies": []
+    },
+    "ikem": {
+      "name": "IKEM Dataset (Institute for Clinical and Experimental Medicine, Prague)",
+      "catalogue_slug": "ikem-dataset-institute-for-clinical-and-experimental-medicine-prague",
+      "config_slug": "ikem",
+      "implementation_state": "config_labels",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/IKEM_dataset_v1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 98130,
+        "expected_records": 98130,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "incartdb": {
+      "name": "St Petersburg INCART 12-Lead Arrhythmia Database",
+      "catalogue_slug": "st-petersburg-incart-12-lead-arrhythmia-database",
+      "config_slug": "incartdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/incartdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 75,
+        "expected_records": 75,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "kurias-ecg": {
+      "name": "KURIAS-ECG",
+      "catalogue_slug": "kurias-ecg",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "leipzig_heart_center_ecg": {
+      "name": "Leipzig Heart Center ECG Database",
+      "catalogue_slug": "leipzig-heart-center-ecg-database",
+      "config_slug": "leipzig_heart_center_ecg",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/leipzig-heart-center-ecg/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 39,
+        "expected_records": 39,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ltafdb": {
+      "name": "Long-Term AF Database (LTAFDB)",
+      "catalogue_slug": "long-term-af-database-ltafdb",
+      "config_slug": "ltafdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/ltafdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 84,
+        "expected_records": 84,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ltstdb": {
+      "name": "Long-Term ST Database (LTSTDB)",
+      "catalogue_slug": "long-term-st-database-ltstdb",
+      "config_slug": "ltstdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/ltstdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 86,
+        "expected_records": 86,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ludb": {
+      "name": "Lobachevsky University ECG Database (LUDB)",
+      "catalogue_slug": "lobachevsky-university-ecg-database-ludb",
+      "config_slug": "ludb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ludb/1.0.1",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 200,
+        "expected_records": 200,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "medalcare_xl": {
+      "name": "MedalCare-XL (Synthetic 12-Lead ECGs from Simulations)",
+      "catalogue_slug": "medalcare-xl-synthetic-12-lead-ecgs-from-simulations",
+      "config_slug": "medalcare_xl",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/MedalCare-XL/MedalCare-XL",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 16842,
+        "expected_records": 16842,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "mhd_effect_ecg_mri": {
+      "name": "MHD Effect on 12-Lead ECGs in MRI Scanners",
+      "catalogue_slug": "mhd-effect-on-12-lead-ecgs-in-mri-scanners",
+      "config_slug": "mhd_effect_ecg_mri",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/influence-of-the-mhd-effect-on-12-lead-and-3-lead-ecgs-recorded-in-1t-to-7t-mri-scanners-1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 53,
+        "expected_records": 53,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": [
+        {
+          "path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/mhd-effect-ecg-mri/1.0.0",
+          "tree": "search_tree",
+          "has_marker": false
+        }
+      ]
+    },
+    "mimic-iii-waveform-database-matched-subset": {
+      "name": "MIMIC-III Waveform Database Matched Subset",
+      "catalogue_slug": "mimic-iii-waveform-database-matched-subset",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": "/work/vajira/DL2026/data/three_leads_ecgs/physionet.org/files/mimic3wdb-matched/1.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "status": "no_config",
+        "marker_file": null
+      },
+      "other_copies": []
+    },
+    "mimic-iv-ecg-ext-icd": {
+      "name": "MIMIC-IV-ECG-Ext-ICD",
+      "catalogue_slug": "mimic-iv-ecg-ext-icd",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "mimic_iv_ecg": {
+      "name": "MIMIC-IV-ECG",
+      "catalogue_slug": "mimic-iv-ecg",
+      "config_slug": "mimic_iv_ecg",
+      "implementation_state": "config_labels",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "record_list.csv",
+        "marker_rows": 800035,
+        "expected_records": 800035,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "mimic_iv_ecg_demo": {
+      "name": "MIMIC-IV-ECG Demo",
+      "catalogue_slug": "mimic-iv-ecg-demo",
+      "config_slug": "mimic_iv_ecg_demo",
+      "implementation_state": "config",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/mimic-iv-ecg-demo/0.1",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "record_list.csv",
+        "marker_rows": 659,
+        "expected_records": 659,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "mitdb": {
+      "name": "MIT-BIH Arrhythmia Database",
+      "catalogue_slug": "mit-bih-arrhythmia-database",
+      "config_slug": "mitdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/mitdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "*.hea",
+        "marker_rows": 48,
+        "expected_records": 48,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "nightingale-bwh-emergency-dept-ecg-dataset": {
+      "name": "Nightingale BWH Emergency Dept ECG Dataset",
+      "catalogue_slug": "nightingale-bwh-emergency-dept-ecg-dataset",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "nightingale-ntuh-cardiac-arrest-ecg-dataset": {
+      "name": "Nightingale NTUH Cardiac Arrest ECG Dataset",
+      "catalogue_slug": "nightingale-ntuh-cardiac-arrest-ecg-dataset",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "ningbo_iva": {
+      "name": "Ningbo First Hospital ECG Database (Idiopathic Ventricular Arrhythmia)",
+      "catalogue_slug": "ningbo-first-hospital-ecg-database-idiopathic-ventricular-arrhythmia",
+      "config_slug": "ningbo_iva",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/Ningbo_First_Hospital_ECG_Database",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 334,
+        "expected_records": 334,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "norwegian_athlete_ecg": {
+      "name": "Norwegian Endurance Athlete ECG Database",
+      "catalogue_slug": "norwegian-endurance-athlete-ecg-database",
+      "config_slug": "norwegian_athlete_ecg",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/norwegian-endurance-athlete-ecg-database-1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 28,
+        "expected_records": 28,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": [
+        {
+          "path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/norwegian-athlete-ecg/1.0.0",
+          "tree": "search_tree",
+          "has_marker": false
+        }
+      ]
+    },
+    "nsrdb": {
+      "name": "MIT-BIH Normal Sinus Rhythm Database",
+      "catalogue_slug": "mit-bih-normal-sinus-rhythm-database",
+      "config_slug": "nsrdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/nsrdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 18,
+        "expected_records": 18,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "picsdb": {
+      "name": "Preterm Infant Cardio-Respiratory Signals Database (PICSDB)",
+      "catalogue_slug": "preterm-infant-cardio-respiratory-signals-database-picsdb",
+      "config_slug": "picsdb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/picsdb/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 10,
+        "expected_records": 10,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ptb-xl-plus": {
+      "name": "PTB-XL+",
+      "catalogue_slug": "ptb-xl-plus",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "ptbdb": {
+      "name": "PTB Diagnostic ECG Database",
+      "catalogue_slug": "ptb-diagnostic-ecg-database",
+      "config_slug": "ptbdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ptbdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 549,
+        "expected_records": 549,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ptbxl": {
+      "name": "PTB-XL",
+      "catalogue_slug": "ptb-xl",
+      "config_slug": "ptbxl",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/ptb-xl/1.0.3",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ptbxl_database.csv",
+        "marker_rows": 21799,
+        "expected_records": 21799,
+        "expected_source": "validation_report",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "qtdb": {
+      "name": "QT Database (QTDB)",
+      "catalogue_slug": "qt-database-qtdb",
+      "config_slug": "qtdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/qtdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 105,
+        "expected_records": 105,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "sami_trop": {
+      "name": "SaMi-Trop (Chagas Cardiomyopathy Cohort)",
+      "catalogue_slug": "sami-trop-chagas-cardiomyopathy-cohort",
+      "config_slug": "sami_trop",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/SaMi-Trop",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 1631,
+        "expected_records": 1631,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "sddb": {
+      "name": "Sudden Cardiac Death Holter Database",
+      "catalogue_slug": "sudden-cardiac-death-holter-database",
+      "config_slug": "sddb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/sddb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 23,
+        "expected_records": 23,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "shdb_af": {
+      "name": "SHDB-AF (Saitama Holter Database \u2014 Atrial Fibrillation)",
+      "catalogue_slug": "shdb-af-saitama-holter-database-atrial-fibrillation",
+      "config_slug": "shdb_af",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/shdb-af/1.0.1",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 128,
+        "expected_records": 128,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "sph": {
+      "name": "Shandong Provincial Hospital ECG Database (SPHDB)",
+      "catalogue_slug": "shandong-provincial-hospital-ecg-database-sphdb",
+      "config_slug": "sph",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/Shandong_Provincial_Hospital_ECG_Database",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 25770,
+        "expected_records": 25770,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "staffiii": {
+      "name": "STAFF III Database",
+      "catalogue_slug": "staff-iii-database",
+      "config_slug": "staffiii",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/staffiii/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 520,
+        "expected_records": 520,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "stdb": {
+      "name": "MIT-BIH ST Change Database",
+      "catalogue_slug": "mit-bih-st-change-database",
+      "config_slug": "stdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/stdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 28,
+        "expected_records": 28,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "svdb": {
+      "name": "MIT-BIH Supraventricular Arrhythmia Database",
+      "catalogue_slug": "mit-bih-supraventricular-arrhythmia-database",
+      "config_slug": "svdb",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/two_leads/physionet.org/files/svdb/1.0.0",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 78,
+        "expected_records": 78,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "symile-mimic": {
+      "name": "Symile-MIMIC",
+      "catalogue_slug": "symile-mimic",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": null,
+      "tree": null,
+      "in_requested_root": false,
+      "verification": null,
+      "other_copies": []
+    },
+    "szdb": {
+      "name": "Post-Ictal Heart Rate Oscillations in Partial Epilepsy",
+      "catalogue_slug": "post-ictal-heart-rate-oscillations-in-partial-epilepsy",
+      "config_slug": "szdb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/szdb/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 7,
+        "expected_records": 7,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "tollet": {
+      "name": "tOLIet (Thigh-based ECG, toilet seat)",
+      "catalogue_slug": "toliet-thigh-based-ecg-toilet-seat",
+      "config_slug": "tollet",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/tollet/1.0.1",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 580,
+        "expected_records": 580,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "ucddb": {
+      "name": "St. Vincent's / UCD Sleep Apnea Database (UCDDB)",
+      "catalogue_slug": "st-vincent-s-ucd-sleep-apnea-database-ucddb",
+      "config_slug": "ucddb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/three_leads_ecgs/physionet.org/files/ucddb/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 25,
+        "expected_records": 25,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    },
+    "vitaldb-arrhythmia-database": {
+      "name": "VitalDB Arrhythmia Database",
+      "catalogue_slug": "vitaldb-arrhythmia-database",
+      "config_slug": null,
+      "implementation_state": "catalogue_only",
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/vitaldb-arrhythmia/1.0.0",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "status": "no_config",
+        "marker_file": null
+      },
+      "other_copies": []
+    },
+    "wctecgdb": {
+      "name": "Wilson Central Terminal ECG Database",
+      "catalogue_slug": "wilson-central-terminal-ecg-database",
+      "config_slug": "wctecgdb",
+      "implementation_state": "published",
+      "data_path": "/work/vajira/DL2026/data/wilson-central-terminal-ecg-database-1.0.1",
+      "tree": "requested_root",
+      "in_requested_root": true,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 540,
+        "expected_records": 540,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": [
+        {
+          "path": "/global/D1/homes/vajira/data/SEARCH/physionet.org/files/wctecgdb/1.0.1",
+          "tree": "search_tree",
+          "has_marker": false
+        }
+      ]
+    },
+    "zzu_pecg": {
+      "name": "ZZU pECG (Zhengzhou University Pediatric ECG Database)",
+      "catalogue_slug": "zzu-pecg-zhengzhou-university-pediatric-ecg-database",
+      "config_slug": "zzu_pecg",
+      "implementation_state": "published",
+      "data_path": "/global/D1/homes/vajira/data/SEARCH/ZZU_pECG",
+      "tree": "search_tree",
+      "in_requested_root": false,
+      "verification": {
+        "marker_file": "ecgbench_metadata.csv",
+        "marker_rows": 14190,
+        "expected_records": 14190,
+        "expected_source": "manifest",
+        "status": "verified"
+      },
+      "other_copies": []
+    }
+  },
+  "on_disk_without_config": {
+    "HEEDB": {
+      "data_path": "/work/vajira/DL2026/data/HEEDB",
+      "tree": "requested_root",
+      "catalogue_slug": "harvard-emory-ecg-database-heedb",
+      "note": "present on disk; catalogue entry exists but no ECGBench config"
+    },
+    "icentia11k-continuous-ecg": {
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/icentia11k-continuous-ecg/1.0",
+      "tree": "requested_root",
+      "catalogue_slug": "icentia11k-single-lead-continuous-ecg",
+      "note": "present on disk; catalogue entry exists but no ECGBench config"
+    },
+    "vitaldb-arrhythmia": {
+      "data_path": "/work/vajira/DL2026/data/one_lead_ecg/physionet.org/files/vitaldb-arrhythmia/1.0.0",
+      "tree": "requested_root",
+      "catalogue_slug": "vitaldb-arrhythmia-database",
+      "note": "present on disk; catalogue entry exists but no ECGBench config"
+    },
+    "mimic3wdb-matched": {
+      "data_path": "/work/vajira/DL2026/data/three_leads_ecgs/physionet.org/files/mimic3wdb-matched/1.0",
+      "tree": "requested_root",
+      "catalogue_slug": "mimic-iii-waveform-database-matched-subset",
+      "note": "present on disk; catalogue entry exists but no ECGBench config"
+    }
+  },
+  "unmapped_marker_files": []
+}
